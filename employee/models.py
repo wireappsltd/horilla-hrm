@@ -676,8 +676,9 @@ class EmployeeWorkInformation(models.Model):
         null=True,
         verbose_name=_("Company"),
     )
+    # Make work email mandatory @Bhathiya
     email = models.EmailField(
-        max_length=254, blank=True, null=True, verbose_name=_("Work Email")
+        max_length=254, blank=False, null=True, verbose_name=_("Work Email")
     )
     mobile = models.CharField(
         max_length=254, blank=True, null=True, verbose_name=_("Work Phone")
@@ -694,7 +695,6 @@ class EmployeeWorkInformation(models.Model):
         blank=True,
         null=True,
         verbose_name=_("Probation End Date"),
-        help_text=_("This is the date when the employee's probation period ends."),
     )
 
     basic_salary = models.IntegerField(
