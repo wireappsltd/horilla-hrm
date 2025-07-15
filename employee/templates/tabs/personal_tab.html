@@ -9,6 +9,14 @@
 			</div>
 			<div class="oh-card__body mt-4">
 				<ul class="oh-profile__card-info-list">
+				<li class="oh-profile__card-info-item">
+						<span class="oh-profile__info-label mb-1">
+							<ion-icon name="calendar-outline"></ion-icon>
+							<span>{% trans "NIC or Passport" %}</span>
+						</span>
+						<span
+							class="oh-profile__info-value dateformat_changer">{{employee.nic_or_passport_id|default:_("0")}}</span>
+					</li>
 					<li class="oh-profile__card-info-item">
 						<span class="oh-profile__info-label mb-1">
 							<ion-icon name="calendar-outline"></ion-icon>
@@ -81,7 +89,13 @@
 						</span>
 						<span class="oh-profile__info-value">{{employee.get_marital_status_display}}</span>
 					</li>
-
+                    <li class="oh-profile__card-info-item">
+						<span class="oh-profile__info-label mb-1">
+							<ion-icon name="call-outline"></ion-icon>
+							<span>{% trans "Blood Group" %}</span>
+						</span>
+						<span class="oh-profile__info-value">{{employee.blood_group|default:_("None")}}</span>
+					</li>
 					<li class="oh-profile__card-info-item">
 						<span class="oh-profile__info-label mb-1">
 							<ion-icon name="person-circle-outline"></ion-icon>
@@ -90,6 +104,7 @@
 						<span class="oh-profile__info-value">{{employee.children|default:_("None")}}</span>
 					</li>
 
+
 					<li class="oh-profile__card-info-item">
 						<span class="oh-profile__info-label mb-1">
 							<ion-icon name="call-outline"></ion-icon>
@@ -97,6 +112,8 @@
 						</span>
 						<span class="oh-profile__info-value">{{employee.emergency_contact|default:_("None")}}</span>
 					</li>
+
+
 
 					<li class="oh-profile__card-info-item">
 						<span class="oh-profile__info-label mb-1">
@@ -199,17 +216,24 @@
 
 										<li class="oh-profile__card-info-item">
 											<span class="oh-profile__info-label mb-1">
-												<ion-icon name="calendar-outline"></ion-icon>
-												<span>{% trans "End Date" %}</span>
+												<ion-icon name="business-outline"></ion-icon>
+												<span>{% trans "Tags" %}</span>
 											</span>
-											<span
-												class="oh-profile__info-value dateformat_changer">{{employee.employee_work_info.contract_end_date|default:_("None")}}</span>
-										</li>
-									</ul>
-								</div>
+											<div style="display: flex; flex-wrap: wrap;">
+												{% if employee.employee_work_info.tags.all %}
+													{% for i in employee.employee_work_info.tags.all %}
+														{% with tag_width=i.title|length %}
+														<span class="oh-profile__info-value mt-1 mb-1 mr-1"
+															style="background-color: {{ i.color }};
+																		font-size: .8rem; padding: 4px 10px; border-radius: 18px; font-weight: 600; width: {{ tag_width }}em;">{{ i.title }}</span>
+														{% endwith %}
+													{% endfor %}
+												{% else %}
+												<span class="oh-profile__info-value dateformat_changer">{% trans "None" %}</span>
+												{% endif %}
+											</div>
 
-								<div class="col-12 col-sm-12 col-md-12 col-lg-6">
-									<ul class="oh-profile__card-info-list">
+										</li>
 										<li class="oh-profile__card-info-item">
 											<span class="oh-profile__info-label mb-1">
 												<ion-icon name="briefcase-outline"></ion-icon>
@@ -218,6 +242,13 @@
 											<span
 												class="oh-profile__info-value">{{employee.employee_work_info.job_position_id|default:_("None")}}</span>
 										</li>
+
+									</ul>
+								</div>
+
+								<div class="col-12 col-sm-12 col-md-12 col-lg-6">
+									<ul class="oh-profile__card-info-list">
+
 
 										<li class="oh-profile__card-info-item">
 											<span class="oh-profile__info-label mb-1">
@@ -263,27 +294,23 @@
 											<span
 												class="oh-profile__info-value dateformat_changer">{{employee.employee_work_info.date_joining|default:_("None")}}</span>
 										</li>
-
-										<li class="oh-profile__card-info-item">
+											<li class="oh-profile__card-info-item">
 											<span class="oh-profile__info-label mb-1">
-												<ion-icon name="business-outline"></ion-icon>
-												<span>{% trans "Tags" %}</span>
+												<ion-icon name="calendar-outline"></ion-icon>
+												<span>{% trans "Probation End Date" %}</span>
 											</span>
-											<div style="display: flex; flex-wrap: wrap;">
-												{% if employee.employee_work_info.tags.all %}
-													{% for i in employee.employee_work_info.tags.all %}
-														{% with tag_width=i.title|length %}
-														<span class="oh-profile__info-value mt-1 mb-1 mr-1"
-															style="background-color: {{ i.color }};
-																		font-size: .8rem; padding: 4px 10px; border-radius: 18px; font-weight: 600; width: {{ tag_width }}em;">{{ i.title }}</span>
-														{% endwith %}
-													{% endfor %}
-												{% else %}
-												<span class="oh-profile__info-value dateformat_changer">{% trans "None" %}</span>
-												{% endif %}
-											</div>
+											<span
+												class="oh-profile__info-value dateformat_changer">{{employee.employee_work_info.probation_end_date|default:_("None")}}</span>
 										</li>
 
+                                        	<li class="oh-profile__card-info-item">
+											<span class="oh-profile__info-label mb-1">
+												<ion-icon name="calendar-outline"></ion-icon>
+												<span>{% trans "End Date" %}</span>
+											</span>
+											<span
+												class="oh-profile__info-value dateformat_changer">{{employee.employee_work_info.contract_end_date|default:_("None")}}</span>
+										</li>
 									</ul>
 								</div>
 							</div>
