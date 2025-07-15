@@ -76,7 +76,7 @@ class Employee(models.Model):
         max_length=200, null=False, verbose_name=_("First Name")
     )
     employee_last_name = models.CharField(
-        max_length=200, null=True, blank=True, verbose_name=_("Last Name")
+        max_length=200, null=True, blank=False, verbose_name=_("Last Name")
     )
     employee_profile = models.ImageField(
         upload_to="employee/profile", null=True, blank=True
