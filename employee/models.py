@@ -81,6 +81,11 @@ class Employee(models.Model):
     employee_profile = models.ImageField(
         upload_to="employee/profile", null=True, blank=True
     )
+    # Add new field for NIC OR Passport ID @Bhathiya
+    nic_or_passport_id = models.CharField(
+        max_length=50, null=True, blank=False
+    )
+
     email = models.EmailField(max_length=254, unique=True)
     phone = models.CharField(
         max_length=25,
@@ -93,7 +98,7 @@ class Employee(models.Model):
     # Make DOB as Mandatory @Bhathiya
     dob = models.DateField(null=True, blank=False)
     gender = models.CharField(
-        max_length=10, null=True, choices=choice_gender, default="male"
+        max_length=10, null=True, choices=choice_gender, blank=False
     )
     qualification = models.CharField(max_length=50, blank=True, null=True)
     experience = models.IntegerField(null=True, blank=True)
