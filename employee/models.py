@@ -689,6 +689,14 @@ class EmployeeWorkInformation(models.Model):
     contract_end_date = models.DateField(
         blank=True, null=True, verbose_name=_("Contract End Date")
     )
+    # Add probation End Data @Bhathiya
+    probation_end_date = models.DateField(
+        blank=True,
+        null=True,
+        verbose_name=_("Probation End Date"),
+        help_text=_("This is the date when the employee's probation period ends."),
+    )
+
     basic_salary = models.IntegerField(
         null=True, blank=True, default=0, verbose_name=_("Basic Salary")
     )
