@@ -306,6 +306,7 @@ class EmployeeWorkInformationForm(ModelForm):
         widgets = {
             "date_joining": DateInput(attrs={"type": "date"}),
             "contract_end_date": DateInput(attrs={"type": "date"}),
+            "probation_end_date": DateInput(attrs={"type": "date"}),
         }
 
     def __init__(self, *args, disable=False, **kwargs):
@@ -393,6 +394,7 @@ class EmployeeWorkInformationUpdateForm(ModelForm):
         widgets = {
             "date_joining": DateInput(attrs={"type": "date"}),
             "contract_end_date": DateInput(attrs={"type": "date"}),
+            "probation_end_date" : DateInput(attrs={"type": "date"}),
         }
 
     def as_p(self, *args, **kwargs):
@@ -497,6 +499,7 @@ excel_columns = [
     ("employee_work_info__basic_salary", trans("Basic Salary")),
     ("employee_work_info__salary_hour", trans("Salary Hour")),
     ("employee_work_info__contract_end_date", trans("Contract End Date")),
+    ("employee_work_info__probation_end_date" , trans("Probation End Date")),
     ("employee_work_info__company_id", trans("Company")),
     ("employee_bank_details__bank_name", trans("Bank Name")),
     ("employee_bank_details__branch", trans("Branch")),
@@ -541,6 +544,7 @@ class EmployeeExportExcelForm(forms.Form):
             "employee_work_info__basic_salary",
             "employee_work_info__salary_hour",
             "employee_work_info__contract_end_date",
+            "employee_work_info__probation_end_date"
             "employee_work_info__company_id",
         ],
     )
