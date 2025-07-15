@@ -90,7 +90,8 @@ class Employee(models.Model):
     state = models.CharField(max_length=100, null=True, blank=True)
     city = models.CharField(max_length=30, null=True, blank=True)
     zip = models.CharField(max_length=20, null=True, blank=True)
-    dob = models.DateField(null=True, blank=True)
+    # Make DOB as Mandatory @Bhathiya
+    dob = models.DateField(null=True, blank=False)
     gender = models.CharField(
         max_length=10, null=True, choices=choice_gender, default="male"
     )
@@ -114,6 +115,26 @@ class Employee(models.Model):
     objects = HorillaCompanyManager(
         related_company_field="employee_work_info__company_id"
     )
+
+    ## Custom implementations from @Bhathiya
+
+    blood_group = models.CharField(
+        max_length=3,
+        choices=[
+            ('A+', 'A+'),
+            ('A-', 'A-'),
+            ('B+', 'B+'),
+            ('B-', 'B-'),
+            ('AB+', 'AB+'),
+            ('AB-', 'AB-'),
+            ('O+', 'O+'),
+            ('O-', 'O-'),
+        ],
+        blank=True,
+        null=True
+    )
+
+
 
     def clean_fields(self, exclude=None):
         errors = {}
