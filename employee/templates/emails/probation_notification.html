@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Probation Ending Notification</title>
+    <style>
+        body {
+            font-family: "Segoe UI", sans-serif;
+            background-color: #f4f4f4;
+            padding: 20px;
+        }
+        .email-container {
+            background-color: #ffffff;
+            border-radius: 6px;
+            padding: 25px;
+            max-width: 600px;
+            margin: auto;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+        }
+        .header {
+            font-size: 18px;
+            font-weight: bold;
+            color: #2c3e50;
+            margin-bottom: 15px;
+        }
+        .info {
+            margin-bottom: 10px;
+        }
+        .highlight {
+            font-weight: bold;
+        }
+        .footer {
+            margin-top: 20px;
+            font-size: 12px;
+            color: #999;
+        }
+    </style>
+</head>
+<body>
+    <div class="email-container">
+        <div class="header">🔔 Employee Probation Period Notification</div>
+
+        <p>Dear HR Team,</p>
+
+        <div class="info">
+            This is to notify you that the probation period for the following employee is approaching its end:
+        </div>
+
+        <ul>
+            <li><span class="highlight">Employee Name:</span> {{employee.employee_id.get_full_name}}</li>
+            <li><span class="highlight">Probation End Date:</span> {{ probation_end_date }}</li>
+            <li><span class="highlight">Days Remaining:</span> {{ days_remaining }}</li>
+            {% if employee.employee_work_info.reporting_manager %}
+                <li><span class="highlight">Reporting Manager:</span> {{ employee.employee_work_info.reporting_manager.get_full_name }}</li>
+            {% endif %}
+            <li><span class="highlight">Email:</span> {{ employee.work_email }}</li>
+        </ul>
+
+        <p>Please take the necessary steps for confirmation or extension based on internal policy.</p>
+
+        <div class="footer">
+            This is an automated message from Horilla HRMS. Do not reply directly to this email.
+        </div>
+    </div>
+</body>
+</html>
