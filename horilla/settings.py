@@ -43,6 +43,9 @@ DEBUG = env("DEBUG")
 
 ALLOWED_HOSTS = env("ALLOWED_HOSTS")
 
+# Add Defalt HR Mail Address
+HR_EMAIL = "hr@wireapps.co.uk"
+DEFAULT_FROM_EMAIL = "tech@wireapps.co.uk"
 # Application definition
 
 INSTALLED_APPS = [
@@ -241,3 +244,5 @@ if not DEBUG:
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+
