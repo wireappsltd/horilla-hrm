@@ -12,10 +12,18 @@
 				<li class="oh-profile__card-info-item">
 						<span class="oh-profile__info-label mb-1">
 							<ion-icon name="calendar-outline"></ion-icon>
-							<span>{% trans "NIC or Passport" %}</span>
+							<span>{% trans "NIC" %}</span>
 						</span>
 						<span
-							class="oh-profile__info-value dateformat_changer">{{employee.nic_or_passport_id|default:_("0")}}</span>
+							class="oh-profile__info-value dateformat_changer">{{employee.nic|default:_("0")}}</span>
+					</li>
+					<li class="oh-profile__card-info-item">
+						<span class="oh-profile__info-label mb-1">
+							<ion-icon name="calendar-outline"></ion-icon>
+							<span>{% trans "Passport" %}</span>
+						</span>
+						<span
+							class="oh-profile__info-value dateformat_changer">{{employee.passport|default:_("0")}}</span>
 					</li>
 					<li class="oh-profile__card-info-item">
 						<span class="oh-profile__info-label mb-1">
