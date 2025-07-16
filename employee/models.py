@@ -683,7 +683,12 @@ class EmployeeWorkInformation(models.Model):
     mobile = models.CharField(
         max_length=254, blank=True, null=True, verbose_name=_("Work Phone")
     )
-
+    basic_salary = models.IntegerField(
+        null=True, blank=True, default=0, verbose_name=_("Basic Salary")
+    )
+    salary_hour = models.IntegerField(
+        null=True, blank=True, default=0, verbose_name=_("Salary Per Hour")
+    )
     date_joining = models.DateField(
         null=True, blank=True, verbose_name=_("Joining Date")
     )
@@ -697,12 +702,12 @@ class EmployeeWorkInformation(models.Model):
         verbose_name=_("Probation End Date"),
     )
 
-    basic_salary = models.IntegerField(
-        null=True, blank=True, default=0, verbose_name=_("Basic Salary")
+
+
+    probation_ended = models.BooleanField(
+        default=False,
     )
-    salary_hour = models.IntegerField(
-        null=True, blank=True, default=0, verbose_name=_("Salary Per Hour")
-    )
+
     additional_info = models.JSONField(null=True, blank=True)
     experience = models.FloatField(null=True, blank=True, default=0)
     history = HorillaAuditLog(
