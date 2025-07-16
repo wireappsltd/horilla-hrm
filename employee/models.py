@@ -82,13 +82,19 @@ class Employee(models.Model):
         upload_to="employee/profile", null=True, blank=True
     )
     # Add new field for NIC OR Passport ID @Bhathiya
-    nic_or_passport_id = models.CharField(
-        max_length=50, null=True, blank=False
+    nic = models.CharField(
+        max_length=50, null=True, blank=False,
+        verbose_name = "NIC"
+    )
+    passport = models.CharField(
+        max_length=50, null=True, blank=False,
+        verbose_name = "Passport Number"
     )
 
     email = models.EmailField(max_length=254, unique=True)
     phone = models.CharField(
         max_length=25,
+        verbose_name="Mobile Number"
     )
     address = models.TextField(max_length=200, blank=True, null=True)
     country = models.CharField(max_length=100, blank=True, null=True)
@@ -96,7 +102,7 @@ class Employee(models.Model):
     city = models.CharField(max_length=30, null=True, blank=True)
     zip = models.CharField(max_length=20, null=True, blank=True)
     # Make DOB as Mandatory @Bhathiya
-    dob = models.DateField(null=True, blank=False)
+    dob = models.DateField(null=True, blank=False , verbose_name="Date Of Birth")
     gender = models.CharField(
         max_length=10, null=True, choices=choice_gender, blank=False
     )
