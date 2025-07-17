@@ -29,14 +29,15 @@ SUBMENUS = [
         "redirect": reverse("document-request-view"),
         "accessibility": "employee.sidebar.document_accessibility",
     },
-    {
-        "menu": trans("Shift Requests"),
-        "redirect": reverse("shift-request-view"),
-    },
-    {
-        "menu": trans("Work Type Requests"),
-        "redirect": reverse("work-type-request-view"),
-    },
+    #Removed by request @Bhathiya
+    # {
+    #     "menu": trans("Shift Requests"),
+    #     "redirect": reverse("shift-request-view"),
+    # },
+    # {
+    #     "menu": trans("Work Type Requests"),
+    #     "redirect": reverse("work-type-request-view"),
+    # },
     {
         "menu": trans("Rotating Shift Assign"),
         "redirect": reverse("rotating-shift-assign"),
