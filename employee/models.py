@@ -37,9 +37,15 @@ from horilla.methods import get_horilla_model_class
 from horilla.models import HorillaModel, has_xss
 from horilla_audit.methods import get_diff
 from horilla_audit.models import HorillaAuditInfo, HorillaAuditLog
+from django.core.validators import RegexValidator
+from phonenumber_field.modelfields import PhoneNumberField
 
 # create your model
 
+nic_validator = RegexValidator(
+    regex=r'^(?:\d{9}[vVxX]|\d{12})$',
+    message="NIC must be 9 digits followed by V/X (old format) or exactly 12 digits (new format)"
+)
 
 def reporting_manager_validator(value):
     """
@@ -63,7 +69,7 @@ class Employee(models.Model):
         ("married", trans("Married")),
         ("divorced", trans("Divorced")),
     )
-    badge_id = models.CharField(max_length=50, null=True, blank=True)
+    badge_id = models.CharField(max_length=50, null=True, blank=True , verbose_name="Employee ID")
     employee_user_id = models.OneToOneField(
         User,
         on_delete=models.CASCADE,
@@ -83,23 +89,28 @@ class Employee(models.Model):
     )
     # Add new field for NIC OR Passport ID @Bhathiya
     nic = models.CharField(
-        max_length=50, null=True, blank=False,
-        verbose_name = "NIC"
+        max_length=12,
+        validators=[nic_validator],
+        null=True,
+        blank=False,
+        verbose_name="NIC"
     )
     passport = models.CharField(
-        max_length=50, null=True, blank=False,
+        max_length=50, null=True, blank=True,
         verbose_name = "Passport Number"
     )
 
     email = models.EmailField(max_length=254, unique=True)
-    phone = models.CharField(
-        max_length=25,
-        verbose_name="Mobile Number"
+    phone = PhoneNumberField(
+        region='LK',
+        verbose_name="Mobile Number",
+        blank=False,
+        null=True
     )
     address = models.TextField(max_length=200, blank=True, null=True)
     country = models.CharField(max_length=100, blank=True, null=True)
     state = models.CharField(max_length=100, null=True, blank=True)
-    city = models.CharField(max_length=30, null=True, blank=True)
+    city = models.CharField(max_length=100, null=True, blank=True)
     zip = models.CharField(max_length=20, null=True, blank=True)
     # Make DOB as Mandatory @Bhathiya
     dob = models.DateField(null=True, blank=False , verbose_name="Date Of Birth")
@@ -112,9 +123,9 @@ class Employee(models.Model):
         max_length=50, blank=True, null=True, choices=choice_marital, default="single"
     )
     children = models.IntegerField(blank=True, null=True)
-    emergency_contact = models.CharField(max_length=15, null=True, blank=True)
     emergency_contact_name = models.CharField(max_length=20, null=True, blank=True)
-    emergency_contact_relation = models.CharField(max_length=20, null=True, blank=True)
+    emergency_contact = models.CharField(max_length=15, null=True, blank=True)
+    emergency_contact_relation = models.CharField(max_length=20, null=True, blank=True , verbose_name="Relationship to Emergency Contact")
     is_active = models.BooleanField(default=True)
     additional_info = models.JSONField(null=True, blank=True)
     is_from_onboarding = models.BooleanField(
@@ -145,7 +156,11 @@ class Employee(models.Model):
         null=True
     )
 
-
+    def clean(self):
+        super().clean()
+        import re
+        if self.nic and not re.match(r'^(?:\d{9}[vVxX]|\d{12})$', self.nic):
+            raise ValidationError({'nic': "Invalid NIC format."})
 
     def clean_fields(self, exclude=None):
         errors = {}
@@ -775,11 +790,12 @@ class EmployeeBankDetails(HorillaModel):
         related_name="employee_bank_details",
         verbose_name=_("Employee"),
     )
-    bank_name = models.CharField(max_length=50)
+    bank_name = models.CharField(max_length=50 , verbose_name="Bank Name")
     account_number = models.CharField(
         max_length=50,
         null=True,
         blank=False,
+        verbose_name="Account Number"
     )
     branch = models.CharField(max_length=50, null=True)
     address = models.TextField(max_length=255, null=True)
