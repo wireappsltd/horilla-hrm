@@ -1048,6 +1048,27 @@ class ProfileEditFeature(HorillaModel):
     objects = models.Manager()
 
 
+#New classes for bank details @Bhathiya
+class Bank(models.Model):
+    code = models.CharField(max_length=10, unique=True)
+    name = models.CharField(max_length=255)
+
+    def __str__(self):
+        return f"{self.name} ({self.code})"
+
+class BankBranch(models.Model):
+    bank = models.ForeignKey(Bank, on_delete=models.CASCADE, related_name='branches')
+    branch_code = models.CharField(max_length=10)
+    branch_name = models.CharField(max_length=255)
+    address = models.TextField(blank=True, null=True)
+
+    class Meta:
+        unique_together = ('bank', 'branch_code')
+
+    def __str__(self):
+        return f"{self.bank.name} - {self.branch_name} ({self.branch_code})"
+
+
 from accessibility.accessibility import ACCESSBILITY_FEATURE
 
 ACCESSBILITY_FEATURE.append(("gender_chart", "Can view Gender Chart"))
