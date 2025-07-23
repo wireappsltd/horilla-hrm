@@ -1,7 +1,9 @@
 name: Horilla EC2 Deploy
 
 on:
-  workflow_dispatch:     # Manual trigger
+  push:
+    branches:
+      - cicd 
 
 
 jobs:
