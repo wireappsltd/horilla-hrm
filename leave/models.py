@@ -26,7 +26,7 @@ from base.models import (
 )
 from employee.models import Employee, EmployeeWorkInformation
 from horilla import horilla_middlewares
-from horilla.models import HorillaModel
+from horilla.models import HorillaModel, upload_path
 from horilla_audit.methods import get_diff
 from horilla_audit.models import HorillaAuditInfo, HorillaAuditLog
 from leave.methods import (
@@ -158,7 +158,7 @@ WEEK_DAYS = [
 
 class LeaveType(HorillaModel):
     icon = models.ImageField(
-        null=True, blank=True, upload_to="leave/leave_icon", verbose_name=_("Icon")
+        null=True, blank=True, upload_to=upload_path, verbose_name=_("Icon")
     )
     name = models.CharField(max_length=30, null=False, verbose_name=_("Name"))
     color = models.CharField(null=True, max_length=30, verbose_name=_("Color"))
@@ -652,7 +652,7 @@ class LeaveRequest(HorillaModel):
     attachment = models.FileField(
         null=True,
         blank=True,
-        upload_to="leave/leave_attachment",
+        upload_to=upload_path,
         verbose_name=_("Attachment"),
     )
     status = models.CharField(
@@ -960,9 +960,7 @@ class LeaveRequest(HorillaModel):
         available_leave = AvailableLeave.objects.get(
             employee_id=self.employee_id, leave_type_id=leave_type
         )
-        total_leave_days = (
-            available_leave.available_days + available_leave.carryforward_days
-        )
+
         requested_days = calculate_requested_days(
             self.start_date,
             self.end_date,
@@ -983,19 +981,19 @@ class LeaveRequest(HorillaModel):
             unique_dates.remove(f"{today.strftime('%m')}-{today.year}")
 
         forcated_days = available_leave.forcasted_leaves(self.start_date)
-        total_leave_days = (
-            available_leave.leave_type_id.carryforward_max
-            if available_leave.leave_type_id.carryforward_type
-            in ["carryforward", "carryforward expire"]
-            and available_leave.leave_type_id.carryforward_max < total_leave_days
-            else total_leave_days
-        )
-        if (
-            available_leave.leave_type_id.carryforward_type == "no carryforward"
-            and available_leave.carryforward_days
-        ):
-            total_leave_days = total_leave_days - available_leave.carryforward_days
-        total_leave_days += forcated_days
+
+        available_days = available_leave.available_days or 0
+        carryforward_days = available_leave.carryforward_days or 0
+        carryforward_max = available_leave.leave_type_id.carryforward_max or 0
+        carryforward_type = available_leave.leave_type_id.carryforward_type
+
+        if carryforward_type in ["carryforward", "carryforward expire"]:
+            carryforward_days = min(carryforward_days, carryforward_max)
+        elif carryforward_type == "no carryforward":
+            carryforward_days = 0
+
+        total_leave_days = available_days + carryforward_days + forcated_days
+
         if not effective_requested_days <= total_leave_days:
             raise ValidationError(
                 _("Does not have sufficient leave balance for the requested dates.")
@@ -1195,7 +1193,7 @@ class LeaveRequest(HorillaModel):
 
 
 class LeaverequestFile(models.Model):
-    file = models.FileField(upload_to="leave/request_files")
+    file = models.FileField(upload_to=upload_path)
 
 
 class LeaverequestComment(HorillaModel):
@@ -1227,7 +1225,7 @@ class LeaveAllocationRequest(HorillaModel):
     attachment = models.FileField(
         null=True,
         blank=True,
-        upload_to="leave/leave_attachment",
+        upload_to=upload_path,
         verbose_name=_("Attachment"),
     )
     status = models.CharField(
