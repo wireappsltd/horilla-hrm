@@ -83,7 +83,7 @@ class ModelForm(forms.ModelForm):
         now = datetime.now()
 
         default_input_class = "oh-input w-100"
-        select_class = "oh-select oh-select-2 select2-hidden-accessible"
+        select_class = "oh-select oh-select-2"
         checkbox_class = "oh-switch__checkbox"
 
         for field_name, field in self.fields.items():
@@ -107,7 +107,7 @@ class ModelForm(forms.ModelForm):
 
             # Time field
             elif isinstance(widget, forms.TimeInput):
-                field.initial = now
+                field.initial = now.strftime("%H:%M")
                 widget.input_type = "time"
                 widget.format = "%H:%M"
                 field.input_formats = ["%H:%M"]
