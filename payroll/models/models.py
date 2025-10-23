@@ -133,10 +133,17 @@ class Contract(HorillaModel):
         ("monthly", _("Monthly")),
         ("semi_monthly", _("Semi-Monthly")),
     )
+    # ADDED NEW WAGE TYPE FOR 30 DAYS
     WAGE_CHOICES = [
         ("daily", _("Daily")),
         ("monthly", _("Monthly")),
+        ("30days", _("30-Days")),
     ]
+
+    # CONTRACT_TYPE_CHOICES = (
+    #     ("sri_lanka", _("Sri Lankan Contract")),
+    #     ("uk", _("UK Contract")),
+    # )
 
     if apps.is_installed("attendance"):
         WAGE_CHOICES.append(("hourly", _("Hourly")))
@@ -164,6 +171,11 @@ class Contract(HorillaModel):
         related_name="contract_set",
         verbose_name=_("Employee"),
     )
+    # contract_type = models.CharField(
+    #     choices=CONTRACT_TYPE_CHOICES,
+    #     default="sri_lanka",
+    #     verbose_name=_("Contract Type"),
+    # )
     contract_start_date = models.DateField(verbose_name=_("Start Date"))
     contract_end_date = models.DateField(
         null=True, blank=True, verbose_name=_("End Date")
@@ -210,7 +222,7 @@ class Contract(HorillaModel):
         null=True,
         blank=True,
         related_name="contracts",
-        verbose_name=_("Job Position"),
+        verbose_name=_("Designation"),
     )
     job_role = models.ForeignKey(
         JobRole,
@@ -721,6 +733,14 @@ class Allowance(HorillaModel):
         ("children", _("Children")),
     ]
 
+    ALLOWANCE_CHOICES = (
+        ("accommodation", _("Accommodation Allowance")),
+        ("transport", _("Transport Allowance")),
+        ("internet", _("Internet Allowance")),
+        ("vehicle", _("Vehicle Allowance")),
+        ("fuel", _("Fuel Allowance")),
+    )
+
     if apps.is_installed("attendance"):
         attendance_choices = [
             ("overtime", _("Overtime")),
@@ -736,6 +756,8 @@ class Allowance(HorillaModel):
     title = models.CharField(
         max_length=255, null=False, blank=False, help_text=_("Title of the allowance")
     )
+    allowance_type = models.CharField(choices=ALLOWANCE_CHOICES, max_length=255 , default="accommodation" , verbose_name=_("Allowance Type"))
+
     one_time_date = models.DateField(
         null=True,
         blank=True,
@@ -1362,6 +1384,9 @@ class Payslip(HorillaModel):
     gross_pay = models.FloatField(null=True, default=0)
     deduction = models.FloatField(null=True, default=0)
     net_pay = models.FloatField(null=True, default=0)
+    employee_epf_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    employer_epf_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    employer_etf_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     status = models.CharField(
         max_length=20, null=True, default="draft", choices=status_choices
     )
@@ -1584,6 +1609,11 @@ class Reimbursement(HorillaModel):
         ("bonus_encashment", _("Bonus Point Encashment")),
     ]
 
+    holiday_types = [
+        ("poya_holiday" , _("Poya Holiday")),
+        ("mercantile_holiday" , _("Mercantile Holiday"))
+    ]
+
     if apps.is_installed("leave"):
         reimbursement_types.append(("leave_encashment", _("Leave Encashment")))
 
@@ -1600,10 +1630,12 @@ class Reimbursement(HorillaModel):
         Employee, on_delete=models.PROTECT, verbose_name="Employee"
     )
     allowance_on = models.DateField()
-    attachment = models.FileField(upload_to=upload_path, null=True)
+    attachment = models.FileField(upload_to="payroll/reimbursements", null=True , blank=True)
     other_attachments = models.ManyToManyField(
         ReimbursementMultipleAttachment, blank=True, editable=False
     )
+
+
     if apps.is_installed("leave"):
         leave_type_id = models.ForeignKey(
             "leave.LeaveType",
@@ -1640,7 +1672,7 @@ class Reimbursement(HorillaModel):
         related_name="approved_by",
         editable=False,
     )
-    description = models.TextField(null=True)
+    description = models.TextField(null=True, max_length=255 , blank=True)
     allowance_id = models.ForeignKey(
         Allowance, on_delete=models.SET_NULL, null=True, editable=False
     )
@@ -1661,6 +1693,13 @@ class Reimbursement(HorillaModel):
             if EncashmentGeneralSettings.objects.first()
             else 1
         )
+        contract = Contract.objects.filter(employee_id=self.employee_id).order_by('-contract_start_date').first()
+        daily_wage = contract.wage / 30 if contract and contract.wage else 0
+        if self.attendance_id:
+            if self.attendance_id.is_poya_holiday:
+                self.amount = daily_wage * 1.5
+            elif self.attendance_id.is_mercantile_holday:
+                self.amount = daily_wage * 2
 
         # Setting the created use if the used dont have the permission
         has_perm = request.user.has_perm("payroll.change_reimbursement")
@@ -1879,7 +1918,7 @@ class PayslipAutoGenerate(models.Model):
     generate_day = models.CharField(
         max_length=30,
         choices=DAYS,
-        default=("1"),
+        default=("25"),
         verbose_name="Payslip Generate Day",
         help_text="On this day of every month,Payslip will auto generate",
     )

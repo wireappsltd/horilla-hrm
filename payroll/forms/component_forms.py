@@ -374,6 +374,23 @@ class PayslipForm(ModelForm):
             self.initial["start_date"] = datetime.date.today().replace(day=1)
             self.initial["end_date"] = datetime.date.today()
 
+    def clean(self):
+        cleaned_data = super().clean()
+        start_date = cleaned_data.get("start_date")
+        end_date = cleaned_data.get("end_date")
+
+        if start_date and end_date:
+            delta = (end_date - start_date).days + 1
+            print("DEBUG: Date difference =", delta)
+
+
+            if delta != 30:
+                raise forms.ValidationError(
+                    f"The payslip period must be exactly 30 days — currently {delta} days."
+                )
+
+        return cleaned_data
+
     class Meta:
         """
         Meta class for additional options
@@ -449,6 +466,15 @@ class GeneratePayslipForm(HorillaForm):
             raise forms.ValidationError(
                 {"end_date": "The end date cannot be in the future."}
             )
+
+        if start_date and end_date:
+            delta = (end_date - start_date).days + 1
+            print("DEBUG: Date difference =", delta)
+            if delta != 30:
+                raise forms.ValidationError(
+                    f"The payslip period must be exactly 30 days — currently {delta} days."
+                )
+
         return cleaned_data
 
     def __init__(self, *args, **kwargs):

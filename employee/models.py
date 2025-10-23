@@ -63,7 +63,7 @@ class Employee(models.Model):
         ("married", trans("Married")),
         ("divorced", trans("Divorced")),
     )
-    badge_id = models.CharField(max_length=50, null=True, blank=True)
+    badge_id = models.CharField(max_length=50, null=True, blank=True )
     employee_user_id = models.OneToOneField(
         User,
         on_delete=models.CASCADE,
@@ -73,24 +73,46 @@ class Employee(models.Model):
         verbose_name=_("User"),
     )
     employee_first_name = models.CharField(
-        max_length=200, null=False, verbose_name=_("First Name")
+        max_length=200, null=False,blank=False , verbose_name=_("First Name")
     )
     employee_last_name = models.CharField(
-        max_length=200, null=True, blank=True, verbose_name=_("Last Name")
+        max_length=200, null=True, blank=False, verbose_name=_("Last Name")
     )
     employee_profile = models.ImageField(upload_to=upload_path, null=True, blank=True)
     email = models.EmailField(max_length=254, unique=True)
     phone = models.CharField(
         max_length=25,
+        default=1,
+        verbose_name=_("Mobile Number"),
+    )
+    nic = models.CharField(verbose_name=_("NIC"),max_length=12, null=True, blank=False)
+    passport = models.CharField(
+        max_length=50, null=True, blank=True,
+        verbose_name = "Passport Number"
     )
     address = models.TextField(max_length=200, blank=True, null=True)
     country = models.CharField(max_length=100, blank=True, null=True)
     state = models.CharField(max_length=100, null=True, blank=True)
     city = models.CharField(max_length=30, null=True, blank=True)
     zip = models.CharField(max_length=20, null=True, blank=True)
-    dob = models.DateField(null=True, blank=True)
+    dob = models.DateField(null=True, blank=True , verbose_name="Date Of Birth")
     gender = models.CharField(
         max_length=10, null=True, choices=choice_gender, default="male"
+    )
+    blood_group = models.CharField(
+        max_length=3,
+        choices=[
+            ('A+', 'A+'),
+            ('A-', 'A-'),
+            ('B+', 'B+'),
+            ('B-', 'B-'),
+            ('AB+', 'AB+'),
+            ('AB-', 'AB-'),
+            ('O+', 'O+'),
+            ('O-', 'O-'),
+        ],
+        blank=True,
+        null=True
     )
     qualification = models.CharField(max_length=50, blank=True, null=True)
     experience = models.IntegerField(null=True, blank=True)
@@ -100,7 +122,7 @@ class Employee(models.Model):
     children = models.IntegerField(blank=True, null=True)
     emergency_contact = models.CharField(max_length=15, null=True, blank=True)
     emergency_contact_name = models.CharField(max_length=20, null=True, blank=True)
-    emergency_contact_relation = models.CharField(max_length=20, null=True, blank=True)
+    emergency_contact_relation = models.CharField(max_length=20, null=True, blank=True ,  verbose_name="Relationship to Emergency Contact")
     is_active = models.BooleanField(default=True)
     additional_info = models.JSONField(null=True, blank=True)
     is_from_onboarding = models.BooleanField(
@@ -112,6 +134,12 @@ class Employee(models.Model):
     objects = HorillaCompanyManager(
         related_company_field="employee_work_info__company_id"
     )
+
+    def clean(self):
+        super().clean()
+        import re
+        if self.nic and not re.match(r'^(?:\d{9}[vVxX]|\d{12})$', self.nic):
+            raise ValidationError({'nic': "Invalid NIC format."})
 
     def clean_fields(self, exclude=None):
         errors = {}
@@ -575,6 +603,17 @@ class EmployeeWorkInformation(models.Model):
     """
     EmployeeWorkInformation model
     """
+    CURRENCY_CHOICES = [
+        ('LKR', 'LKR - Sri Lankan Rupee'),
+        ('USD', 'USD - US Dollar'),
+        ('EUR', 'EUR - Euro'),
+        ('INR', 'INR - Indian Rupee'),
+        ('GBP', 'GBP - British Pound'),
+        ('AUD', 'AUD - Australian Dollar'),
+        ('CAD', 'CAD - Canadian Dollar'),
+        ('JPY', 'JPY - Japanese Yen'),
+        ('CNY', 'CNY - Chinese Yuan'),
+    ]
 
     employee_id = models.OneToOneField(
         Employee,
@@ -661,14 +700,23 @@ class EmployeeWorkInformation(models.Model):
     contract_end_date = models.DateField(
         blank=True, null=True, verbose_name=_("Contract End Date")
     )
+    probation_end_date = models.DateField(
+        blank=True,
+        null=True,
+        verbose_name=_("Probation End Date"),
+    )
     basic_salary = models.IntegerField(
         null=True, blank=True, default=0, verbose_name=_("Basic Salary")
     )
     salary_hour = models.IntegerField(
         null=True, blank=True, default=0, verbose_name=_("Salary Per Hour")
     )
+    salary_currency = models.CharField(max_length=3,choices=CURRENCY_CHOICES,null=True,blank=True, verbose_name=_("Salary Currency") , default='LKR')
     additional_info = models.JSONField(null=True, blank=True)
     experience = models.FloatField(null=True, blank=True, default=0)
+    probation_ended = models.BooleanField(
+        default=False,
+    )
     history = HorillaAuditLog(
         related_name="history_set",
         bases=[
@@ -728,22 +776,23 @@ class EmployeeBankDetails(HorillaModel):
         related_name="employee_bank_details",
         verbose_name=_("Employee"),
     )
-    bank_name = models.CharField(max_length=50)
+    bank_name = models.CharField(max_length=50 ,null=True , blank=False , default="None",  verbose_name="Bank Name")
     account_number = models.CharField(
         max_length=50,
         null=True,
         blank=False,
+        verbose_name="Account Number",
     )
-    branch = models.CharField(max_length=50, null=True)
+    branch = models.CharField(max_length=50, null=True ,blank=False , default="None")
     address = models.TextField(max_length=255, null=True)
     country = models.CharField(max_length=50, blank=True, null=True)
     state = models.CharField(max_length=50, blank=True)
     city = models.CharField(max_length=50, blank=True)
     any_other_code1 = models.CharField(
-        max_length=50, verbose_name="Bank Code #1", null=True
+        max_length=50, verbose_name="Bank Code", null=True
     )
     any_other_code2 = models.CharField(
-        max_length=50, null=True, blank=True, verbose_name="Bank Code #2"
+        max_length=50, null=True, blank=True, verbose_name="Branch Code"
     )
     additional_info = models.JSONField(null=True, blank=True)
     objects = HorillaCompanyManager(

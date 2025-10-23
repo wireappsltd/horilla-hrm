@@ -268,6 +268,18 @@ class EmployeeForm(ModelForm):
                 error_message = _("An Employee with this Email already exists")
 
             raise forms.ValidationError({"email": error_message})
+        contact_name = self.cleaned_data["emergency_contact_name"]
+        contact_number = self.cleaned_data["emergency_contact"]
+        contact_relationship = self.cleaned_data["emergency_contact_relation"]
+
+        if contact_name:
+            if not contact_number:
+                self.add_error('emergency_contact',
+                               "This field is required when Emergency Contact Name is filled.")
+            if not contact_relationship:
+                self.add_error('emergency_contact_relation',
+                               "This field is required when Emergency Contact Name is filled.")
+
 
     def get_next_badge_id(self):
         """
@@ -353,6 +365,12 @@ class EmployeeWorkInformationForm(ModelForm):
         fields = "__all__"
         exclude = ("employee_id", "additional_info", "experience")
 
+        widgets = {
+            "date_joining": DateInput(attrs={"type": "date"}),
+            "contract_end_date": DateInput(attrs={"type": "date"}),
+            "probation_end_date": DateInput(attrs={"type": "date"}),
+        }
+
     def __init__(self, *args, disable=False, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["email"].widget.attrs["autocomplete"] = "email"
@@ -401,7 +419,7 @@ class EmployeeWorkInformationForm(ModelForm):
                             initial=field.initial,
                             widget=forms.Select(
                                 attrs={
-                                    "class": "oh-select oh-select-2",
+                                    "class":"oh-select oh-select-2 color-red select2-hidden-accessible create-blue",
                                     "onchange": f'onDynamicCreate(this.value,"{urls.get(field.label)}");',
                                 }
                             ),
@@ -445,7 +463,7 @@ class EmployeeBankDetailsForm(ModelForm):
     Form for EmployeeBankDetails model
     """
 
-    address = forms.CharField(widget=forms.Textarea(attrs={"rows": 2, "cols": 40}))
+    # address = forms.CharField(widget=forms.Textarea(attrs={"rows": 2, "cols": 40}))
 
     class Meta:
         """
@@ -454,23 +472,29 @@ class EmployeeBankDetailsForm(ModelForm):
 
         model = EmployeeBankDetails
         fields = (
-            "bank_name",
             "account_number",
+            "bank_name",
             "branch",
             "any_other_code1",
-            "address",
-            "country",
-            "state",
-            "city",
             "any_other_code2",
         )
-        exclude = ["employee_id", "is_active", "additional_info"]
+        exclude = ["employee_id", "is_active", "additional_info"  , "city" , "state" , "country" , "address"  ]
+        # widgets = {
+        #     "bank_name": forms.HiddenInput(),
+        #     "branch": forms.HiddenInput(),
+        #     "any_other_code1": forms.HiddenInput(),
+        #     "any_other_code2": forms.HiddenInput(),
+        # }
+        # bank_name = forms.CharField(required=False)
+        # branch = forms.CharField(required=False)
+        # any_other_code1 = forms.CharField(required=False)
+        # any_other_code2 = forms.CharField(required=False)
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.fields["address"].widget.attrs["autocomplete"] = "address"
-        for visible in self.visible_fields():
-            visible.field.widget.attrs["class"] = "oh-input w-100"
+    # def __init__(self, *args, **kwargs):
+    #     super().__init__(*args, **kwargs)
+    #     self.fields["address"].widget.attrs["autocomplete"] = "address"
+    #     for visible in self.visible_fields():
+    #         visible.field.widget.attrs["class"] = "oh-input w-100"
 
     def as_p(self, *args, **kwargs):
         context = {"form": self}
@@ -489,7 +513,17 @@ class EmployeeBankDetailsUpdateForm(ModelForm):
 
         model = EmployeeBankDetails
         fields = "__all__"
-        exclude = ["employee_id", "is_active", "additional_info"]
+        exclude = ["employee_id", "is_active", "additional_info"  , "city" , "state" , "country" , "address" ]
+        # widgets = {
+        #     "bank_name": forms.HiddenInput(),
+        #     "branch": forms.HiddenInput(),
+        #     "any_other_code1": forms.HiddenInput(),
+        #     "any_other_code2": forms.HiddenInput(),
+        # }
+        # bank_name = forms.CharField(required=False)
+        # branch = forms.CharField(required=False)
+        # any_other_code1 = forms.CharField(required=False)
+        # any_other_code2 = forms.CharField(required=False)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

@@ -5,9 +5,11 @@ from urllib.parse import parse_qs
 from django.apps import apps
 from django.contrib import messages
 from django.contrib.auth.models import User
+from django.core.mail import send_mail
 from django.core.paginator import Paginator
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
+from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 
@@ -47,6 +49,7 @@ from offboarding.forms import (
     ResignationLetterForm,
     StageSelectForm,
     TaskForm,
+    ResignationReasonForm,
 )
 from offboarding.models import (
     EmployeeTask,
@@ -58,6 +61,8 @@ from offboarding.models import (
     OffboardingStageMultipleFile,
     OffboardingTask,
     ResignationLetter,
+    ExitReason
+
 )
 
 
@@ -67,9 +72,9 @@ def any_manager(employee: Employee):
     employee: Employee model instance
     """
     return (
-        Offboarding.objects.filter(managers=employee).exists()
-        | OffboardingStage.objects.filter(managers=employee).exists()
-        | OffboardingTask.objects.filter(managers=employee).exists()
+            Offboarding.objects.filter(managers=employee).exists()
+            | OffboardingStage.objects.filter(managers=employee).exists()
+            | OffboardingTask.objects.filter(managers=employee).exists()
     )
 
 
@@ -91,8 +96,8 @@ def pipeline_grouper(filters={}, offboardings=[]):
             ).qs.order_by("stage_id__id")
 
             if request and not (
-                request.user.has_perm("offboarding.view_offboarding")
-                or any_manager(request.user.employee_get)
+                    request.user.has_perm("offboarding.view_offboarding")
+                    or any_manager(request.user.employee_get)
             ):
                 stage_employees = stage_employees.filter(
                     employee_id=request.user.employee_get
@@ -815,7 +820,7 @@ def search_resignation_request(request):
     pagination = (
         False
         if request.META.get("HTTP_REFERER")
-        and request.META.get("HTTP_REFERER").endswith("employee-profile/")
+           and request.META.get("HTTP_REFERER").endswith("employee-profile/")
         else True
     )
     return render(
@@ -842,7 +847,7 @@ def delete_resignation_request(request):
     ResignationLetter.objects.filter(id__in=ids).delete()
     messages.success(request, _("Resignation letter deleted"))
     if request.META.get("HTTP_REFERER") and request.META.get("HTTP_REFERER").endswith(
-        "employee-profile/"
+            "employee-profile/"
     ):
         return redirect("/employee/employee-profile/")
     else:
@@ -864,10 +869,70 @@ def create_resignation_request(request):
     if request.method == "POST":
         form = ResignationLetterForm(request.POST, instance=instance)
         if form.is_valid():
+            hr_users = User.objects.filter(groups__name="HR")
+            print(hr_users)
+            if "employee_id" in form.cleaned_data:
+                employee = form.cleaned_data["employee_id"]
+            else:
+                employee = request.user.employee_get
+
+            manager = employee.get_reporting_manager()
+            if manager:
+                hr_users = hr_users | User.objects.filter(
+                    id=manager.employee_user_id.id
+                )
+            description = form.cleaned_data["description"]
+            planned_to_leave_on = form.cleaned_data["planned_to_leave_on"]
+            exit_reason = form.cleaned_data["exit_reason"]
+
+            print(employee, description)
+            for user in hr_users:
+                notify.send(
+                    sender=employee,
+                    recipient=user,
+                    verb=f"New resignation letter from {employee}",
+                    description=description,
+                    icon="envelope-open-text",
+                )
+
+                if user.email:
+                    send_mail(
+                        subject=f"New resignation letter from {employee}",
+                        message=description,
+                        from_email='tech@wireapps.co.uk',
+                        recipient_list=[user.email],
+                        fail_silently=False,
+                        html_message=render_to_string("emails/resignation_request.html", {
+                            "employee": employee,
+                            "description": description,
+                            "planned_to_leave_on": planned_to_leave_on,
+                            "exit_reason": exit_reason,
+                        })
+                    )
+
             form.save()
+
             messages.success(request, _("Resignation letter saved"))
             return HttpResponse("<script>window.location.reload()</script>")
     return render(request, "offboarding/resignation/form.html", {"form": form})
+
+@login_required
+def create_exit_reason(request):
+    instance_id = eval_validate(str(request.GET.get("instance_id")))
+    instance = None
+    if instance_id:
+        instance = ExitReason.objects.get(id=instance_id)
+
+    form = ResignationReasonForm(instance=instance)
+
+    if request.method == "POST":
+        form = ResignationReasonForm(request.POST, request.FILES, instance=instance)
+        if form.is_valid():
+            form.save()
+            messages.success(request, _("Exit reason saved successfully"))
+            return HttpResponse("<script>window.location.reload()</script>")
+
+    return render(request, "offboarding/resignation/exit_reason_form.html", {"form": form})
 
 
 @login_required
@@ -954,7 +1019,7 @@ def enable_resignation_request(request):
         else OffboardingGeneralSetting()
     )
     resignation_request_feature.resignation_request = (
-        "resignation_request" in request.GET.keys()
+            "resignation_request" in request.GET.keys()
     )
     resignation_request_feature.save()
     message_text = (
@@ -1088,7 +1153,6 @@ def dashboard_task_table(request):
 
 
 if apps.is_installed("asset"):
-
     @login_required
     @any_manager_can_enter(["offboarding.view_offboarding"])
     def dashboard_asset_table(request):
@@ -1111,7 +1175,6 @@ if apps.is_installed("asset"):
             "offboarding/dashboard/asset_returned_table.html",
             {"assets": assets},
         )
-
 
 if apps.is_installed("pms"):
 
@@ -1228,3 +1291,18 @@ def department_job_postion_chart(request):
         )
 
     return JsonResponse({"labels": labels, "datasets": datasets})
+
+@login_required
+@any_manager_can_enter("offboarding.view_offboarding")
+def view_resignation_reason(request):
+    """
+    This method is used to view the resignation reasons
+    """
+    reasons = ExitReason.objects.all().order_by("id")
+    return render(
+        request,
+        "offboarding/resignation/reason_view.html",
+        {
+            "reasons": paginator_qry(reasons, request.GET.get("page")),
+        },
+    )

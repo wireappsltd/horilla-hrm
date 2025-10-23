@@ -28,7 +28,7 @@ from attendance.methods.utils import (
     validate_time_in_minutes,
 )
 from base.horilla_company_manager import HorillaCompanyManager
-from base.methods import is_company_leave, is_holiday
+from base.methods import is_company_leave, is_holiday, is_mercantile_or_poya_holiday
 from base.models import Company, EmployeeShift, EmployeeShiftDay, WorkType
 from employee.models import Employee
 from horilla.methods import get_horilla_model_class
@@ -217,6 +217,8 @@ class Attendance(HorillaModel):
         max_length=18, null=True, choices=status, default="update_request"
     )
     is_holiday = models.BooleanField(default=False)
+    is_poya_holiday = models.BooleanField(default=False)
+    is_mercantile_holday = models.BooleanField(default=False)
     requested_data = models.JSONField(null=True, editable=False)
     objects = HorillaCompanyManager(
         related_company_field="employee_id__employee_work_info__company_id"
@@ -340,6 +342,15 @@ class Attendance(HorillaModel):
         if is_holiday(self.attendance_date) or is_company_leave(self.attendance_date):
             self.minimum_hour = "00:00"
             self.is_holiday = True
+            holiday_data  = is_holiday(self.attendance_date)
+
+    def check_mercantile_or_poya_holiday(self):
+        holiday_data = is_mercantile_or_poya_holiday(self.attendance_date)
+        if holiday_data:
+            if holiday_data.get("is_mercantile_holday"):
+                self.is_mercantile_holday = True
+            if holiday_data.get("is_poya_holiday"):
+                self.is_poya_holiday = True
 
     def update_attendance_overtime(self):
         """
@@ -383,7 +394,7 @@ class Attendance(HorillaModel):
         )
         prev_attendance_approved = False
         self.adjust_minimum_hour()
-
+        self.check_mercantile_or_poya_holiday()
         # Handle overtime cutoff and auto-approval
         self.handle_overtime_conditions()
 

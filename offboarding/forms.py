@@ -23,7 +23,7 @@ from offboarding.models import (
     OffboardingStage,
     OffboardingStageMultipleFile,
     OffboardingTask,
-    ResignationLetter,
+    ResignationLetter, ExitReason,
 )
 
 
@@ -238,7 +238,7 @@ class ResignationLetterForm(ModelForm):
     class Meta:
         model = ResignationLetter
         fields = "__all__"
-        exclude = ["is_active"]
+        exclude = ["is_active" , "title"]
 
     def as_p(self):
         """
@@ -260,6 +260,9 @@ class ResignationLetterForm(ModelForm):
         request = getattr(horilla_middlewares._thread_locals, "request", None)
 
         if request and not request.user.has_perm("offboarding.add_offboardingemployee"):
+            self.fields["exit_reason"].queryset = ExitReason.objects.filter(
+                reason_type="employee"
+            )
             exclude = exclude + [
                 "employee_id",
                 "status",
@@ -300,3 +303,24 @@ class ResignationLetterForm(ModelForm):
                     icon="information",
                 )
         return instance
+
+
+class ResignationReasonForm(ModelForm):
+    """
+    Resignation Reason model form
+    """
+
+    verbose_name = "Resignation Reason"
+
+    class Meta:
+        model = ExitReason
+        fields = "__all__"
+        exclude = ["is_active"]
+
+    def as_p(self):
+        """
+        Render the form fields as HTML table rows with Bootstrap styling.
+        """
+        context = {"form": self}
+        table_html = render_to_string("common_form.html", context)
+        return table_html

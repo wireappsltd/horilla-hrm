@@ -23,6 +23,8 @@ from base.methods import (
 from base.models import CompanyLeaves, Holidays
 from horilla.methods import get_horilla_model_class
 from payroll.models.models import Contract, Deduction, Payslip
+import logging
+logger = logging.getLogger(__name__)
 
 
 def get_total_days(start_date, end_date):
@@ -493,6 +495,121 @@ def monthly_computation(employee, wage, start_date, end_date, *args, **kwargs):
     }
 
 
+def compute_salary_on_30_day_wage(employee, wage, start_date, end_date, *args, **kwargs):
+
+    # Salary per Day
+    salary_per_day = wage / 30
+
+
+    # this returns the days without weekend and holidays
+    working_day_data = get_working_days(start_date, end_date)
+    total_working_days = working_day_data["total_working_days"]
+    company_working_days = working_day_data["working_days_on"]
+    company_leave_dates = working_day_data["company_leave_dates"]
+    # get all the holiday dates between the range
+    holiday_dates = get_holiday_dates(start_date, end_date)
+    # get all the leave data between the range
+    leave_data = get_leaves(employee, start_date, end_date)
+    unpaid_leaves = leave_data['unpaid_leaves']
+    paid_leaves = leave_data['paid_leave']
+
+
+    #get the contract of the employee
+    contract = employee.contract_set.filter(contract_status="active").first()
+    date_range = get_date_range(start_date, end_date)
+
+    # create list to store holiday  allowances and filtered days
+    holiday_allowances = []
+    filtered_days = []
+
+    # get the attendance data between the range
+    attendance_data = get_attendance(employee, start_date, end_date)
+    attendance_days = list(attendance_data['attendances_on_period'])
+    for attendance_day in attendance_days:
+        if attendance_day.is_mercantile_holday:
+            logger.info("Attendance marked on Mercantile Holiday: %s", attendance_day.attendance_date)
+            holiday_allowances.append({
+                "title": "Mercantile Holiday Allowance",
+                "code": "mercantile_holiday",
+                "amount": salary_per_day * 2,
+                "is_taxable": False,
+            })
+            filtered_days.append(attendance_day)
+        elif attendance_day.is_poya_holiday:
+            logger.info("Attendance marked on Poya Holiday: %s", attendance_day.attendance_date)
+            holiday_allowances.append({
+                "title": "Poya Holiday Allowance",
+                "code": "poya_holiday",
+                "amount": salary_per_day * 1.5,
+                "is_taxable": False,
+            })
+            filtered_days.append(attendance_day)
+        elif attendance_day.is_holiday:
+            logger.info("Attendance marked on Regular Holiday: %s", attendance_day.attendance_date)
+        else:
+            filtered_days.append(attendance_day)
+    attended_dates = {att.attendance_date for att in attendance_days}
+
+    # add paid holidays as attended days
+    for hday in holiday_dates:
+        if hday not in attended_dates:
+            filtered_days.append(hday)
+
+
+    # remove company leave dates from holiday dates to avoid double counting
+    company_leave_dates = list(set(company_leave_dates) - set(holiday_dates))
+
+    number_of_attendance_days_with_holidays = len(filtered_days)
+
+    # calculate the paid days
+    paid_days = number_of_attendance_days_with_holidays + len(company_leave_dates) + paid_leaves
+
+    # calculate basic pay based on the working days and paid leaves
+    basic_pay = wage
+    loss_of_pay_dates = 30 - paid_days
+    loss_of_pay = salary_per_day * loss_of_pay_dates
+
+
+    employee_epf_amount = (wage - loss_of_pay) / 100 * 8
+    employer_epf_amount = (wage - loss_of_pay) / 100 * 12
+    employer_etf_amount = (wage - loss_of_pay) / 100 * 3
+
+    logger.info(f"""
+    --- Debug Info ---
+    Basic Pay: {basic_pay}
+    Total Working Days: {total_working_days}
+    Paid Days: {paid_days}
+    company_working_days: {len(company_working_days)}
+    company_leave_dates: {len(company_leave_dates)}
+    Marked attendance days: {number_of_attendance_days_with_holidays}
+    Wage: {wage}
+    Leave Data: {leave_data}
+    Attendance Data: {attendance_data} 
+    Number of Attendance Days: {number_of_attendance_days_with_holidays}
+    Holiday Dates: {holiday_dates}
+    Attendance Days: {attendance_days}
+    Paid Leaves: {paid_leaves}
+    Unpaid Leaves: {unpaid_leaves}
+    employee_epf_amount: {employee_epf_amount}
+    employer_epf_amount: {employer_epf_amount}
+    employer_etf_amount: {employer_etf_amount}
+    ------------------
+    """)
+
+
+    return {
+        "basic_pay": basic_pay,
+        "loss_of_pay": loss_of_pay,
+        "paid_days": paid_days,
+        "unpaid_days": loss_of_pay_dates,
+        "holiday_allowances": holiday_allowances,
+        "contract": contract,
+        "employee_epf_amount": employee_epf_amount,
+        "employer_epf_amount": employer_epf_amount,
+        "employer_etf_amount": employer_etf_amount,
+
+    }
+
 def compute_salary_on_period(employee, start_date, end_date, wage=None):
     """
     This method is used to compute salary on the start to end date period
@@ -519,7 +636,11 @@ def compute_salary_on_period(employee, start_date, end_date, wage=None):
         data = daily_computation(employee, wage, start_date, end_date)
         month_data = months_between_range(wage, start_date, end_date)
         data["month_data"] = month_data
-
+# Here Add new condition for 30 day wage type
+    elif wage_type == "30days":
+        data = compute_salary_on_30_day_wage(employee, wage, start_date, end_date)
+        month_data = months_between_range(wage, start_date, end_date)
+        data["month_data"] = month_data
     else:
         data = monthly_computation(employee, wage, start_date, end_date)
     data["contract_wage"] = wage
