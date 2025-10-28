@@ -5,6 +5,7 @@ on:
     branches:
       - up/bhathiya 
 
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -25,9 +26,7 @@ jobs:
           ssh ubuntu@${{ secrets.EC2_HOST }} << 'EOF'
           set -e
 
-          # Update and upgrade with fix-missing
-          sudo apt update
-          sudo apt upgrade -y --fix-missing
+          sudo apt update && sudo apt upgrade -y
 
           if [ ! -d "horilla-hrm" ]; then
             git clone https://github.com/wireappsltd/horilla-hrm.git
