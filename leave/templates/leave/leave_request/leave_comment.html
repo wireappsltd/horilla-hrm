@@ -109,7 +109,7 @@ function toggleCommentButton(input) {
     const maxLen = 255;
     const len = input.value.length;
 
-    info.textContent = len + "/" + maxLen + " " + gettext("characters");
+    info.textContent = interpolate(gettext("%(current)s/%(max)s characters"), {current: len, max: maxLen}, true);
 
     if (len === 0 || len > maxLen) {
         btn.style.display = "none";
