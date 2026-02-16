@@ -51,20 +51,35 @@ def compute_resignation_balance(employee, last_working_date, notice_end_date):
     if amount_for_fine > 0:
         try:
             with transaction.atomic():
-                deduction_task, _ = OffboardingTask.objects.get_or_create(
-                    title=f"Salary deduction of {amount_for_fine:.2f} due to early resignation.",
-                    defaults={"stage_id": None},
-                    is_fine=True
-                )
-
                 off_emp = OffboardingEmployee.objects.filter(employee_id=employee).first()
                 if off_emp:
-                    emp_task, created = EmployeeTask.objects.get_or_create(
+                    # Check for existing fine task
+                    existing_task=EmployeeTask.objects.filter(
+                        employee_id=off_emp,
+                        task_id__is_fine=True
+                    ).first()
+
+                    new_title = f"Salary deduction of {amount_for_fine:.2f} due to early resignation."
+
+                    # Create/get Offboarding Task with the new amount
+                    deduction_task, _ = OffboardingTask.objects.get_or_create(
+                        title=new_title,
+                        defaults={"stage_id": None},
+                        is_fine=True
+                    )
+
+                if existing_task:
+                    if existing_task.task_id != deduction_task:
+                        existing_task.task_id = deduction_task
+                        existing_task.description = new_title
+                        existing_task.save()
+                else:
+                    EmployeeTask.objects.get_or_create(
                         employee_id=off_emp,
                         task_id=deduction_task,
                         defaults={
                             "status": "todo",
-                            "description": f"Salary deduction of {amount_for_fine:.2f} due to early resignation.",
+                            "description": new_title,
                         },
                     )
         except Exception as e:
