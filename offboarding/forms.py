@@ -346,7 +346,7 @@ class ResignationReasonForm(ModelForm):
     class Meta:
         model = ExitReason
         fields = "__all__"
-        exclude = ["is_active"]
+        exclude = ["is_active", "status"]
 
     def as_p(self):
         """
