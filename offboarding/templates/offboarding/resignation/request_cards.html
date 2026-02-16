@@ -45,6 +45,12 @@
                     <div class="resign-status" style="display: inline">
                         {{ record.status|capfirst }}
                     </div>
+                    <div class="" style="display: block; margin-top:5px;">
+                        <span class="oh-badge oh-badge--secondary oh-badge--small oh-badge--round" title="{% trans " Planned
+                            Leave Date" %}">
+                            <ion-icon name="calendar-outline"></ion-icon> {{ record.planned_to_leave_on }}
+                        </span>
+                    </div>
                 </div>
                 <div>
                     <div class="oh-btn-group">
