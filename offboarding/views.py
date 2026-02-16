@@ -791,7 +791,11 @@ def delete_task(request):
 
     tasks = OffboardingTask.objects.filter(id__in=task_ids)
 
-    if tasks.exists():
+    assigned_tasks = EmployeeTask.objects.filter(task_id__in=tasks)
+
+    if assigned_tasks.exists():
+        messages.error(request, _("Cannot delete task assigned to employees."))
+    elif tasks.exists():
         tasks.delete()
         messages.success(request, _("Task deleted"))
     else:
