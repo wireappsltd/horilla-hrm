@@ -193,7 +193,7 @@ def contract_status_update(request, contract_id):
 def bulk_contract_status_update(request):
     status = request.POST.get("status")
     ids = eval_validate(request.POST.get("ids"))
-    all_contracts = Contract.objects.all()
+    all_contracts = Contract.objects.filter()
     contracts = all_contracts.filter(id__in=ids)
 
     for contract in contracts:
@@ -297,7 +297,7 @@ def contract_view(request):
     Contract view method
     """
 
-    contracts = Contract.objects.all()
+    contracts = Contract.objects.filter()
     if contracts.exists():
         template = "payroll/contract/contract_view.html"
     else:
@@ -373,7 +373,7 @@ def contract_filter(request):
 
     """
     query_string = request.GET.urlencode()
-    contracts_filter = ContractFilter(request.GET)
+    contracts_filter = ContractFilter(request.GET, queryset=Contract.objects.filter())
     template = "payroll/contract/contract_list.html"
     contracts = contracts_filter.qs
     field = request.GET.get("field")
