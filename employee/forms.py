@@ -23,7 +23,7 @@ class YourForm(forms.Form):
 
 import logging
 import re
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 
 from django import forms
@@ -168,7 +168,14 @@ class EmployeeForm(ModelForm):
             "is_active",
         )
         widgets = {
-            "dob": TextInput(attrs={"type": "date", "id": "dob"}),
+            "dob": TextInput(attrs={
+                "type": "date",
+                "id": "dob"
+            }),
+            "qualifications": forms.Textarea(attrs={
+                "class": "form-control auto-resize",
+                "rows": 3,
+            }),
         }
 
     def __init__(self, *args, **kwargs):
@@ -203,15 +210,58 @@ class EmployeeForm(ModelForm):
 
     def clean(self):
         super().clean()
-        email = self.cleaned_data["email"]
+        email = self.cleaned_data.get("email")
         phone = self.cleaned_data.get("phone")
         dob = self.cleaned_data.get("dob")
+        country = self.cleaned_data.get("country")
         query = Employee.objects.entire().filter(email=email)
+        children = self.cleaned_data.get("children")
+        experience = self.cleaned_data.get("experience")
+        if "badge_id" in self.fields:
+            badge_id = (self.cleaned_data.get("badge_id") or "").strip()
 
-        if dob is None:
+            if not badge_id:
+                self.add_error("badge_id", _("Employee ID is required."))
+            else:
+                qs = Employee.objects.filter(badge_id=badge_id)
+                if self.instance and self.instance.pk:
+                    qs = qs.exclude(pk=self.instance.pk)
+                if qs.exists():
+                    self.add_error("badge_id", _("Employee ID already exists."))
+
+        if dob is not None and dob >= date.today():
+            self.add_error("dob", _("Date cannot be in the future."))
+
+        #Country based
+        if dob and country:
+            country_name = str(country).strip().lower()
+
+            if country_name == "united kingdom":
+                min_age = 13
+            elif country_name == "sri lanka":
+                min_age = 16
+            else:
+                min_age = None
+
+            if min_age is not None:
+                today = date.today()
+                try:
+                    cutoff = today.replace(year=today.year - min_age)
+                except ValueError:
+                    cutoff = today.replace(month=2, day=28, year=today.year - min_age)
+
+                if dob > cutoff:
+                    self.add_error("dob", _("Employee must be atleast %(age)s years old for the selected country.") % {"age": min_age})
+
+        if children is not None and children < 0:
             self.add_error(
-                "dob",
-                _("This field is required.")
+                "children",
+                _("Number of children cannot be negative.")
+            )
+        if experience is not None and experience < 0:
+            self.add_error(
+                "experience",
+                _("Experience cannot be negative.")
             )
 
         if email:
@@ -219,6 +269,16 @@ class EmployeeForm(ModelForm):
                 validate_email(email)
             except ValidationError:
                 self.add_error("email", _("Enter a valid email address."))
+
+        if email:
+            user_q = User.objects.filter(username=email)
+            if self.instance and self.instance.pk and self.instance.employee_user_id:
+                user_q = user_q.exclude(pk=self.instance.employee_user_id.pk)
+
+            if user_q.exists():
+                user = user_q.first()
+                if hasattr(user, 'employee_get'):
+                    self.add_error("email", _("This email is already in use by another employee."))
 
         if self.instance and self.instance.id:
             query = query.exclude(id=self.instance.id)
@@ -244,12 +304,8 @@ class EmployeeForm(ModelForm):
 
             raise forms.ValidationError({"email": error_message})
 
-        if not phone:
-            self.add_error(
-                "phone",
-                _("This field is required.")
-            )
-        elif phone:
+
+        if phone:
             if not re.fullmatch(r"07\d{8}", str(phone)):
                 self.add_error(
                     "phone",
@@ -260,11 +316,16 @@ class EmployeeForm(ModelForm):
         contact_number = self.cleaned_data.get("emergency_contact")
         contact_relationship = self.cleaned_data.get("emergency_contact_relation")
 
-        if contact_name:
+        if contact_name or contact_number or contact_relationship:
+            if not contact_name:
+                self.add_error(
+                    "emergency_contact_name",
+                    _("This field is required.")
+                )
             if not contact_number:
                 self.add_error(
                     "emergency_contact",
-                    _("This field is required when Emergency Contact Name is filled.")
+                    _("This field is required.")
                 )
             else:
                 if not re.fullmatch(r"07\d{8}", str(contact_number)):
@@ -276,7 +337,7 @@ class EmployeeForm(ModelForm):
             if not contact_relationship:
                 self.add_error(
                     "emergency_contact_relation",
-                    _("This field is required when Emergency Contact Name is filled.")
+                    _("This field is required.")
                 )
 
     def get_next_badge_id(self):
@@ -409,6 +470,11 @@ class EmployeeWorkInformationForm(ModelForm):
                             ("create", _("Create New {} ").format(translated_label))
                         ]
 
+        rm_field = "reporting_manager_id" if "reporting_manager_id" in self.fields else "reporting_manager"
+        current_employee = getattr(self.instance, "employee_id", None)
+        if current_employee and rm_field in self.fields:
+            self.fields[rm_field].queryset = self.fields[rm_field].queryset.exclude(pk=current_employee.pk)
+
     def clean(self):
         super().clean()
         work_phone = self.cleaned_data.get("mobile")
@@ -494,6 +560,16 @@ class EmployeeWorkInformationUpdateForm(ModelForm):
             "probation_end_date": DateInput(attrs={"type": "date"}),
         }
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        rm_field = "reporting_manager_id" if "reporting_manager_id" in self.fields else "reporting_manager"
+        current_employee = getattr(self.instance, "employee_id", None)
+
+        # Hide current employee from the dropdown
+        if current_employee and rm_field in self.fields:
+            self.fields[rm_field].queryset = self.fields[rm_field].queryset.exclude(pk=current_employee.pk)
+
     def as_p(self, *args, **kwargs):
         context = {"form": self}
         return render_to_string("employee/create_form/personal_info_as_p.html", context)
@@ -573,6 +649,8 @@ class EmployeeBankDetailsForm(ModelForm):
             "account_number",
             "bank_name",
             "branch",
+            "swift_code",
+            "currency_type",
             "any_other_code1",
             "any_other_code2",
         )
@@ -675,6 +753,8 @@ excel_columns = [
     ("employee_bank_details__account_number", trans("Account Number")),
     ("employee_bank_details__any_other_code1", trans("Bank Code #1")),
     ("employee_bank_details__any_other_code2", trans("Bank Code #2")),
+    ("employee_bank_details__swift_code", trans("SWIFT Code")),
+    ("employee_bank_details__currency_type", trans("Currency Type")),
     ("employee_bank_details__country", trans("Bank Country")),
     ("employee_bank_details__state", trans("Bank State")),
     ("employee_bank_details__city", trans("Bank City")),

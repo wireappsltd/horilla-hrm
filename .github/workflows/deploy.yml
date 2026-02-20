@@ -3,7 +3,7 @@ name: Horilla EC2 Deploy
 on:
   push:
     branches:
-      - production      # runs on pushes to the test branch
+      - test      # runs on pushes to the test branch
   workflow_dispatch:   # allows manual trigger
 
 jobs:
@@ -32,7 +32,7 @@ jobs:
           # Pull latest changes
           git reset --hard
           git clean -fd
-          git pull origin production
+          git pull origin test
 
           # Kill any running server on 8000
           fuser -k 8000/tcp || echo "No process on 8000"
