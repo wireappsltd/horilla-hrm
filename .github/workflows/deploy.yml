@@ -3,7 +3,7 @@ name: Horilla EC2 Deploy
 on:
   push:
     branches:
-      - test      # runs on pushes to the test branch
+      - production      # runs on pushes to the test branch
   workflow_dispatch:   # allows manual trigger
 
 jobs:
