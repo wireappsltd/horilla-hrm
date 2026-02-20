@@ -10,6 +10,7 @@ from typing import Any
 from django import forms
 from django.contrib import messages
 from django.template.loader import render_to_string
+from datetime import date
 
 from base.forms import ModelForm
 from employee.forms import MultipleFileField
@@ -303,6 +304,17 @@ class ResignationLetterForm(ModelForm):
         for field in exclude:
             del self.fields[field]
 
+    def clean_planned_to_leave_on(self):
+        """
+        Validate planned_to_leave_on date
+        """
+        planned_date = self.cleaned_data.get("planned_to_leave_on")
+        request = getattr(horilla_middlewares._thread_locals, "request", None)
+        if planned_date and planned_date < date.today():
+             if request and not request.user.has_perm("offboarding.add_offboardingemployee"):
+                  raise forms.ValidationError("Planned Resignation Date cannot be a past date.")
+        return planned_date
+
     def save(self, commit: bool = ...) -> Any:
         request = getattr(horilla_middlewares._thread_locals, "request", None)
         instance = self.instance
@@ -347,11 +359,19 @@ class ResignationReasonForm(ModelForm):
         model = ExitReason
         fields = "__all__"
         exclude = ["is_active"]
+        widgets = {
+            "description": forms.Textarea(attrs={"class": "oh-input w-100", "rows": 7, "cols": 120, "style": "width: 100%"}),
+        }
 
     def as_p(self):
         """
         Render the form fields as HTML table rows with Bootstrap styling.
         """
+        #context = {"form": self}
+        #table_html = render_to_string("common_form.html", context)
+        #return table_html
+        from django.utils.safestring import mark_safe
+        from django.template.loader import render_to_string
         context = {"form": self}
         table_html = render_to_string("common_form.html", context)
-        return table_html
+        return mark_safe(table_html)

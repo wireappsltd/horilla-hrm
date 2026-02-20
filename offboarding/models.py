@@ -28,7 +28,6 @@ class Offboarding(HorillaModel):
 
     statuses = [("ongoing", _("Ongoing")), ("completed", _("Completed"))]
     title = models.CharField(max_length=20)
-    description = models.TextField(max_length=255)
     managers = models.ManyToManyField(Employee)
     status = models.CharField(max_length=10, default="ongoing", choices=statuses)
     company_id = models.ForeignKey(
@@ -319,8 +318,8 @@ class ExitReason(HorillaModel):
     ExitReason model
     """
     REASON_TYPES = (
-        ("employee", "Employee Side"),
-        ("admin", "Admin Side"),
+        ("employee", "Voluntary"),
+        ("admin", "Involuntary"),
     )
 
 
@@ -331,7 +330,7 @@ class ExitReason(HorillaModel):
         default="employee",
         verbose_name=_("Reason Type"),
     )
-    description = models.TextField(max_length=255)
+    description = models.TextField()
     # offboarding_employee_id = models.ForeignKey(
     #     OffboardingEmployee, on_delete=models.CASCADE
     # )

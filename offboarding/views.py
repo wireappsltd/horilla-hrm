@@ -455,12 +455,12 @@ def change_stage(request):
         else:
             logger.info("No active contracts found for FNF process.")
 
-    target_state = False if stage.type == "archived" else True
-    employee_ids = employees.values_list("employee_id__id", flat=True)
-    Employee.objects.filter(
-        id__in=employee_ids,
-        is_active=not target_state,
-    ).update(is_active=target_state)
+    if stage.type == "archived":
+        employee_ids = employees.values_list("employee_id__id", flat=True)
+        Employee.objects.filter(
+            id__in=employee_ids,
+                is_active=True,
+            ).update(is_active=False)
 
 
     tasks_for_stage = OffboardingTask.objects.filter(stage_id=stage, is_active=True)
@@ -791,7 +791,11 @@ def delete_task(request):
 
     tasks = OffboardingTask.objects.filter(id__in=task_ids)
 
-    if tasks.exists():
+    if EmployeeTask.objects.filter(task_id__in=tasks).exists():
+        messages.error(
+            request, _("Cannot delete task(s) because they are assigned to employees.")
+        )
+    elif tasks.exists():
         tasks.delete()
         messages.success(request, _("Task deleted"))
     else:
@@ -853,7 +857,6 @@ def request_view(request):
     """
     This method is used to view the resignation request
     """
-    defatul_filter = {"status": "requested"}
     filter_instance = LetterFilter()
     letters = ResignationLetter.objects.all()
     offboardings = Offboarding.objects.all()
@@ -864,7 +867,7 @@ def request_view(request):
         {
             "letters": paginator_qry(letters, request.GET.get("page")),
             "f": filter_instance,
-            "filter_dict": {"status": ["Requested"]},
+            "filter_dict": {},
             "offboardings": offboardings,
             "gp_fields": LetterReGroup.fields,
         },
@@ -1097,6 +1100,8 @@ def update_status(request):
     # if use update method instead of save then save method will not trigger
     if status in ["approved", "rejected"]:
         for letter in letters:
+            if letter.status == status:
+                continue
             letter.status = status
             letter.save()
             if status == "approved":
@@ -1487,4 +1492,24 @@ def create_common_task(request):
         form = TaskForm()
 
     return render(request, "offboarding/task/common_task_form.html", {"form": form})
+
+@login_required
+def edit_resignation_reason(request, id):
+    instance = get_object_or_404(ExitReason, id=id)
+    form = ResignationReasonForm(instance=instance)
+    if request.method == "POST":
+        form = ResignationReasonForm(request.POST, request.FILES, instance=instance)
+        if form.is_valid():
+            form.save()
+            messages.success(request, _("Exit reason updated successfully"))
+            return HttpResponse("<script>window.location.reload()</script>")
+    return render(request, "offboarding/resignation/exit_reason_form.html", {"form": form})
+
+
+@login_required
+def delete_resignation_reason(request, id):
+    instance = get_object_or_404(ExitReason, id=id)
+    instance.delete()
+    messages.success(request, _("Exit reason deleted successfully"))
+    return redirect("resignation-reason-view")
 

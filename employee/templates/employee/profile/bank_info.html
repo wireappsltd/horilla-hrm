@@ -3,6 +3,7 @@
     <div class="oh-profile-section__card">
 <form method="post">
     {% csrf_token %}
+    <input type="hidden" name="form_type" value="bank">
     <div class="card">
         <div class="card-body">
             <div class="row">
@@ -41,6 +42,22 @@
                     <div class="oh-input-group">
                         <label class="oh-label">{% trans "Branch Code" %}</label>
                         <input type="text" id="branchCode" class="form-control w-100 p-2"  style="border: 1px solid #cdd5df; box-shadow: none;" readonly>
+                    </div>
+                </div>
+
+                <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                    <div class="oh-input-group">
+                        <label class="oh-label">{% trans "SWIFT Code" %}</label>
+                        {{ bank_form.swift_code }}
+                        {{ bank_form.swift_code.errors }}
+                    </div>
+                </div>
+
+                <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                    <div class="oh-input-group">
+                        <label class="oh-label">{% trans "Currency Type" %}</label>
+                        {{ bank_form.currency_type }}
+                        {{ bank_form.currency_type.errors }}
                     </div>
                 </div>
 

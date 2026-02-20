@@ -16,7 +16,7 @@ from django.contrib import messages
 from django.core.paginator import Paginator
 from django.db import transaction
 from django.db.models import ProtectedError, Q
-from django.http import HttpResponse, JsonResponse
+from django.http import HttpResponse, JsonResponse, HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.encoding import force_str
@@ -3930,6 +3930,9 @@ def employee_available_leave_count(request):
     except (ValueError, TypeError):
         start_date = None
 
+    require_attachment = False
+    leave_type = None
+
     if not leave_type_id or not start_date:
         return render(
             request,
@@ -3953,6 +3956,11 @@ def employee_available_leave_count(request):
     if available_leave:
         leave_type = available_leave.leave_type_id
         total_leave_days = available_leave.total_leave_days
+
+        if leave_type:
+            require_attachment = leave_type.require_attachment == "yes"
+        else:
+            require_attachment = False
 
         next_reset = leave_type.leave_type_next_reset_date()
         if next_reset and start_date >= next_reset:
@@ -3979,6 +3987,15 @@ def employee_available_leave_count(request):
 
     available_days_for_request = total_leave_days - pending_requests_days
 
+    if hx_target == "attachmentLabelWrapper":
+        print("attachmentLabelWrapper")
+        return render(
+            request,
+            "leave/leave_request/attachment_label_wrapper.html",
+            {"require_attachment": require_attachment},
+        )
+
+
     context = {
         "hx_target": hx_target,
         "leave_type_id": leave_type_id,
@@ -3986,10 +4003,13 @@ def employee_available_leave_count(request):
         "total_leave_days": available_days_for_request,
         "forcasted_days": forcasted_days,
         "pending_requests": pending_requests_days,
+        "require_attachment": require_attachment,
     }
+
     return render(
         request, "leave/leave_request/employee_available_leave_count.html", context
     )
+
 
 
 @login_required
@@ -5409,3 +5429,74 @@ def monthly_leave_report(request):
 
     wb.save(response)
     return response
+
+@login_required
+@manager_can_enter("leave.view_leaverequest")
+def monthly_leave_report_pdf(request):
+    if request.method != "POST":
+        return HttpResponseBadRequest(_("Invalid request method."))
+
+    start = request.POST.get("start_date")
+    end = request.POST.get("end_date")
+
+    if not start or not end:
+        return HttpResponseBadRequest(_("Start date and end date are required."))
+
+    request_employee = getattr(request.user, "employee_get", None)
+    # print("REQUEST EMPLOYEE:", request_employee)
+
+    leaves = (
+        LeaveRequest.objects.filter(
+            start_date__gte=start,
+            end_date__lte=end,
+            is_active=True
+        )
+        .select_related("employee_id", "leave_type_id")
+    )
+
+    ids = set()
+    for l in leaves:
+        val = getattr(l, "modified_by_id", None)
+        if val:
+            ids.add(int(val))
+
+    user_map = {}
+    if ids:
+        employees = Employee.objects.filter(id__in=ids).select_related("employee_user_id")
+        # print("EMPLOYEES FOUND:", employees.count())
+        # print("Names", [emp.get_full_name() for emp in employees])
+
+        for emp in employees:
+            name = emp.get_full_name()
+
+            if not name or name == str(emp).strip():
+                user = getattr(emp, "employee_user_id", None)
+                if user:
+                    user_full = (user.get_full_name() or "").strip()
+                    if user_full:
+                        name = user_full
+
+            user_map[emp.id] = name or "-"
+
+    for l in leaves:
+        key = getattr(l, "modified_by_id", None)
+        l.modified_by_name = user_map.get(int(key), "-") if key else "-"
+
+    context = {
+        "leaves": leaves,
+        "start": start,
+        "end": end,
+        "request": request,
+        "request_user": request_employee,
+        "report_creation_date": timezone.now(),
+    }
+
+    template_path = "leave/reports/monthly_leave_report_pdf.html"
+    try:
+        resp = generate_leave_request_pdf(template_path, context=context, html=False)
+    except Exception:
+        logger.exception("PDF generation crashed for monthly leave report.")
+        return HttpResponse(_("Failed to generate PDF report."), status=500)
+
+    resp["Content-Disposition"] = 'attachment; filename="monthly_leave_report.pdf"'
+    return resp
