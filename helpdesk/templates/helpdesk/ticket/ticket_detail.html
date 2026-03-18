@@ -92,7 +92,7 @@
                     <p class="oh-helpdesk__header-title">{{ticket.title}}</p>
 
                     <span class="helpdesk__card-value me-3">
-                            {% if password_reset_request and password_reset_request.iso_status != 'PENDING' and not request.user.is_superuser %}
+                            {% if password_reset_request and password_reset_request.iso_status != 'PENDING' and not is_iso_officer %}
                                 <select name="status_update" title='{% trans "Status" %}' class="oh-select" disabled
                                     style="width:190px; align-items: center; border: 1px solid #aaa; border-radius: 2px; background-color: #fff;">
                                     {% for status in ticket_status %}

@@ -8,7 +8,7 @@ from urllib.parse import parse_qs
 
 from django.conf import settings
 from django.contrib import messages
-from django.contrib.auth.models import User
+from django.contrib.auth.models import Group, User
 from django.core import serializers
 from django.db.models import ProtectedError, Q
 from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
@@ -881,6 +881,7 @@ def ticket_detail(request, ticket_id, **kwargs):
             "rating": rating,
             "password_reset_request": password_reset_request,
             "iso_review_form": iso_review_form,
+            "is_iso_officer": request.user.is_superuser or _is_iso_officer(request.user),
         }
         return render(request, "helpdesk/ticket/ticket_detail.html", context=context)
     else:
@@ -1233,7 +1234,6 @@ def get_raised_on(request):
     """
     This is an ajax method to return list for raised on field.
     """
-    from django.contrib.auth.models import Group
 
     data = request.GET
     assigning_type = data["assigning_type"]
@@ -1273,8 +1273,8 @@ def get_raised_on(request):
         ]
     elif assigning_type == "individual":
         if is_password_reset:
-            # Only show employees who belong to the "ISO Officer" group
-            iso_group = Group.objects.filter(name="ISO Officer").first()
+            # Only show employees who belong to the "ISO" group
+            iso_group = Group.objects.filter(name="ISO").first()
             if iso_group:
                 employees = Employee.objects.filter(
                     employee_user_id__groups=iso_group,
@@ -1829,6 +1829,23 @@ def load_faqs(request):
         },
     )
 
+def _is_iso_officer(user):
+    """Return True if the user belongs to the 'ISO' group."""
+    return user.groups.filter(name="ISO").exists()
+
+
+def _get_iso_officer_users():
+    """
+    Return a list of User objects who are ISO officers (members of the 'ISO'
+    group) OR superusers. Used for sending in-app notifications.
+    """
+    iso_users = User.objects.filter(
+        Q(groups__name="ISO") | Q(is_superuser=True),
+        is_active=True,
+    ).distinct()
+    return list(iso_users)
+
+
 @login_required
 def iso_forms_home(request):
     """ISO Forms landing page showing password reset requests."""
@@ -1839,7 +1856,7 @@ def iso_forms_home(request):
         "ticket__employee_id",
     ).order_by("-created_at")
 
-    if not request.user.is_superuser:
+    if not request.user.is_superuser and not _is_iso_officer(request.user):
         if current_employee:
             queryset = queryset.filter(
                 Q(ticket__employee_id=current_employee)
@@ -1852,6 +1869,7 @@ def iso_forms_home(request):
     context = {
         "password_reset_requests": queryset,
         "current_employee": current_employee,
+        "is_iso_officer": request.user.is_superuser or _is_iso_officer(request.user),
     }
     return render(request, "helpdesk/iso_forms/index.html", context)
 
@@ -1927,12 +1945,12 @@ def password_reset_request_create(request):
             pr_request.iso_status = "PENDING"
             pr_request.save()
 
-            # In-app notification to all admins
-            admin_users = list(User.objects.filter(is_superuser=True, is_active=True))
+            # In-app notification to all ISO officers and admins
+            iso_officer_users = _get_iso_officer_users()
             try:
                 notify.send(
                     selected_employee,
-                    recipient=admin_users,
+                    recipient=iso_officer_users,
                     verb=f"New Password Reset request submitted for {selected_employee.get_full_name()} on {platform}.",
                     verb_ar="تم تقديم طلب إعادة تعيين كلمة المرور.",
                     verb_de="Eine neue Anfrage zum Zurücksetzen des Passworts wurde eingereicht.",
@@ -2038,10 +2056,10 @@ def password_reset_request_update(request, pr_id):
 @login_required
 def iso_review_password_reset(request, pr_id):
     """
-    Superuser-only: approve or reject a Password Reset request.
+    ISO Officer or Superuser: approve or reject a Password Reset request.
     Expects POST with action='approve'|'reject' and optional iso_feedback.
     """
-    if not request.user.is_superuser:
+    if not request.user.is_superuser and not _is_iso_officer(request.user):
         messages.info(request, _("You don't have permission."))
         return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
 
@@ -2124,14 +2142,14 @@ def iso_review_password_reset(request, pr_id):
             # In-app notification to other ISO officers about the review
             try:
                 status_text = "approved" if action == "approve" else "rejected"
-                other_admins = list(
-                    User.objects.filter(is_superuser=True, is_active=True)
-                    .exclude(pk=request.user.pk)
-                )
-                if other_admins:
+                other_officers = [
+                    u for u in _get_iso_officer_users()
+                    if u.pk != request.user.pk
+                ]
+                if other_officers:
                     notify.send(
                         request.user.employee_get,
-                        recipient=other_admins,
+                        recipient=other_officers,
                         verb=(
                             f"Password reset request by {requestor.get_full_name()} "
                             f"for {pr_request.platform} has been {status_text}."
@@ -2217,9 +2235,9 @@ def password_reset_request_withdraw(request, pr_id):
 @login_required
 def password_reset_request_delete(request, pr_id):
     """
-    Superuser-only: delete a Password Reset request and its associated ticket.
+    ISO Officer or Superuser: delete a Password Reset request and its associated ticket.
     """
-    if not request.user.is_superuser:
+    if not request.user.is_superuser and not _is_iso_officer(request.user):
         messages.info(request, _("You don't have permission."))
         return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
 
