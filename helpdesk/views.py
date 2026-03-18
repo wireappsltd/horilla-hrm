@@ -1846,9 +1846,6 @@ def password_reset_request_create(request):
     if request.method == "POST":
         form = PasswordResetRequestForm(request.POST, request=request)
         if form.is_valid():
-            # The admin submitting the form
-            submitting_user = request.user.employee_get
-
             ticket_type = _get_password_reset_ticket_type()
             priority = form.cleaned_data.get("priority", "medium")
             deadline = form.cleaned_data.get("deadline") or (timezone.now() + timedelta(days=7)).date()
