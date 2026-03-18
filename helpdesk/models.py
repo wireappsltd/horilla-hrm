@@ -21,6 +21,10 @@ PRIORITY = [
     ("medium", "Medium"),
     ("high", "High"),
 ]
+
+# Name of the Django auth Group whose members act as ISO Officers.
+ISO_GROUP_NAME = "ISO"
+
 MANAGER_TYPES = [
     ("department", "Department"),
     ("job_position", "Job Position"),

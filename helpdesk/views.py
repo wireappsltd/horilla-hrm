@@ -55,6 +55,7 @@ from helpdesk.forms import (
 from helpdesk.methods import is_department_manager
 from helpdesk.models import (
     FAQ,
+    ISO_GROUP_NAME,
     TICKET_STATUS,
     Attachment,
     ClaimRequest,
@@ -1223,9 +1224,7 @@ def comment_delete(request, comment_id):
     comment = Comment.objects.filter(id=comment_id).first()
     employee = comment.employee_id
     comment.delete()
-    messages.success(
-        request, _("{}'s comment has been deleted successfully.").format(employee)
-    )
+    messages.success(request, _("{}'s comment has been deleted successfully.").format(employee))
     return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
 
 
@@ -1273,8 +1272,8 @@ def get_raised_on(request):
         ]
     elif assigning_type == "individual":
         if is_password_reset:
-            # Only show employees who belong to the "ISO" group
-            iso_group = Group.objects.filter(name="ISO").first()
+            # Only show employees who belong to the ISO group
+            iso_group = Group.objects.filter(name=ISO_GROUP_NAME).first()
             if iso_group:
                 employees = Employee.objects.filter(
                     employee_user_id__groups=iso_group,
@@ -1361,7 +1360,7 @@ def approve_claim_request(request, req_id):
                             verb_ar=f"تم تعيين {employee} إلى تذكرتك - {ticket}.",
                             verb_de=f"{employee} wurde Ihrem Ticket {ticket} zugewiesen.",
                             verb_es=f"{employee} ha sido asignado a tu ticket - {ticket}.",
-                            verb_fr=f"{employee} a été assigné à votre ticket - {ticket}.",
+                            verb_fr=f"{employee} a été attribué à votre ticket - {ticket}.",
                             icon="infinite",
                             redirect=reverse(
                                 "ticket-detail", kwargs={"ticket_id": ticket.id}
@@ -1830,17 +1829,17 @@ def load_faqs(request):
     )
 
 def _is_iso_officer(user):
-    """Return True if the user belongs to the 'ISO' group."""
-    return user.groups.filter(name="ISO").exists()
+    """Return True if the user belongs to the ISO group."""
+    return user.groups.filter(name=ISO_GROUP_NAME).exists()
 
 
 def _get_iso_officer_users():
     """
-    Return a list of User objects who are ISO officers (members of the 'ISO'
+    Return a list of User objects who are ISO officers (members of the ISO
     group) OR superusers. Used for sending in-app notifications.
     """
     iso_users = User.objects.filter(
-        Q(groups__name="ISO") | Q(is_superuser=True),
+        Q(groups__name=ISO_GROUP_NAME) | Q(is_superuser=True),
         is_active=True,
     ).distinct()
     return list(iso_users)
@@ -2155,7 +2154,7 @@ def iso_review_password_reset(request, pr_id):
                             f"for {pr_request.platform} has been {status_text}."
                         ),
                         verb_ar="تم مراجعة طلب إعادة تعيين كلمة المرور.",
-                        verb_de="Der Passwort-Zurücksetzungsantrag wurde überprüft.",
+                        verb_de="Der Passwort-Zurücksetzungsticket wurde überprüft.",
                         verb_es="La solicitud de restablecimiento de contraseña ha sido revisada.",
                         verb_fr="La demande de réinitialisation de mot de passe a été examinée.",
                         icon="key",
@@ -2282,3 +2281,4 @@ def password_reset_request_delete(request, pr_id):
             messages.error(request, _("You cannot delete this password reset request."))
 
     return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+

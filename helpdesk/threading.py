@@ -15,7 +15,7 @@ from django.template.loader import render_to_string
 from base.backends import ConfiguredEmailBackend
 from base.models import Department
 from employee.models import EmployeeWorkInformation
-from helpdesk.models import Ticket
+from helpdesk.models import ISO_GROUP_NAME, Ticket
 
 logger = logging.getLogger(__name__)
 
@@ -283,14 +283,14 @@ class PasswordResetMailThread(Thread):
         Falls back to an empty list if the group does not exist.
         """
         try:
-            iso_group = Group.objects.get(name="ISO")
+            iso_group = Group.objects.get(name=ISO_GROUP_NAME)
             return [
                 user.employee_get
                 for user in iso_group.user_set.select_related("employee_get").all()
                 if hasattr(user, "employee_get") and user.employee_get
             ]
         except Group.DoesNotExist:
-            logger.warning("ISO user group not found. No ISO officers will be notified.")
+            logger.warning("%s user group not found. No ISO officers will be notified.", ISO_GROUP_NAME)
             return []
 
     def _send_email(self, subject, content, recipients, ticket_id=None):
