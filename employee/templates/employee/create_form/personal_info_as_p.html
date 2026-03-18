@@ -23,7 +23,8 @@
 <div class="row">
   {% for field in form %}
     {% if field.label != "Employee profile" and field.label != 'Country' and field.label != 'State' and field.label != 'Address' and field.label != 'Badge id' %}
-      <div class="col-lg-6">
+      <div class="col-lg-6{% if field.name == 'basic_salary' or field.name == 'salary_hour' or field.name == 'salary_currency' %} intern-salary-fields{% endif %}"
+           {% if field.name == 'basic_salary' or field.name == 'salary_hour' or field.name == 'salary_currency' %}style="display:none;"{% endif %}>
         <div class="oh-input__group">
           <label class="oh-label {% if field.field.required %}required-star{% endif %}"
                  for="id_{{ field.name }}"
