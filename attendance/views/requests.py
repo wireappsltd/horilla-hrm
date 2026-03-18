@@ -481,6 +481,7 @@ def approve_validate_attendance_request(request, attendance_id):
     attendance.is_validate_request_approved = True
     attendance.is_validate_request = False
     attendance.request_description = None
+    attendance.request_type = None
     attendance.save()
     allocate_compensation_leave(request,attendance)
     if attendance.requested_data is not None:
@@ -498,6 +499,8 @@ def approve_validate_attendance_request(request, attendance_id):
         Attendance.objects.filter(id=attendance_id).update(**requested_data)
         # DUE TO AFFECT THE OVERTIME CALCULATION ON SAVE METHOD, SAVE THE INSTANCE ONCE MORE
         attendance = Attendance.objects.get(id=attendance_id)
+        attendance.requested_data = None
+        attendance.request_type = None
         attendance.save()
 
     if (
@@ -598,6 +601,7 @@ def cancel_attendance_request(request, attendance_id):
             or is_reportingmanager(request)
             or request.user.has_perm("attendance.change_attendance")
         ):
+            is_create_request = attendance.request_type == "create_request"
             attendance.is_validate_request_approved = False
             attendance.is_validate_request = False
             attendance.request_description = None
@@ -605,7 +609,7 @@ def cancel_attendance_request(request, attendance_id):
             attendance.request_type = None
 
             attendance.save()
-            if attendance.request_type == "create_request":
+            if is_create_request:
                 attendance.delete()
                 messages.success(request, _("The requested attendance is removed."))
             else:
@@ -679,6 +683,7 @@ def bulk_approve_attendance_request(request):
         attendance.is_validate_request_approved = True
         attendance.is_validate_request = False
         attendance.request_description = None
+        attendance.request_type = None
         attendance.save()
         if attendance.requested_data is not None:
             requested_data = json.loads(attendance.requested_data)
@@ -695,6 +700,8 @@ def bulk_approve_attendance_request(request):
             Attendance.objects.filter(id=attendance_id).update(**requested_data)
             # DUE TO AFFECT THE OVERTIME CALCULATION ON SAVE METHOD, SAVE THE INSTANCE ONCE MORE
             attendance = Attendance.objects.get(id=attendance_id)
+            attendance.requested_data = None
+            attendance.request_type = None
             attendance.save()
         if (
             attendance.attendance_clock_out is None
@@ -804,13 +811,14 @@ def bulk_reject_attendance_request(request):
                 or is_reportingmanager(request)
                 or request.user.has_perm("attendance.change_attendance")
             ):
+                is_create_request = attendance.request_type == "create_request"
                 attendance.is_validate_request_approved = False
                 attendance.is_validate_request = False
                 attendance.request_description = None
                 attendance.requested_data = None
                 attendance.request_type = None
                 attendance.save()
-                if attendance.request_type == "create_request":
+                if is_create_request:
                     attendance.delete()
                     messages.success(request, _("The requested attendance is removed."))
                 else:
