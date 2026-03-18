@@ -940,6 +940,22 @@ def ticket_update_tag(request):
     """
     data = request.GET
     ticket = Ticket.objects.get(id=data["ticketId"])
+
+    # Block tag change if this ticket has a reviewed password reset request
+    pr_request = getattr(ticket, "password_reset_request", None)
+    if pr_request and pr_request.iso_status != "PENDING" and not request.user.is_superuser:
+        return JsonResponse(
+            {
+                "type": "danger",
+                "message": str(
+                    _(
+                        "This ticket is linked to a password reset request that has "
+                        "already been reviewed. Tags cannot be changed."
+                    )
+                ),
+            }
+        )
+
     if (
         request.user.has_perm("helpdesk.view_ticket")
         or request.user.employee_get == ticket.employee_id
@@ -972,6 +988,20 @@ def ticket_update_tag(request):
 @hx_request_required
 def ticket_change_raised_on(request, ticket_id):
     ticket = Ticket.objects.get(id=ticket_id)
+
+    # Block raised-on change if this ticket has a reviewed password reset request
+    pr_request = getattr(ticket, "password_reset_request", None)
+    if pr_request and pr_request.iso_status != "PENDING" and not request.user.is_superuser:
+        messages.info(
+            request,
+            _("This ticket is linked to a password reset request that has already been reviewed and cannot be edited."),
+        )
+        if "HTTP_HX_REQUEST" in request.META:
+            return render(request, "decorator_404.html")
+        return HttpResponse(
+            f'<script>window.location.href = "{request.META.get("HTTP_REFERER", "/")}"</script>'
+        )
+
     if (
         request.user.has_perm("helpdesk.view_ticket")
         or request.user.employee_get == ticket.employee_id
@@ -1005,6 +1035,20 @@ def ticket_change_raised_on(request, ticket_id):
 @hx_request_required
 def ticket_change_assignees(request, ticket_id):
     ticket = Ticket.objects.get(id=ticket_id)
+
+    # Block assignee change if this ticket has a reviewed password reset request
+    pr_request = getattr(ticket, "password_reset_request", None)
+    if pr_request and pr_request.iso_status != "PENDING" and not request.user.is_superuser:
+        messages.info(
+            request,
+            _("This ticket is linked to a password reset request that has already been reviewed and cannot be edited."),
+        )
+        if "HTTP_HX_REQUEST" in request.META:
+            return render(request, "decorator_404.html")
+        return HttpResponse(
+            f'<script>window.location.href = "{request.META.get("HTTP_REFERER", "/")}"</script>'
+        )
+
     if request.user.has_perm("helpdesk.change_ticket") or is_department_manager(
         request, ticket
     ):
@@ -1566,6 +1610,16 @@ def update_priority(request, ticket_id):
     from the detailed view
     """
     ticket = Ticket.objects.get(id=ticket_id)
+
+    # Block priority change if this ticket has a reviewed password reset request
+    pr_request = getattr(ticket, "password_reset_request", None)
+    if pr_request and pr_request.iso_status != "PENDING" and not request.user.is_superuser:
+        messages.info(
+            request,
+            _("This ticket is linked to a password reset request that has already been reviewed and cannot be edited."),
+        )
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
     if (
         request.user.has_perm("helpdesk.view_ticket")
         or ticket.employee_id.get_reporting_manager() == request.user.employee_get
