@@ -111,11 +111,14 @@
             </div>
         </div>
         {% endif %}
-
-        <div class="oh-timeoff-modal__stats w-100 mt-3">
+        <div class="oh-timeoff-modal__stats-container mt-3">
             <div class="oh-timeoff-modal__stat">
-                <span class="oh-timeoff-modal__stat-title">{% trans "Leave Description" %}</span>
+               <span class="oh-timeoff-modal__stat-title">{% trans "Leave Description" %}</span>
                 <div class="oh-timeoff-modal__stat-description">{{leave_request.description}}</div>
+            </div>
+            <div class="oh-timeoff-modal__stat">
+                 <span class="oh-timeoff-modal__stat-title">{% trans "Covering Person" %}</span>
+                <div class="oh-timeoff-modal__stat-description">{{leave_request.manager}}</div>
             </div>
         </div>
         {% if leave_request.reject_reason %}
