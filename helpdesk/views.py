@@ -10,7 +10,7 @@ from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.models import User
 from django.core import serializers
-from django.db.models import ProtectedError
+from django.db.models import ProtectedError, Q
 from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
 from django.shortcuts import redirect, render
 from django.template.loader import render_to_string
@@ -1841,7 +1841,11 @@ def iso_forms_home(request):
 
     if not request.user.is_superuser:
         if current_employee:
-            queryset = queryset.filter(ticket__employee_id=current_employee)
+            queryset = queryset.filter(
+                Q(ticket__employee_id=current_employee)
+                | Q(ticket__assigned_to=current_employee)
+                | Q(ticket__raised_on=str(current_employee.id))
+            ).distinct()
         else:
             queryset = queryset.none()
 
@@ -1865,18 +1869,6 @@ def _get_password_reset_ticket_type():
     return ticket_type
 
 
-def _get_iso_employee():
-    """
-    Returns the Employee record for the first active superuser, or None.
-    """
-    superuser = User.objects.filter(is_superuser=True, is_active=True).first()
-    if superuser:
-        try:
-            return superuser.employee_get
-        except Exception:
-            pass
-    return None
-
 
 @login_required
 @hx_request_required
@@ -1890,16 +1882,6 @@ def password_reset_request_create(request):
     if request.method == "POST":
         form = PasswordResetRequestForm(request.POST, request=request)
         if form.is_valid():
-            employee = request.user.employee_get
-            iso_employee = _get_iso_employee()
-
-            if iso_employee:
-                assigning_type = "individual"
-                raised_on = str(iso_employee.id)
-            else:
-                assigning_type = "individual"
-                raised_on = str(employee.id)
-
             ticket_type = _get_password_reset_ticket_type()
             priority = form.cleaned_data.get("priority", "medium")
             deadline = form.cleaned_data.get("deadline") or (timezone.now() + timedelta(days=7)).date()
@@ -1907,6 +1889,9 @@ def password_reset_request_create(request):
             platform = form.cleaned_data["platform"]
             selected_employee = form.cleaned_data["employee"]
             reason = form.cleaned_data["reason"]
+
+            assigning_type = "individual"
+            raised_on = str(selected_employee.id)
             try:
                 user_email = selected_employee.employee_work_info.company_email or ""
             except Exception:
@@ -1921,9 +1906,10 @@ def password_reset_request_create(request):
                 f"<b>Reason:</b> {reason}"
             )[:255]
 
+            # ticket owner is the selected employee, not the admin submitting
             ticket = Ticket(
                 title=f"Password Reset – {platform}",
-                employee_id=employee,
+                employee_id=selected_employee,
                 ticket_type=ticket_type,
                 description=description,
                 priority=priority,
@@ -1934,8 +1920,7 @@ def password_reset_request_create(request):
             )
             ticket.save()
 
-            if iso_employee:
-                ticket.assigned_to.add(iso_employee)
+            ticket.assigned_to.add(selected_employee)
 
             pr_request = form.save(commit=False)
             pr_request.ticket = ticket
@@ -1946,9 +1931,9 @@ def password_reset_request_create(request):
             admin_users = list(User.objects.filter(is_superuser=True, is_active=True))
             try:
                 notify.send(
-                    employee,
+                    selected_employee,
                     recipient=admin_users,
-                    verb=f"New Password Reset request submitted by {employee.get_full_name()} for {platform}.",
+                    verb=f"New Password Reset request submitted for {selected_employee.get_full_name()} on {platform}.",
                     verb_ar="تم تقديم طلب إعادة تعيين كلمة المرور.",
                     verb_de="Eine neue Anfrage zum Zurücksetzen des Passworts wurde eingereicht.",
                     verb_es="Se ha enviado una nueva solicitud de restablecimiento de contraseña.",
@@ -2014,26 +1999,34 @@ def password_reset_request_update(request, pr_id):
         if form.is_valid():
             pr_request = form.save()
 
-            # Update priority and deadline on the linked ticket
-            ticket.priority = form.cleaned_data.get("priority")
-            ticket.deadline = form.cleaned_data.get("deadline")
-
-            # Update the linked ticket's title and description to reflect edits
             platform = form.cleaned_data["platform"]
             selected_employee = form.cleaned_data["employee"]
             reason = form.cleaned_data["reason"]
             try:
                 user_email = selected_employee.employee_work_info.company_email or ""
             except Exception:
-                user_email = str(selected_employee)
+                user_email = ""
+            user_display = str(selected_employee)
+            if user_email and user_email not in user_display:
+                user_display = f"{user_display} ({user_email})"
+
+            # FIX: update the ticket owner to the (possibly changed) selected employee
+            ticket.employee_id = selected_employee
+            ticket.priority = form.cleaned_data.get("priority")
+            ticket.deadline = form.cleaned_data.get("deadline")
             ticket.title = f"Password Reset – {platform}"
             ticket.description = (
-                f"Password Reset Request<br>"
-                f"Platform: {platform}<br>"
-                f"User: {selected_employee} ({user_email})<br>"
-                f"Reason: {reason}"
+                f"<b>Password Reset Request Details:</b><br><br>"
+                f"<b>Platform:</b> {platform}<br>"
+                f"<b>User:</b> {user_display}<br>"
+                f"<b>Reason:</b> {reason}"
             )[:255]
+            ticket.raised_on = str(selected_employee.id)
             ticket.save()
+
+            # Refresh assigned_to: ensure the selected employee is assigned
+            ticket.assigned_to.clear()
+            ticket.assigned_to.add(selected_employee)
 
             messages.success(request, _("Password reset request updated successfully."))
             return HttpResponse("<script>window.location.reload()</script>")
