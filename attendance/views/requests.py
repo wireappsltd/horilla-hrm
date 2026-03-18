@@ -216,7 +216,9 @@ def request_new(request):
             # preserve the compensation leave toggle on validation error re-render.
             show_compensation = False
             compensation_form = None
+            show_duplicate_warning = False
             attendance_date = request.POST.get("attendance_date")
+            employee_id = request.POST.get("employee_id")
             if attendance_date:
                 try:
                     parsed_date = datetime.strptime(attendance_date, "%Y-%m-%d").date()
@@ -226,6 +228,11 @@ def request_new(request):
                         compensation_form = AttendanceForm()
                 except (ValueError, TypeError):
                     pass
+            if employee_id and attendance_date:
+                show_duplicate_warning = Attendance.objects.filter(
+                    employee_id=employee_id,
+                    attendance_date=attendance_date,
+                ).exists()
             return render(
                 request,
                 "requests/attendance/request_new_form.html",
@@ -234,6 +241,7 @@ def request_new(request):
                     "bulk": False,
                     "show_compensation": show_compensation,
                     "compensation_form": compensation_form,
+                    "show_duplicate_warning": show_duplicate_warning,
                 },
             )
     return render(
