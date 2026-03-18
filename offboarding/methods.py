@@ -17,7 +17,9 @@ logger = logging.getLogger(__name__)
 
 
 def compute_resignation_balance(employee, last_working_date, notice_end_date):
-    working_days = get_working_days(last_working_date, notice_end_date)
+    from datetime import timedelta
+    fine_start_date = last_working_date + timedelta(days=1)
+    working_days = get_working_days(fine_start_date, notice_end_date)
     payable_days = working_days.get("total_working_days", 0)
 
     contract = Contract.objects.filter(
@@ -28,10 +30,10 @@ def compute_resignation_balance(employee, last_working_date, notice_end_date):
 
     basic_pay = contract.wage
 
-    working_days_details = months_between_range(basic_pay, last_working_date, notice_end_date)
+    working_days_details = months_between_range(basic_pay, fine_start_date, notice_end_date)
     allowance_data_set = {
         "employee": employee,
-        "start_date": last_working_date,
+        "start_date": fine_start_date,
         "end_date": notice_end_date,
         "basic_pay": basic_pay,
         "day_dict": working_days_details,
