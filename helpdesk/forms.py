@@ -330,7 +330,7 @@ class TicketTagForm(ModelForm):
 class TicketRaisedOnForm(ModelForm):
     class Meta:
         model = Ticket
-        fields = ["assigning_type", "raised_on"]
+        fields = ["raised_on"]
         widgets = {
             "raised_on": forms.Select(
                 attrs={"class": "oh-select oh-select-2", "required": "true"},
