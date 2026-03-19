@@ -328,14 +328,48 @@ class TicketTagForm(ModelForm):
 
 
 class TicketRaisedOnForm(ModelForm):
+    raised_on = forms.MultipleChoiceField(
+        widget=forms.SelectMultiple(
+            attrs={"class": "oh-select oh-select-2", "required": "true"},
+        ),
+        label=_("Forward To"),
+    )
+
     class Meta:
         model = Ticket
-        fields = ["assigning_type", "raised_on"]
-        widgets = {
-            "raised_on": forms.Select(
-                attrs={"class": "oh-select oh-select-2", "required": "true"},
-            ),
-        }
+        fields = ["raised_on"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        choices = []
+        if self.instance and self.instance.pk:
+            atype = self.instance.assigning_type
+            if atype == "department":
+                choices = [
+                    (str(d.pk), str(d.department))
+                    for d in Department.objects.all()
+                ]
+            elif atype == "job_position":
+                choices = [
+                    (str(j.pk), str(j.job_position))
+                    for j in JobPosition.objects.all()
+                ]
+            elif atype == "individual":
+                choices = [
+                    (str(e.pk), e.get_full_name())
+                    for e in Employee.objects.filter(is_active=True)
+                ]
+            if self.instance.raised_on:
+                self.initial["raised_on"] = [
+                    rid.strip()
+                    for rid in self.instance.raised_on.split(",")
+                    if rid.strip()
+                ]
+        self.fields["raised_on"].choices = choices
+
+    def clean_raised_on(self):
+        values = self.cleaned_data.get("raised_on", [])
+        return ",".join(values)
 
 
 class TicketAssigneesForm(ModelForm):
