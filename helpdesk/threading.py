@@ -429,11 +429,10 @@ class PasswordResetMailThread(Thread):
                 try:
                     reviewer_name = reviewer.employee_get.get_full_name()
                 except Exception:
-                    reviewer_name = (
-                        reviewer.get_full_name() or reviewer.username
-                        if reviewer
-                        else "An ISO Officer"
-                    )
+                    if reviewer:
+                        reviewer_name = reviewer.get_full_name() or reviewer.username
+                    else:
+                        reviewer_name = "An ISO Officer"
 
                 if self.action == "approve":
                     subject = "Your Password Reset Request Has Been Approved"
