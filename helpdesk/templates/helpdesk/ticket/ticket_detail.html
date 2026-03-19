@@ -352,7 +352,19 @@
                                 <span class="helpdesk__card-value">{{ticket.created_date}}</span>
                             </li>
                             <li class="helpdesk__card-item">
-                                {% if perms.helpdesk.change_ticket or request.user.employee_get|is_department_manager:ticket or request.user.employee_get in ticket.assigned_to.all or request.user.employee_get == ticket.employee_id %}
+                                {% if password_reset_request and password_reset_request.iso_status != 'PENDING' and not request.user.is_superuser %}
+                                <div class="d-flex">
+                                    <span class="helpdesk__card-label">{% trans "Priority" %} :</span>
+                                    <div class="oh-rate">
+                                        {% for i in "321" %}
+                                        <input type="radio" id="star{{i}}{{ticket.id}}" name="rating"
+                                            class="rating-radio" value="{{i}}" {% if rating == i %}checked{% endif %} disabled />
+                                        <label for="star{{i}}{{ticket.id}}" title="{% if i == '1' %}{% trans 'Low' %}{% elif i == '2' %}{% trans 'Medium' %}{% else %}{% trans 'High' %}{% endif %}">
+                                        </label>
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                                {% elif perms.helpdesk.change_ticket or request.user.employee_get|is_department_manager:ticket or request.user.employee_get in ticket.assigned_to.all or request.user.employee_get == ticket.employee_id %}
                                 <form hx-swap="none" hx-post='{% url "update-priority" ticket.id %}' method="post">
                                     {% csrf_token %}
                                     <div class="d-flex">
@@ -395,7 +407,13 @@
                         </ul>
                         <div class="helpdesk__card-footer">
                             <span class="helpdesk__card-label">{% trans "Tags:" %}</span>
-                            {% if perms.helpdesk.change_ticket or request.user.employee_get == ticket.employee_id or request.user.employee_get|is_department_manager:ticket %}
+                            {% if password_reset_request and password_reset_request.iso_status != 'PENDING' and not request.user.is_superuser %}
+                            <span class="helpdesk__card-value">
+                                {% for tag in ticket.tags.all %}
+                                {{tag}},
+                                {% endfor %}
+                            </span>
+                            {% elif perms.helpdesk.change_ticket or request.user.employee_get == ticket.employee_id or request.user.employee_get|is_department_manager:ticket %}
                             <div class="oh-helpdesk-selectbox">
                                 {{tag_form.tags}}
                             </div>
@@ -466,6 +484,7 @@
                         <div class="oh-helpdesk__subcard">
                             <div class="oh-helpdesk__subcard-header">
                                 <span class="oh-helpdesk__subcard-title">{% trans "Forward to" %}</span>
+                                {% if not password_reset_request or password_reset_request.iso_status == 'PENDING' or request.user.is_superuser %}
                                 {% if perms.helpdesk.change_ticket or request.user.employee_get == ticket.employee_id %}
                                 <div class="oh-btn-group">
                                     <button class="oh-btn oh-btn--light-bkg p-3 w-100"
@@ -475,6 +494,7 @@
                                         <ion-icon name="create-outline"></ion-icon>
                                     </button>
                                 </div>
+                                {% endif %}
                                 {% endif %}
                             </div>
                             <div class="oh-helpdesk__subcard-body">
@@ -488,6 +508,7 @@
                             {% if perms.helpdesk.view_claimrequest or perms.helpdesk.change_ticket or request.user.employee_get|is_department_manager:ticket or perms.helpdesk.change_claimrequest %}
                             <div class="oh-helpdesk__subcard-header">
                                 <span class="oh-helpdesk__subcard-title">{% trans "Assigned to" %}</span>
+                                {% if not password_reset_request or password_reset_request.iso_status == 'PENDING' or request.user.is_superuser %}
                                 {% if perms.helpdesk.change_ticket or request.user.employee_get|is_department_manager:ticket or perms.helpdesk.change_claimrequest %}
                                 <div class="oh-btn-group">
                                     <button hx-get="{% url 'view-ticket-claim-request' ticket.id %}"
@@ -502,6 +523,7 @@
                                         title="{% trans 'Edit' %}"><ion-icon name="create-outline"></ion-icon>
                                     </button>
                                 </div>
+                                {% endif %}
                                 {% endif %}
                             </div>
                             <div class="align-items-center d-flex" style="min-height: 40px;">
@@ -526,6 +548,7 @@
                         style="display: flex; align-items: center; justify-content: space-between;">
                         <span class="oh-helpdesk__card-title">{% trans "Documents" %}</span>
 
+                        {% if not password_reset_request or password_reset_request.iso_status == 'PENDING' or request.user.is_superuser %}
                         {% if perms.helpdesk.add_comment or request.user.employee_get == ticket.employee_id or request.user.employee_get in ticket.assigned_to.all %}
                             <form name="document-upload-form" id="documentUploadForm" action="{% url 'comment-create' ticket.id %}" method="POST"
                                 enctype="multipart/form-data" class="oh-chat oh-chat__input-wrapper"
@@ -543,6 +566,7 @@
                                     <span id="fileCount1" style="position: absolute; top: -6px; right: -6px; background-color: red; color: white; font-size: 12px; border-radius: 50%; padding: 2px 6px; min-width: 16px; text-align: center; display: none; "></span>
                                 </label>
                             </form>
+                        {% endif %}
                         {% endif %}
                     </div>
                     <div class="oh-helpdesk__card-body oh-scrollable-container">
