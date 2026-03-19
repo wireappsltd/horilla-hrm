@@ -34,25 +34,24 @@
                 },
                 success: function (response) {
                     var raised_on = response.raised_on;
-                    var cur_raised_on = $("#cur_raised_on").attr("value");
+                    var cur_raised_on_str = $("#cur_raised_on").attr("value") || "";
+                    var cur_ids = cur_raised_on_str.split(",").map(function(s){ return s.trim(); });
+
                     // Clear the existing options
                     $("#id_raised_on").empty();
-                    var options = $('<option value="" >').text("---------");
-                    $("#id_raised_on").append(options);
 
                     $.each(raised_on, function (id, obj) {
-                        // looping all raised_on
-                        var options = $(
-                            '<option value="' +
-                            obj.id +
-                            '" ' +
-                            (obj.id == cur_raised_on
-                                ? 'selected="selected"'
-                                : "") +
-                            ">"
-                        ).text(obj.name);
-                        $("#id_raised_on").append(options);
+                        var isSelected = cur_ids.indexOf(String(obj.id)) !== -1;
+                        var option = $('<option value="' + obj.id + '"' +
+                            (isSelected ? ' selected="selected"' : '') +
+                            '>').text(obj.name);
+                        $("#id_raised_on").append(option);
                     });
+
+                    // Re-initialise select2 if present
+                    if ($.fn.select2 && $("#id_raised_on").data('select2')) {
+                        $("#id_raised_on").trigger('change.select2');
+                    }
                 },
             });
         }
