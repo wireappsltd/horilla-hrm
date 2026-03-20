@@ -1028,6 +1028,7 @@ def create_resignation_request(request):
             exit_reason = form.cleaned_data["exit_reason"]
 
             print(employee, description)
+            form.save()
             for user in hr_users:
                 notify.send(
                     sender=employee,
@@ -1043,7 +1044,7 @@ def create_resignation_request(request):
                         message=description,
                         from_email='tech@wireapps.co.uk',
                         recipient_list=[user.email],
-                        fail_silently=False,
+                        fail_silently=True,
                         html_message=render_to_string("emails/resignation_request.html", {
                             "employee": employee,
                             "description": description,
@@ -1051,8 +1052,6 @@ def create_resignation_request(request):
                             "exit_reason": exit_reason,
                         })
                     )
-
-            form.save()
 
             messages.success(request, _("Resignation letter saved"))
             return HttpResponse("<script>window.location.reload()</script>")
