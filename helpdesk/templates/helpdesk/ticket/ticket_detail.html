@@ -214,6 +214,13 @@
                             <span class="oh-helpdesk__bubble-timestamp">{{item.comment.date}}</span>
                         </div>
                         <div class="oh-helpdesk__bubble-body">
+                            {% if item.comment.is_auto_generated %}
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    {{item.comment.comment|safe}}
+                                </div>
+                            </div>
+                            {% else %}
                             <div class="d-flex justify-content-between align-items-center comment_container">
                                 <div>
                                     <textarea class="bg-transparent border-0 w-100 comment_input"
@@ -234,6 +241,7 @@
                                     {% endif %}
                                 </div>
                             </div>
+                            {% endif %}
                             <div class="oh-scrollable-container">
                                 <div class="oh-layout--grid-3 mt-2 mb-2 horizontal-scroll">
                                     {% if item.comment.comment_attachment.all %}
@@ -295,7 +303,8 @@
                 <form name="comment-form" action="{% url 'comment-create' ticket.id %}" method="POST"
                     enctype="multipart/form-data" class="oh-chat oh-chat__input-wrapper">
                     {% csrf_token %}
-                    <input name="file" multiple="True" type="file" id="fileUpload" class="d-none" />
+                    <input name="file" multiple="True" type="file" id="fileUpload" class="d-none"
+                        accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.jpg,.jpeg,.png,.gif,.svg,.webp,.txt,.csv,.html,.mp3,.wav,.ogg,.m4a" />
                     <label aria-role="button" for="fileUpload" aria-label="Attach Files"
                         class="oh-btn oh-btn--chat oh-btn--chat-attachments">
                         <span id="fileCount" style="
@@ -560,7 +569,8 @@
                                 {% csrf_token %}
 
                                 <input name="file" multiple="True" type="file" id="fileUpload2" class="d-none"
-                                    onchange="if(this.files.length > 0){ this.closest('form').submit(); }" />
+                                    accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.jpg,.jpeg,.png,.gif,.svg,.webp,.txt,.csv,.html,.mp3,.wav,.ogg,.m4a"
+                                    onchange="if(this.files.length > 0 && validateFiles(this.files)){ this.closest('form').submit(); } else { this.value=''; }" />
 
                                 <!-- Attachment Button -->
                                 <label for="fileUpload2" aria-label="Attach Files"
@@ -578,35 +588,46 @@
                             {% if attachments %}
                                 {% for attachment in attachments %}
                                     {% with extension=attachment.file.name|lower|slice:"-4:" %}
-                                        <a class="me-2 position-relative d-inline-block" data-toggle="oh-modal-toggle"
-                                            data-target="#viewFileModal" hx-target="#viewFile"
-                                            hx-get="{% url 'view-ticket-document' attachment.id %}">
-                                            <!-- File icon -->
-                                            <div class="oh-helpdesk__icon">
-                                                <span class="oh-file-icon
-                                                    {% if extension == '.pdf' %} oh-file-icon--pdf
-                                                    {% elif extension in '.jpg .jpeg .png .gif .svg' %} oh-file-icon--image
-                                                    {% elif extension in '.mp3 .wav .ogg' %} oh-file-icon--audio
-                                                    {% elif extension in '.doc .docx' %} oh-file-icon--word
-                                                    {% elif extension in '.xls .xlsx' %} oh-file-icon--excel
-                                                    {% elif extension in '.ppt .pptx' %} oh-file-icon--powerpoint
-                                                    {% elif extension in '.html' %} oh-file-icon--html
-                                                    {% else %} oh-file-icon--default
-                                                    {% endif %}" title="{{ attachment }}">
-                                                </span>
+                                        <div class="me-2 position-relative d-inline-block text-center" id="attachment-{{ attachment.id }}" style="max-width: 80px;">
+                                            <a data-toggle="oh-modal-toggle"
+                                                data-target="#viewFileModal" hx-target="#viewFile"
+                                                hx-get="{% url 'view-ticket-document' attachment.id %}"
+                                                style="cursor: pointer;">
+                                                <!-- File icon -->
+                                                <div class="oh-helpdesk__icon">
+                                                    <span class="oh-file-icon
+                                                        {% if extension == '.pdf' %} oh-file-icon--pdf
+                                                        {% elif extension in '.jpg .jpeg .png .gif .svg' %} oh-file-icon--image
+                                                        {% elif extension in '.mp3 .wav .ogg' %} oh-file-icon--audio
+                                                        {% elif extension in '.doc .docx' %} oh-file-icon--word
+                                                        {% elif extension in '.xls .xlsx' %} oh-file-icon--excel
+                                                        {% elif extension in '.ppt .pptx' %} oh-file-icon--powerpoint
+                                                        {% elif extension in '.html' %} oh-file-icon--html
+                                                        {% else %} oh-file-icon--default
+                                                        {% endif %}" title="{{ attachment }}">
+                                                    </span>
+                                                </div>
+                                            </a>
+                                            <!-- File name -->
+                                            <div class="text-truncate" style="font-size: 11px; max-width: 80px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;" title="{{ attachment }}">
+                                                {{ attachment }}
                                             </div>
 
                                             <!-- Cross mark for delete action (absolute positioned) -->
+                                            {% if perms.helpdesk.add_comment or request.user.employee_get == ticket.employee_id or request.user.employee_get in ticket.assigned_to.all %}
                                             <span class="position-absolute"
                                                 style="top: -6px; right: 0px; color: red; font-size: 16px; cursor: pointer;"
-                                                title="Delete attachment"
+                                                title="{% trans 'Delete attachment' %}"
                                                 hx-delete="{% url 'delete-ticket-document' attachment.id %}"
-                                                hx-confirm="Are you sure you want to delete this file?" hx-swap="none"
-                                                hx-trigger="click" hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
-                                                onclick="deleteFile(event);">
+                                                hx-confirm="{% trans 'Are you sure you want to delete this file?' %}"
+                                                hx-target="#attachment-{{ attachment.id }}"
+                                                hx-swap="outerHTML"
+                                                hx-trigger="click"
+                                                hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
                                                 &times;
                                             </span>
-                                        </a>
+                                            {% endif %}
+                                        </div>
                                     {% endwith %}
                                 {% endfor %}
                             {% endif %}
@@ -659,14 +680,38 @@
 </div>
 
 <script>
-    function deleteFile(event) {
-        event.stopPropagation(); // Prevent the event from bubbling up
-        // No additional code is needed here, HTMX will handle the request automatically
+
+    var ALLOWED_EXTENSIONS = ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
+        '.jpg', '.jpeg', '.png', '.gif', '.svg', '.webp', '.txt', '.csv', '.html',
+        '.mp3', '.wav', '.ogg', '.m4a'];
+    var MAX_FILE_SIZE_MB = 10;
+
+    function validateFiles(files) {
+        for (var i = 0; i < files.length; i++) {
+            var file = files[i];
+            var ext = '.' + file.name.split('.').pop().toLowerCase();
+            if (ALLOWED_EXTENSIONS.indexOf(ext) === -1) {
+                Swal.fire ? Swal.fire('Error', "File '" + file.name + "' has unsupported type '" + ext + "'. Allowed types: " + ALLOWED_EXTENSIONS.join(', '), 'error')
+                    : alert("File '" + file.name + "' has unsupported type '" + ext + "'.");
+                return false;
+            }
+            if (file.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
+                Swal.fire ? Swal.fire('Error', "File '" + file.name + "' exceeds the maximum size of " + MAX_FILE_SIZE_MB + " MB.", 'error')
+                    : alert("File '" + file.name + "' exceeds the maximum size of " + MAX_FILE_SIZE_MB + " MB.");
+                return false;
+            }
+        }
+        return true;
     }
 
     var fileUploadEl = document.getElementById('fileUpload');
     if (fileUploadEl) {
         fileUploadEl.addEventListener('change', function () {
+            if (!validateFiles(this.files)) {
+                this.value = '';
+                document.getElementById('fileCount').style.display = 'none';
+                return;
+            }
             const fileCount = this.files.length;
             const countSpan = document.getElementById('fileCount');
             if (fileCount > 0) {
@@ -681,6 +726,11 @@
     var fileUpload2El = document.getElementById('fileUpload2');
     if (fileUpload2El) {
     fileUpload2El.addEventListener('change', function () {
+        if (!validateFiles(this.files)) {
+            this.value = '';
+            document.getElementById('fileCount1').style.display = 'none';
+            return;
+        }
         const fileCount = this.files.length;
         const countSpandoc = document.getElementById('fileCount1');
         if (fileCount > 0) {

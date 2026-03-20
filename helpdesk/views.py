@@ -1197,7 +1197,7 @@ def delete_ticket_document(request, doc_id):
     """
     Attachment.objects.get(id=doc_id).delete()
     messages.success(request, _("Document has been deleted."))
-    return HttpResponse("<script>window.location.reload()</script>")
+    return HttpResponse("", status=200)
 
 
 @login_required
@@ -1209,6 +1209,29 @@ def comment_create(request, ticket_id):
         ticket = Ticket.objects.get(id=ticket_id)
         comment_text = request.POST.get("comment", "").strip()
         has_files = bool(request.FILES)
+
+        # Validate files before processing
+        if has_files:
+            from helpdesk.forms import ALLOWED_FILE_EXTENSIONS, MAX_FILE_SIZE_MB
+
+            files = request.FILES.getlist("file")
+            max_size = MAX_FILE_SIZE_MB * 1024 * 1024
+            for f in files:
+                ext = os.path.splitext(f.name)[1].lower()
+                if ext not in ALLOWED_FILE_EXTENSIONS:
+                    messages.error(
+                        request,
+                        _("File '%(name)s' has an unsupported type '%(ext)s'. Allowed: %(allowed)s")
+                        % {"name": f.name, "ext": ext, "allowed": ", ".join(ALLOWED_FILE_EXTENSIONS)},
+                    )
+                    return redirect(ticket_detail, ticket_id=ticket_id)
+                if f.size > max_size:
+                    messages.error(
+                        request,
+                        _("File '%(name)s' exceeds the maximum size of %(max_size)s MB.")
+                        % {"name": f.name, "max_size": MAX_FILE_SIZE_MB},
+                    )
+                    return redirect(ticket_detail, ticket_id=ticket_id)
 
         if comment_text:
             c_form = CommentForm(request.POST)
@@ -1229,6 +1252,7 @@ def comment_create(request, ticket_id):
             comment = Comment(
                 employee_id=request.user.employee_get,
                 ticket=ticket,
+                is_auto_generated=True,
             )
             comment.save()
             files = request.FILES.getlist("file")

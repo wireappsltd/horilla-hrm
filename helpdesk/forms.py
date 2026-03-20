@@ -397,6 +397,15 @@ class CommentForm(forms.ModelForm):
         widgets = {"employee_id": forms.HiddenInput()}
 
 
+ALLOWED_FILE_EXTENSIONS = [
+    ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
+    ".jpg", ".jpeg", ".png", ".gif", ".svg", ".webp",
+    ".txt", ".csv", ".html",
+    ".mp3", ".wav", ".ogg", ".m4a",
+]
+MAX_FILE_SIZE_MB = 10  # Maximum file size in MB
+
+
 class AttachmentForm(forms.ModelForm):
     file = forms.FileField(
         widget=forms.TextInput(
@@ -414,6 +423,25 @@ class AttachmentForm(forms.ModelForm):
         model = Attachment
         fields = ["file", "comment", "ticket"]
         exclude = ["is_active"]
+
+    def clean_file(self):
+        uploaded_file = self.cleaned_data.get("file")
+        if uploaded_file:
+            import os
+
+            ext = os.path.splitext(uploaded_file.name)[1].lower()
+            if ext not in ALLOWED_FILE_EXTENSIONS:
+                raise forms.ValidationError(
+                    _("File type '%(ext)s' is not allowed. Allowed types: %(allowed)s")
+                    % {"ext": ext, "allowed": ", ".join(ALLOWED_FILE_EXTENSIONS)}
+                )
+            max_size = MAX_FILE_SIZE_MB * 1024 * 1024
+            if uploaded_file.size > max_size:
+                raise forms.ValidationError(
+                    _("File size exceeds the maximum limit of %(max_size)s MB.")
+                    % {"max_size": MAX_FILE_SIZE_MB}
+                )
+        return uploaded_file
 
 
 class DepartmentManagerCreateForm(ModelForm):
