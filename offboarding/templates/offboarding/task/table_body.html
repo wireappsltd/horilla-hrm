@@ -78,8 +78,8 @@
 
     <div class="oh-sticky-table__td text-center">
         <div class="oh-checkpoint-badge oh-checkpoint-badge--primary"
-            title="Completed {{ employee.employeetask_set|completed_tasks }} of {{employee.employeetask_set.all|length}} tasks">
-            {{ employee.employeetask_set|completed_tasks }} / {{employee.employeetask_set.all|length}}
+            title="Completed {{ employee|stage_completed_tasks:stage.grouper }} of {{ employee|stage_total_tasks:stage.grouper }} tasks">
+            {{ employee|stage_completed_tasks:stage.grouper }} / {{ employee|stage_total_tasks:stage.grouper }}
         </div>
     </div>
     <div class="oh-sticky-table__td" onclick="event.stopPropagation()">
