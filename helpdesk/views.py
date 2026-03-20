@@ -1197,7 +1197,7 @@ def delete_ticket_document(request, doc_id):
     """
     Attachment.objects.get(id=doc_id).delete()
     messages.success(request, _("Document has been deleted."))
-    return HttpResponse(status=200)
+    return HttpResponse("", status=200)
 
 
 @login_required
