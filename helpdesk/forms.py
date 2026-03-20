@@ -34,6 +34,7 @@ from employee.forms import MultipleFileField
 from employee.models import Employee
 from helpdesk.models import (
     FAQ,
+    PRIORITY,
     Attachment,
     Comment,
     DepartmentManager,
@@ -175,6 +176,24 @@ class PasswordResetRequestForm(forms.ModelForm):
         widget=forms.Select(attrs={"class": "oh-select oh-select-2 w-100"}),
     )
 
+    priority = forms.ChoiceField(
+        choices=PRIORITY,
+        initial="medium",
+        label=_("Priority"),
+        widget=forms.Select(attrs={"class": "oh-select oh-select-2 w-100"}),
+    )
+
+    deadline = forms.DateField(
+        required=False,
+        label=_("Due Date"),
+        widget=forms.DateInput(
+            attrs={
+                "class": "oh-input w-100",
+                "type": "date",
+            }
+        ),
+    )
+
     class Meta:
         model = PasswordResetRequest
         fields = ["platform", "employee", "reason"]
@@ -221,6 +240,11 @@ class PasswordResetRequestForm(forms.ModelForm):
                 self.fields["employee"].initial = emp
             except Exception:
                 pass
+
+        # If editing, pre-populate priority and deadline from the linked ticket
+        if self.instance and self.instance.pk and hasattr(self.instance, "ticket") and self.instance.ticket:
+            self.fields["priority"].initial = self.instance.ticket.priority
+            self.fields["deadline"].initial = self.instance.ticket.deadline
 
     def save(self, commit=True):
         instance = super().save(commit=False)
@@ -304,14 +328,48 @@ class TicketTagForm(ModelForm):
 
 
 class TicketRaisedOnForm(ModelForm):
+    raised_on = forms.MultipleChoiceField(
+        widget=forms.SelectMultiple(
+            attrs={"class": "oh-select oh-select-2", "required": "true"},
+        ),
+        label=_("Forward To"),
+    )
+
     class Meta:
         model = Ticket
-        fields = ["assigning_type", "raised_on"]
-        widgets = {
-            "raised_on": forms.Select(
-                attrs={"class": "oh-select oh-select-2", "required": "true"},
-            ),
-        }
+        fields = ["raised_on"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        choices = []
+        if self.instance and self.instance.pk:
+            atype = self.instance.assigning_type
+            if atype == "department":
+                choices = [
+                    (str(d.pk), str(d.department))
+                    for d in Department.objects.all()
+                ]
+            elif atype == "job_position":
+                choices = [
+                    (str(j.pk), str(j.job_position))
+                    for j in JobPosition.objects.all()
+                ]
+            elif atype == "individual":
+                choices = [
+                    (str(e.pk), e.get_full_name())
+                    for e in Employee.objects.filter(is_active=True)
+                ]
+            if self.instance.raised_on:
+                self.initial["raised_on"] = [
+                    rid.strip()
+                    for rid in self.instance.raised_on.split(",")
+                    if rid.strip()
+                ]
+        self.fields["raised_on"].choices = choices
+
+    def clean_raised_on(self):
+        values = self.cleaned_data.get("raised_on", [])
+        return ",".join(values)
 
 
 class TicketAssigneesForm(ModelForm):
@@ -339,6 +397,15 @@ class CommentForm(forms.ModelForm):
         widgets = {"employee_id": forms.HiddenInput()}
 
 
+ALLOWED_FILE_EXTENSIONS = [
+    ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
+    ".jpg", ".jpeg", ".png", ".gif", ".svg", ".webp",
+    ".txt", ".csv", ".html",
+    ".mp3", ".wav", ".ogg", ".m4a",
+]
+MAX_FILE_SIZE_MB = 10  # Maximum file size in MB
+
+
 class AttachmentForm(forms.ModelForm):
     file = forms.FileField(
         widget=forms.TextInput(
@@ -356,6 +423,25 @@ class AttachmentForm(forms.ModelForm):
         model = Attachment
         fields = ["file", "comment", "ticket"]
         exclude = ["is_active"]
+
+    def clean_file(self):
+        uploaded_file = self.cleaned_data.get("file")
+        if uploaded_file:
+            import os
+
+            ext = os.path.splitext(uploaded_file.name)[1].lower()
+            if ext not in ALLOWED_FILE_EXTENSIONS:
+                raise forms.ValidationError(
+                    _("File type '%(ext)s' is not allowed. Allowed types: %(allowed)s")
+                    % {"ext": ext, "allowed": ", ".join(ALLOWED_FILE_EXTENSIONS)}
+                )
+            max_size = MAX_FILE_SIZE_MB * 1024 * 1024
+            if uploaded_file.size > max_size:
+                raise forms.ValidationError(
+                    _("File size exceeds the maximum limit of %(max_size)s MB.")
+                    % {"max_size": MAX_FILE_SIZE_MB}
+                )
+        return uploaded_file
 
 
 class DepartmentManagerCreateForm(ModelForm):

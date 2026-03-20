@@ -17,7 +17,9 @@ logger = logging.getLogger(__name__)
 
 
 def compute_resignation_balance(employee, last_working_date, notice_end_date):
-    working_days = get_working_days(last_working_date, notice_end_date)
+    from datetime import timedelta
+    fine_start_date = last_working_date + timedelta(days=1)
+    working_days = get_working_days(fine_start_date, notice_end_date)
     payable_days = working_days.get("total_working_days", 0)
 
     contract = Contract.objects.filter(
@@ -28,10 +30,10 @@ def compute_resignation_balance(employee, last_working_date, notice_end_date):
 
     basic_pay = contract.wage
 
-    working_days_details = months_between_range(basic_pay, last_working_date, notice_end_date)
+    working_days_details = months_between_range(basic_pay, fine_start_date, notice_end_date)
     allowance_data_set = {
         "employee": employee,
-        "start_date": last_working_date,
+        "start_date": fine_start_date,
         "end_date": notice_end_date,
         "basic_pay": basic_pay,
         "day_dict": working_days_details,
@@ -48,40 +50,53 @@ def compute_resignation_balance(employee, last_working_date, notice_end_date):
 
     amount_for_fine = per_day_amount * payable_days
 
+    off_emp = OffboardingEmployee.objects.filter(employee_id=employee).first()
+
     if amount_for_fine > 0:
         try:
             with transaction.atomic():
                 deduction_task, _ = OffboardingTask.objects.get_or_create(
-                    title=f"Salary deduction of {amount_for_fine:.2f} due to early resignation.",
-                    defaults={"stage_id": None},
-                    is_fine=True
+                    title="Salary deduction due to early resignation",
+                    stage_id=None,
+                    defaults={"is_fine": True},
                 )
+                if not deduction_task.is_fine:
+                    deduction_task.is_fine = True
+                    deduction_task.save(update_fields=["is_fine"])
 
-                off_emp = OffboardingEmployee.objects.filter(employee_id=employee).first()
                 if off_emp:
-                    #check for exisiting task assigned
-                    existing_emp_task = EmployeeTask.objects.filter(
-                        employee_id=off_emp,
-                        task_id__is_fine=True
-                    ).first()
-
                     description = f"Salary deduction of {amount_for_fine:.2f} due to early resignation."
 
+                    existing_emp_task = EmployeeTask.objects.filter(
+                        employee_id=off_emp,
+                        task_id__is_fine=True,
+                    ).first()
+
                     if existing_emp_task:
-                        #update existing task
-                        existing_emp_task.task_id = deduction_task
-                        existing_emp_task.description = description
-                        existing_emp_task.save()
+                        EmployeeTask.objects.filter(pk=existing_emp_task.pk).update(
+                            description=description
+                        )
                     else:
-                        #new task assignment
-                        EmployeeTask.objects.create(
-                            employee_id=off_emp,
-                            task_id=deduction_task,
-                            status="todo",
-                            description=description,
-                    )
+                        EmployeeTask.objects.bulk_create(
+                            [
+                                EmployeeTask(
+                                    employee_id=off_emp,
+                                    task_id=deduction_task,
+                                    status="todo",
+                                    description=description,
+                                )
+                            ],
+                            ignore_conflicts=True,
+                        )
         except Exception as e:
-                logger.error("Error creating deduction task: %s", e)
+            logger.error("Error creating deduction task: %s", e)
+    else:
+        if off_emp:
+            EmployeeTask.objects.filter(
+                employee_id=off_emp,
+                task_id__is_fine=True,
+            ).delete()
+
     return amount_for_fine
 
 
@@ -91,6 +106,9 @@ def assign_task_to_stage_employees(sender, instance, created, **kwargs):
     to existing OffboardingEmployees in that task's stage.
     """
     if created:
+        if instance.is_fine:
+            return
+
         from django.db.models import Q
         # If stage_id is null, it typically applies to all stages
         if instance.stage_id:

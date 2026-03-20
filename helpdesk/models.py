@@ -21,6 +21,10 @@ PRIORITY = [
     ("medium", "Medium"),
     ("high", "High"),
 ]
+
+# Name of the Django auth Group whose members act as ISO Officers.
+ISO_GROUP_NAME = "ISO"
+
 MANAGER_TYPES = [
     ("department", "Department"),
     ("job_position", "Job Position"),
@@ -122,7 +126,7 @@ class Ticket(HorillaModel):
     assigning_type = models.CharField(
         choices=MANAGER_TYPES, max_length=100, verbose_name=_("Assigning Type")
     )
-    raised_on = models.CharField(max_length=100, verbose_name=_("Forward To"))
+    raised_on = models.CharField(max_length=500, verbose_name=_("Forward To"))
     assigned_to = models.ManyToManyField(
         Employee, blank=True, related_name="ticket_assigned_to"
     )
@@ -151,35 +155,60 @@ class Ticket(HorillaModel):
         if deadline and deadline < today:
             raise ValidationError(_("Deadline should be greater than today"))
 
+    def _parse_raised_on_ids(self):
+        """Return list of ID strings stored in raised_on (supports comma-separated)."""
+        if not self.raised_on:
+            return []
+        return [rid.strip() for rid in str(self.raised_on).split(",") if rid.strip()]
+
     def get_raised_on(self):
-        obj_id = self.raised_on
-        raised_on = ""
-        if obj_id:
+        ids = self._parse_raised_on_ids()
+        if not ids:
+            return ""
+        names = []
+        for obj_id in ids:
             try:
                 if self.assigning_type == "department":
-                    raised_on = Department.objects.get(id=obj_id).department
+                    names.append(Department.objects.get(id=obj_id).department)
                 elif self.assigning_type == "job_position":
-                    raised_on = JobPosition.objects.get(id=obj_id).job_position
+                    names.append(JobPosition.objects.get(id=obj_id).job_position)
                 elif self.assigning_type == "individual":
-                    raised_on = Employee.objects.get(id=obj_id).get_full_name()
+                    names.append(Employee.objects.get(id=obj_id).get_full_name())
             except (ValueError, Department.DoesNotExist, JobPosition.DoesNotExist, Employee.DoesNotExist):
-                raised_on = _("Unknown/Deleted Entity")
-        return raised_on
+                names.append(str(_("Unknown/Deleted Entity")))
+        return ", ".join(names)
 
     def get_raised_on_object(self):
-        obj_id = self.raised_on
-        raised_on_obj = None
-        if obj_id:
+        """Return the first forwarded-to object (backward-compatible)."""
+        ids = self._parse_raised_on_ids()
+        if not ids:
+            return None
+        obj_id = ids[0]
+        try:
+            if self.assigning_type == "department":
+                return Department.objects.get(id=obj_id)
+            elif self.assigning_type == "job_position":
+                return JobPosition.objects.get(id=obj_id)
+            elif self.assigning_type == "individual":
+                return Employee.objects.get(id=obj_id)
+        except (ValueError, Department.DoesNotExist, JobPosition.DoesNotExist, Employee.DoesNotExist):
+            return None
+
+    def get_raised_on_objects(self):
+        """Return a list of all forwarded-to objects."""
+        ids = self._parse_raised_on_ids()
+        objects = []
+        for obj_id in ids:
             try:
                 if self.assigning_type == "department":
-                    raised_on_obj = Department.objects.get(id=obj_id)
+                    objects.append(Department.objects.get(id=obj_id))
                 elif self.assigning_type == "job_position":
-                    raised_on_obj = JobPosition.objects.get(id=obj_id)
+                    objects.append(JobPosition.objects.get(id=obj_id))
                 elif self.assigning_type == "individual":
-                    raised_on_obj = Employee.objects.get(id=obj_id)
+                    objects.append(Employee.objects.get(id=obj_id))
             except (ValueError, Department.DoesNotExist, JobPosition.DoesNotExist, Employee.DoesNotExist):
-                raised_on_obj = None
-        return raised_on_obj
+                pass
+        return objects
 
     def __str__(self):
         return self.title or f"Ticket {self.id}"
@@ -226,6 +255,7 @@ class PasswordResetRequest(HorillaModel):
     )
     reviewed_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True, verbose_name=_("Updated At"))
 
     class Meta:
         verbose_name = _("Password Reset Request")
@@ -279,6 +309,7 @@ class Comment(HorillaModel):
         Employee, on_delete=models.DO_NOTHING, related_name="employee_comment"
     )
     date = models.DateTimeField(auto_now_add=True)
+    is_auto_generated = models.BooleanField(default=False)
     xss_exempt_fields = ["comment"]  # 850
 
     def __str__(self):
