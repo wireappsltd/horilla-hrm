@@ -360,6 +360,30 @@
                                 <span class="helpdesk__card-label">{% trans "Created:" %}</span>
                                 <span class="helpdesk__card-value">{{ticket.created_date}}</span>
                             </li>
+                            <li class="helpdesk__card-item d-flex justify-content-between align-items-center">
+                                <div>
+                                    <span class="helpdesk__card-label">{% trans "Due Date:" %}</span>
+                                    <span class="helpdesk__card-value">
+                                        {{ ticket.deadline|default:_("Not set") }}
+                                    </span>
+                                </div>
+                                {% if password_reset_request and password_reset_request.iso_status == 'PENDING' %}
+                                    {% if request.user.is_superuser or is_iso_officer or request.user.employee_get == ticket.employee_id %}
+                                    <button
+                                        class="oh-btn oh-btn--light-bkg p-2"
+                                        title="{% trans 'Edit due date' %}"
+                                        hx-get="{% url 'password-reset-request-update' password_reset_request.id %}"
+                                        hx-target="#passwordResetModalTarget"
+                                        hx-swap="innerHTML"
+                                        data-toggle="oh-modal-toggle"
+                                        data-target="#passwordResetModal"
+                                        onclick="event.stopPropagation();"
+                                    >
+                                        <ion-icon name="calendar-outline"></ion-icon>
+                                    </button>
+                                    {% endif %}
+                                {% endif %}
+                            </li>
                             <li class="helpdesk__card-item">
                                 {% if password_reset_request and password_reset_request.iso_status != 'PENDING' and not request.user.is_superuser %}
                                 <div class="d-flex">
@@ -485,9 +509,27 @@
                 {% endif %}
                 <!-- Responsibility Card -->
                 <div class="oh-helpdesk__card">
-                    <div class="oh-helpdesk__card-header d-flex justify-content-between">
+                    <div class="oh-helpdesk__card-header d-flex justify-content-between align-items-center">
                         <span class="oh-helpdesk__card-title">{% trans "Responsibility" %}</span>
-                        <span class="oh-helpdesk__card-title text-{{color}}">{{remaining}} </span>
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="oh-helpdesk__card-title text-{{color}}">{{remaining}} </span>
+                            {% if password_reset_request and password_reset_request.iso_status == 'PENDING' %}
+                                {% if request.user.is_superuser or is_iso_officer or request.user.employee_get == ticket.employee_id %}
+                                <button
+                                    class="oh-btn oh-btn--light-bkg p-2"
+                                    title="{% trans 'Edit due date' %}"
+                                    hx-get="{% url 'password-reset-request-update' password_reset_request.id %}"
+                                    hx-target="#passwordResetModalTarget"
+                                    hx-swap="innerHTML"
+                                    data-toggle="oh-modal-toggle"
+                                    data-target="#passwordResetModal"
+                                    onclick="event.stopPropagation();"
+                                >
+                                    <ion-icon name="calendar-outline"></ion-icon>
+                                </button>
+                                {% endif %}
+                            {% endif %}
+                        </div>
                     </div>
                     <div class="oh-helpdesk__card-body">
                         <div class="oh-helpdesk__subcard">
@@ -895,6 +937,8 @@
         })
     })
 </script>
+
+<div id="passwordResetModalTarget"></div>
 
 <script type="module" src="https://unpkg.com/ionicons@5.5.2/dist/ionicons/ionicons.esm.js"></script>
 <script nomodule src="https://unpkg.com/ionicons@5.5.2/dist/ionicons/ionicons.js"></script>
