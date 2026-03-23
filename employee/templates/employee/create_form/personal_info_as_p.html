@@ -157,3 +157,59 @@
     update();
   })();
 </script>
+
+<script>
+  (function () {
+    function isIntern(selectEl) {
+      if (!selectEl) return false;
+      const selectedOption = selectEl.options[selectEl.selectedIndex];
+      const label = selectedOption ? selectedOption.textContent : "";
+      return label.toLowerCase().includes("intern");
+    }
+
+    function toggleInternSalaryFields(root) {
+      const scope = root || document;
+      const salaryBlocks = scope.querySelectorAll(".intern-salary-fields");
+      if (!salaryBlocks.length) return;
+
+      const typeSelect = scope.querySelector("#id_employee_type_id");
+      const show = isIntern(typeSelect);
+
+      salaryBlocks.forEach(function (el) {
+        el.style.display = show ? "" : "none";
+      });
+    }
+
+    function bindInternToggle(root) {
+      const scope = root || document;
+      const typeSelect = scope.querySelector("#id_employee_type_id");
+
+      if (typeSelect && !typeSelect.dataset.internSalaryBound) {
+        typeSelect.addEventListener("change", function () {
+          toggleInternSalaryFields(scope);
+        });
+        typeSelect.dataset.internSalaryBound = "1";
+      }
+
+      toggleInternSalaryFields(scope);
+    }
+
+    // Initial bind for normal page loads
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", function () {
+        bindInternToggle(document);
+      });
+    } else {
+      bindInternToggle(document);
+    }
+
+    // Re-bind after HTMX swaps so newly injected forms behave correctly
+    if (!window.__internSalaryHtmxBound) {
+      window.__internSalaryHtmxBound = true;
+      document.addEventListener("htmx:afterSwap", function (evt) {
+        bindInternToggle(evt.target || document);
+      });
+    }
+  })();
+</script>
+
