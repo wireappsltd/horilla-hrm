@@ -403,7 +403,7 @@ ALLOWED_FILE_EXTENSIONS = [
     ".txt", ".csv", ".html",
     ".mp3", ".wav", ".ogg", ".m4a",
 ]
-MAX_FILE_SIZE_MB = 10  # Maximum file size in MB
+MAX_FILE_SIZE_MB = 5  # Maximum file size in MB
 
 
 class AttachmentForm(forms.ModelForm):

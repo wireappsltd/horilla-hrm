@@ -684,7 +684,7 @@
     var ALLOWED_EXTENSIONS = ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
         '.jpg', '.jpeg', '.png', '.gif', '.svg', '.webp', '.txt', '.csv', '.html',
         '.mp3', '.wav', '.ogg', '.m4a'];
-    var MAX_FILE_SIZE_MB = 10;
+    var MAX_FILE_SIZE_MB = 5;
 
     function validateFiles(files) {
         for (var i = 0; i < files.length; i++) {
@@ -693,12 +693,12 @@
             if (ALLOWED_EXTENSIONS.indexOf(ext) === -1) {
                 Swal.fire ? Swal.fire('Error', "File '" + file.name + "' has unsupported type '" + ext + "'. Allowed types: " + ALLOWED_EXTENSIONS.join(', '), 'error')
                     : alert("File '" + file.name + "' has unsupported type '" + ext + "'.");
-                return false;
+                return false; // stop further processing when invalid type
             }
             if (file.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
                 Swal.fire ? Swal.fire('Error', "File '" + file.name + "' exceeds the maximum size of " + MAX_FILE_SIZE_MB + " MB.", 'error')
                     : alert("File '" + file.name + "' exceeds the maximum size of " + MAX_FILE_SIZE_MB + " MB.");
-                return false;
+                return false; // stop and prevent submission on oversize file
             }
         }
         return true;
@@ -900,3 +900,6 @@
 <script nomodule src="https://unpkg.com/ionicons@5.5.2/dist/ionicons/ionicons.js"></script>
 
 {% endblock %}
+
+
+
