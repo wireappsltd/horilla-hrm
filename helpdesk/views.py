@@ -1943,8 +1943,15 @@ def iso_forms_home(request):
         else:
             queryset = queryset.none()
 
+    pending_requests = queryset.filter(iso_status="PENDING")
+    reviewed_requests = queryset.exclude(iso_status="PENDING").order_by(
+        "-reviewed_at", "-updated_at"
+    )
+
     context = {
         "password_reset_requests": queryset,
+        "pending_password_reset_requests": pending_requests,
+        "reviewed_password_reset_requests": reviewed_requests,
         "current_employee": current_employee,
         "is_iso_officer": request.user.is_superuser or _is_iso_officer(request.user),
     }
