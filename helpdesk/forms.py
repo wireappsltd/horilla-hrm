@@ -25,6 +25,7 @@ from typing import Any
 
 from django import forms
 from django.template.loader import render_to_string
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from base.forms import ModelForm
@@ -216,6 +217,8 @@ class PasswordResetRequestForm(forms.ModelForm):
 
     def __init__(self, *args, request=None, **kwargs):
         super().__init__(*args, **kwargs)
+        today = timezone.localdate()
+        self.fields["deadline"].widget.attrs["min"] = today.isoformat()
 
         if request and request.user.is_superuser:
             # Admins can pick any active employee
@@ -245,6 +248,15 @@ class PasswordResetRequestForm(forms.ModelForm):
         if self.instance and self.instance.pk and hasattr(self.instance, "ticket") and self.instance.ticket:
             self.fields["priority"].initial = self.instance.ticket.priority
             self.fields["deadline"].initial = self.instance.ticket.deadline
+
+    def clean_deadline(self):
+        deadline = self.cleaned_data.get("deadline")
+        if deadline is None:
+            return deadline
+        today = timezone.localdate()
+        if deadline < today:
+            raise forms.ValidationError(_("Due date cannot be in the past."))
+        return deadline
 
     def save(self, commit=True):
         instance = super().save(commit=False)
