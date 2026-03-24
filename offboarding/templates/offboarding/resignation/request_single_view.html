@@ -112,6 +112,9 @@
         </div>
     </div>
     <h3 class="oh-faq-card__title">{{ letter.title }}</h3>
+    {% if letter.exit_reason %}
+    <p class="mb-1"><strong>{% trans "Resignation Reason" %}:</strong> {{ letter.exit_reason }}</p>
+    {% endif %}
     <div class="oh-faq-card__desc" style="max-height:200px;overflow:auto">{{ letter.description|safe }}</div>
     <form action="{% url 'update-letter-status' %}">
         {% if perms.offboarding.change_resignationletter %}
