@@ -1090,7 +1090,7 @@ def ticket_change_assignees(request, ticket_id):
                     ticket.save(update_fields=["employee_id", "assigning_type", "raised_on"])
 
                     work_info = getattr(new_owner, "employee_work_info", None)
-                    work_email = getattr(work_info, "email", None) if work_info else None
+                    work_email = getattr(work_info, "company_email", None) if work_info else None
                     if work_email:
                         pr_request.user_id = work_email
                         pr_request.save(update_fields=["user_id", "updated_at"])
