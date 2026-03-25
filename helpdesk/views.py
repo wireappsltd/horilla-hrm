@@ -2000,7 +2000,13 @@ def password_reset_request_create(request):
             reason = form.cleaned_data["reason"]
 
             assigning_type = "individual"
-            raised_on = str(selected_employee.id)
+            forward_to_employees = form.cleaned_data.get("forward_to")
+            if forward_to_employees:
+                raised_on = ",".join(
+                    str(emp.id) for emp in forward_to_employees
+                )
+            else:
+                raised_on = str(selected_employee.id)
             try:
                 user_email = selected_employee.employee_work_info.company_email or ""
             except Exception:
@@ -2120,7 +2126,13 @@ def password_reset_request_update(request, pr_id):
                 f"<b>User:</b> {user_display}<br>"
                 f"<b>Reason:</b> {reason}"
             )[:255]
-            ticket.raised_on = str(selected_employee.id)
+            forward_to_employees = form.cleaned_data.get("forward_to")
+            if forward_to_employees:
+                ticket.raised_on = ",".join(
+                    str(emp.id) for emp in forward_to_employees
+                )
+            else:
+                ticket.raised_on = str(selected_employee.id)
             ticket.save()
 
             # Refresh assigned_to: ensure the selected employee is assigned
