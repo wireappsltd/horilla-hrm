@@ -2060,22 +2060,39 @@ def password_reset_request_create(request):
             pr_request.iso_status = "PENDING"
             pr_request.save()
 
+            notification_actor = getattr(request.user, "employee_get", selected_employee)
+
             # In-app notification to all ISO officers and admins
             iso_officer_users = _get_iso_officer_users()
             try:
-                notify.send(
-                    selected_employee,
-                    recipient=iso_officer_users,
-                    verb=f"New Password Reset request submitted for {selected_employee.get_full_name()} on {platform}.",
-                    verb_ar="تم تقديم طلب إعادة تعيين كلمة المرور.",
-                    verb_de="Eine neue Anfrage zum Zurücksetzen des Passworts wurde eingereicht.",
-                    verb_es="Se ha enviado una nueva solicitud de restablecimiento de contraseña.",
-                    verb_fr="Une nouvelle demande de réinitialisation de mot de passe a été soumise.",
-                    icon="key",
-                    redirect=reverse("ticket-detail", kwargs={"ticket_id": ticket.id}),
-                )
+                if iso_officer_users:
+                    notify.send(
+                        notification_actor,
+                        recipient=iso_officer_users,
+                        verb=f"New Password Reset request submitted for {selected_employee.get_full_name()} on {platform}.",
+                        verb_ar="تم تقديم طلب إعادة تعيين كلمة المرور.",
+                        verb_de="Eine neue Anfrage zum Zurücksetzen des Passworts wurde eingereicht.",
+                        verb_es="Se ha enviado una nueva solicitud de restablecimiento de contraseña.",
+                        verb_fr="Une nouvelle demande de réinitialisation de mot de passe a été soumise.",
+                        icon="key",
+                        redirect=reverse("ticket-detail", kwargs={"ticket_id": ticket.id}),
+                    )
             except Exception as exc:
                 logger.error("Password reset notify error: %s", exc)
+
+            # In-app confirmation notification to the requester
+            requestor_user = getattr(selected_employee, "employee_user_id", None)
+            try:
+                if requestor_user:
+                    notify.send(
+                        notification_actor,
+                        recipient=requestor_user,
+                        verb=f"Your password reset request for {platform} has been submitted and is pending ISO approval.",
+                        icon="key",
+                        redirect=reverse("ticket-detail", kwargs={"ticket_id": ticket.id}),
+                    )
+            except Exception as exc:
+                logger.error("Password reset requester notify error: %s", exc)
 
             # Email notification to ISO officers and confirmation to requester
             try:
