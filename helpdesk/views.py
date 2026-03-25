@@ -2021,10 +2021,6 @@ def password_reset_request_create(request):
                 )
             else:
                 raised_on = str(selected_employee.id)
-            try:
-                user_email = selected_employee.employee_work_info.company_email or ""
-            except Exception:
-                user_email = ""
             user_display = _format_password_reset_user(selected_employee)
             description = (
                 f"<b>Password Reset Request Details:</b><br><br>"
