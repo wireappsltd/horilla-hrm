@@ -1964,6 +1964,20 @@ def _get_password_reset_ticket_type():
     return ticket_type
 
 
+def _format_password_reset_user(employee):
+    """Return a clean display string for the Password Reset user."""
+    if not employee:
+        return ""
+    try:
+        base_name = (employee.get_full_name() or str(employee)).strip()
+    except Exception:
+        base_name = str(employee).strip()
+    badge = getattr(employee, "badge_id", "") or ""
+    display = base_name
+    if badge and badge not in display:
+        display = f"{display} ({badge})"
+    return display
+
 
 @login_required
 @hx_request_required
@@ -1991,9 +2005,7 @@ def password_reset_request_create(request):
                 user_email = selected_employee.employee_work_info.company_email or ""
             except Exception:
                 user_email = ""
-            user_display = str(selected_employee)
-            if user_email and user_email not in user_display:
-                user_display = f"{user_display} ({user_email})"
+            user_display = _format_password_reset_user(selected_employee)
             description = (
                 f"<b>Password Reset Request Details:</b><br><br>"
                 f"<b>Platform:</b> {platform}<br>"
@@ -2097,15 +2109,7 @@ def password_reset_request_update(request, pr_id):
             platform = form.cleaned_data["platform"]
             selected_employee = form.cleaned_data["employee"]
             reason = form.cleaned_data["reason"]
-            try:
-                user_email = selected_employee.employee_work_info.company_email or ""
-            except Exception:
-                user_email = ""
-            user_display = str(selected_employee)
-            if user_email and user_email not in user_display:
-                user_display = f"{user_display} ({user_email})"
-
-            # FIX: update the ticket owner to the (possibly changed) selected employee
+            user_display = _format_password_reset_user(selected_employee)
             ticket.employee_id = selected_employee
             ticket.priority = form.cleaned_data.get("priority")
             ticket.deadline = form.cleaned_data.get("deadline")
