@@ -1059,17 +1059,41 @@ def ticket_change_assignees(request, ticket_id):
         if request.method == "POST":
             form = TicketAssigneesForm(request.POST, instance=ticket)
             if form.is_valid():
-                form.save(commit=False)
+                selected_assignees = form.cleaned_data["assigned_to"]
 
-                new_assignee_ids = form.cleaned_data["assigned_to"].values_list(
-                    "id", flat=True
-                )
+                # Password reset tickets must be owned by exactly one assignee.
+                if pr_request and selected_assignees.count() != 1:
+                    form.add_error(
+                        "assigned_to",
+                        _("Password reset requests must be assigned to exactly one user."),
+                    )
+                    return render(
+                        request,
+                        "helpdesk/ticket/forms/change_assinees.html",
+                        {"form": form, "ticket_id": ticket_id},
+                    )
+
+                new_assignee_ids = selected_assignees.values_list("id", flat=True)
                 added_assignee_ids = set(new_assignee_ids) - set(prev_assignee_ids)
                 removed_assignee_ids = set(prev_assignee_ids) - set(new_assignee_ids)
                 added_assignees = Employee.objects.filter(id__in=added_assignee_ids)
                 removed_assignees = Employee.objects.filter(id__in=removed_assignee_ids)
 
                 form.save()
+
+                # Keep Password Reset ticket ownership fields aligned with assignee.
+                if pr_request:
+                    new_owner = selected_assignees.first()
+                    ticket.employee_id = new_owner
+                    ticket.assigning_type = "individual"
+                    ticket.raised_on = str(new_owner.id)
+                    ticket.save(update_fields=["employee_id", "assigning_type", "raised_on"])
+
+                    try:
+                        pr_request.user_id = new_owner.employee_work_info.company_email or ""
+                    except Exception:
+                        pr_request.user_id = ""
+                    pr_request.save(update_fields=["user_id", "updated_at"])
 
                 mail_thread = AddAssigneeThread(
                     request,
