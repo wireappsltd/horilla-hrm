@@ -35,6 +35,7 @@ from employee.models import Employee
 from helpdesk.models import (
     FAQ,
     PRIORITY,
+    ISO_GROUP_NAME,
     Attachment,
     Comment,
     DepartmentManager,
@@ -217,32 +218,54 @@ class PasswordResetRequestForm(forms.ModelForm):
     def __init__(self, *args, request=None, **kwargs):
         super().__init__(*args, **kwargs)
 
-        if request and request.user.is_superuser:
-            # Admins can pick any active employee
-            self.fields["employee"].queryset = Employee.objects.filter(
-                is_active=True
-            ).order_by("employee_first_name")
+        # Who can pick any employee: superuser or ISO officer
+        is_iso_officer = False
+        if request:
+            is_iso_officer = request.user.groups.filter(name=ISO_GROUP_NAME).exists()
+
+        ticket_employee = None
+        if self.instance and self.instance.pk and hasattr(self.instance, "ticket") and self.instance.ticket:
+            ticket_employee = self.instance.ticket.employee_id
+
+        # Track the employee we want selected in the dropdown
+        selected_employee = None
+
+        if request and (request.user.is_superuser or is_iso_officer):
+            qs = Employee.objects.filter(is_active=True)
+            if ticket_employee:
+                qs = qs | Employee.objects.filter(pk=ticket_employee.pk)
+            self.fields["employee"].queryset = qs.order_by("employee_first_name")
         elif request:
-            # Regular users can only pick themselves
             try:
                 emp = request.user.employee_get
-                self.fields["employee"].queryset = Employee.objects.filter(pk=emp.pk)
+                qs = Employee.objects.filter(pk=emp.pk)
+                if ticket_employee:
+                    qs = qs | Employee.objects.filter(pk=ticket_employee.pk)
+                self.fields["employee"].queryset = qs
                 self.fields["employee"].initial = emp
+                selected_employee = emp  # default to current user for non-admins
             except Exception:
                 self.fields["employee"].queryset = Employee.objects.none()
 
-        # If editing an existing request, pre-select the matching employee
-        if self.instance and self.instance.pk and self.instance.user_id:
-            try:
-                emp = Employee.objects.get(
-                    employee_work_info__company_email=self.instance.user_id
-                )
-                self.fields["employee"].initial = emp
-            except Exception:
-                pass
+        # If editing an existing request, pre-select the matching employee (email),
+        # otherwise fall back to the ticket owner.
+        if self.instance and self.instance.pk:
+            if self.instance.user_id:
+                try:
+                    selected_employee = Employee.objects.get(
+                        employee_work_info__company_email=self.instance.user_id
+                    )
+                except Exception:
+                    pass
+            if not selected_employee and ticket_employee:
+                selected_employee = ticket_employee
+
+        # Always set initial to the resolved employee so the dropdown stays populated
+        if selected_employee:
+            self.fields["employee"].initial = selected_employee
 
         # If editing, pre-populate priority and deadline from the linked ticket
-        if self.instance and self.instance.pk and hasattr(self.instance, "ticket") and self.instance.ticket:
+        if ticket_employee and self.instance and self.instance.pk and hasattr(self.instance, "ticket") and self.instance.ticket:
             self.fields["priority"].initial = self.instance.ticket.priority
             self.fields["deadline"].initial = self.instance.ticket.deadline
 
