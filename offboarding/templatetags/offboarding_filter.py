@@ -173,6 +173,25 @@ def completed_tasks(tasks):
     """
     return tasks.filter(status__in=["completed", "not_applicable"]).count()
 
+
+@register.filter("stage_completed_tasks")
+def stage_completed_tasks(employee: OffboardingEmployee, stage: OffboardingStage):
+    """
+    Returns the count of completed/not_applicable tasks for the employee in the given stage.
+    """
+    return employee.employeetask_set.filter(
+        task_id__stage_id=stage,
+        status__in=["completed", "not_applicable"],
+    ).count()
+
+
+@register.filter("stage_total_tasks")
+def stage_total_tasks(employee: OffboardingEmployee, stage: OffboardingStage):
+    """
+    Returns the total count of tasks assigned to the employee in the given stage.
+    """
+    return employee.employeetask_set.filter(task_id__stage_id=stage).count()
+
 @register.filter("is_employee_tasks")
 def is_employee_tasks(employee_tasks, task):
     """

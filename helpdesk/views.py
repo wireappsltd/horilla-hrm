@@ -1943,8 +1943,15 @@ def iso_forms_home(request):
         else:
             queryset = queryset.none()
 
+    pending_requests = queryset.filter(iso_status="PENDING")
+    reviewed_requests = queryset.exclude(iso_status="PENDING").order_by(
+        "-reviewed_at", "-updated_at"
+    )
+
     context = {
         "password_reset_requests": queryset,
+        "pending_password_reset_requests": pending_requests,
+        "reviewed_password_reset_requests": reviewed_requests,
         "current_employee": current_employee,
         "is_iso_officer": request.user.is_superuser or _is_iso_officer(request.user),
     }
@@ -2095,7 +2102,11 @@ def password_reset_request_update(request, pr_id):
     pr_request = PasswordResetRequest.objects.get(id=pr_id)
     ticket = pr_request.ticket
 
-    if request.user.employee_get != ticket.employee_id and not request.user.is_superuser:
+    current_employee = getattr(request.user, "employee_get", None)
+    is_iso_officer = _is_iso_officer(request.user)
+    has_access = request.user.is_superuser or is_iso_officer or current_employee == ticket.employee_id
+
+    if not has_access:
         messages.info(request, _("You don't have permission."))
         if "HTTP_HX_REQUEST" in request.META:
             return render(request, "decorator_404.html")

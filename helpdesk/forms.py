@@ -245,8 +245,13 @@ class PasswordResetRequestForm(forms.ModelForm):
             except Exception:
                 selected_employee = None
 
+        # Who can pick any employee: superuser or ISO officer
+        is_iso_officer = False
+        if request:
+            is_iso_officer = request.user.groups.filter(name=ISO_GROUP_NAME).exists()
+
         employee_filter = Q(pk=-1)  # start empty; add allowed employees below
-        if request and request.user.is_superuser:
+        if request and (request.user.is_superuser or is_iso_officer):
             employee_filter |= Q(is_active=True)
         elif request:
             try:
@@ -470,7 +475,7 @@ ALLOWED_FILE_EXTENSIONS = [
     ".txt", ".csv", ".html",
     ".mp3", ".wav", ".ogg", ".m4a",
 ]
-MAX_FILE_SIZE_MB = 10  # Maximum file size in MB
+MAX_FILE_SIZE_MB = 5  # Maximum file size in MB
 
 
 class AttachmentForm(forms.ModelForm):
