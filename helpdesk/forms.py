@@ -171,6 +171,8 @@ class PasswordResetRequestForm(forms.ModelForm):
     On save, user_email is populated from the selected employee's company email.
     """
 
+    REASON_MAX_LENGTH = 250
+
     employee = forms.ModelChoiceField(
         queryset=Employee.objects.none(),  # populated in __init__
         label=_("User ID (Email)"),
@@ -217,6 +219,22 @@ class PasswordResetRequestForm(forms.ModelForm):
 
     def __init__(self, *args, request=None, **kwargs):
         super().__init__(*args, **kwargs)
+
+        reason_error_message = _("Reason cannot exceed %(max_length)s characters.") % {
+            "max_length": self.REASON_MAX_LENGTH,
+        }
+        reason_field = self.fields["reason"]
+        reason_field.max_length = self.REASON_MAX_LENGTH
+        reason_field.help_text = _("Max %(max_length)s characters") % {
+            "max_length": self.REASON_MAX_LENGTH,
+        }
+        reason_field.error_messages["max_length"] = reason_error_message
+        reason_field.widget.attrs.update(
+            {
+                "data-maxlength": str(self.REASON_MAX_LENGTH),
+                "data-maxlength-message": reason_error_message,
+            }
+        )
 
         # Who can pick any employee: superuser or ISO officer
         is_iso_officer = False
@@ -268,6 +286,15 @@ class PasswordResetRequestForm(forms.ModelForm):
         if ticket_employee and self.instance and self.instance.pk and hasattr(self.instance, "ticket") and self.instance.ticket:
             self.fields["priority"].initial = self.instance.ticket.priority
             self.fields["deadline"].initial = self.instance.ticket.deadline
+
+    def clean_reason(self):
+        reason = (self.cleaned_data.get("reason") or "").strip()
+        if len(reason) > self.REASON_MAX_LENGTH:
+            raise forms.ValidationError(
+                _("Reason cannot exceed %(max_length)s characters.")
+                % {"max_length": self.REASON_MAX_LENGTH}
+            )
+        return reason
 
     def save(self, commit=True):
         instance = super().save(commit=False)
