@@ -1935,6 +1935,13 @@ def _is_iso_officer(user):
     return user.groups.filter(name=ISO_GROUP_NAME).exists()
 
 
+def _is_password_reset_request_owner(user, pr_request):
+    """Return True when the authenticated user owns the password reset request."""
+    current_employee = getattr(user, "employee_get", None)
+    ticket_employee = getattr(pr_request.ticket, "employee_id", None)
+    return bool(current_employee and ticket_employee and current_employee == ticket_employee)
+
+
 def _get_iso_officer_users():
     """
     Return a list of User objects who are ISO officers (members of the ISO
@@ -2176,6 +2183,13 @@ def iso_review_password_reset(request, pr_id):
         return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
 
     pr_request = PasswordResetRequest.objects.get(id=pr_id)
+
+    if _is_password_reset_request_owner(request.user, pr_request):
+        messages.info(
+            request,
+            _("You cannot approve or reject your own password reset request."),
+        )
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
 
     if pr_request.iso_status != "PENDING":
         messages.info(request, _("This request has already been reviewed."))
