@@ -1969,14 +1969,21 @@ def _format_password_reset_user(employee):
     if not employee:
         return ""
     try:
-        base_name = (employee.get_full_name() or str(employee)).strip()
+        # Use get_full_name() which returns only "First Last" without badge.
+        full_name = (employee.get_full_name() or "").strip()
     except Exception:
-        base_name = str(employee).strip()
+        full_name = ""
+
     badge = getattr(employee, "badge_id", "") or ""
-    display = base_name
-    if badge and badge not in display:
-        display = f"{display} ({badge})"
-    return display
+
+    if full_name and badge:
+        return f"{full_name} ({badge})"
+    elif full_name:
+        return full_name
+    elif badge:
+        return badge
+    # Fallback to str(employee) which already includes badge.
+    return str(employee).strip()
 
 
 @login_required
@@ -2116,6 +2123,10 @@ def password_reset_request_update(request, pr_id):
             selected_employee = form.cleaned_data["employee"]
             reason = form.cleaned_data["reason"]
             user_display = _format_password_reset_user(selected_employee)
+
+            # Re-fetch the ticket fresh from DB to avoid stale reference
+            ticket = Ticket.objects.get(pk=pr_request.ticket_id)
+
             ticket.employee_id = selected_employee
             ticket.priority = form.cleaned_data.get("priority")
             ticket.deadline = form.cleaned_data.get("deadline")
@@ -2135,7 +2146,7 @@ def password_reset_request_update(request, pr_id):
                 ticket.raised_on = str(selected_employee.id)
             ticket.save()
 
-            # Refresh assigned_to: ensure the selected employee is assigned
+            # Refresh assigned_to: reassign to the employee
             ticket.assigned_to.clear()
             ticket.assigned_to.add(selected_employee)
 
