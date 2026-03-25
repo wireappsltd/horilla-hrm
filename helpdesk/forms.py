@@ -12,6 +12,7 @@ Classes:
 
 Usage:
 from django import forms
+from django.db.models import Q
 
 class YourForm(forms.Form):
     field_name = forms.CharField()
@@ -24,6 +25,7 @@ class YourForm(forms.Form):
 from typing import Any
 
 from django import forms
+from django.db.models import Q
 from django.template.loader import render_to_string
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
@@ -220,29 +222,37 @@ class PasswordResetRequestForm(forms.ModelForm):
         today = timezone.localdate()
         self.fields["deadline"].widget.attrs["min"] = today.isoformat()
 
-        if request and request.user.is_superuser:
-            # Admins can pick any active employee
-            self.fields["employee"].queryset = Employee.objects.filter(
-                is_active=True
-            ).order_by("employee_first_name")
-        elif request:
-            # Regular users can only pick themselves
+        # Resolve the employee tied to this request (ticket owner)
+        selected_employee = None
+        if self.instance and self.instance.pk and getattr(self.instance, "ticket", None):
+            selected_employee = getattr(self.instance.ticket, "employee_id", None)
+        if not selected_employee and self.instance and self.instance.pk and self.instance.user_id:
             try:
-                emp = request.user.employee_get
-                self.fields["employee"].queryset = Employee.objects.filter(pk=emp.pk)
-                self.fields["employee"].initial = emp
-            except Exception:
-                self.fields["employee"].queryset = Employee.objects.none()
-
-        # If editing an existing request, pre-select the matching employee
-        if self.instance and self.instance.pk and self.instance.user_id:
-            try:
-                emp = Employee.objects.get(
+                selected_employee = Employee.objects.get(
                     employee_work_info__company_email=self.instance.user_id
                 )
-                self.fields["employee"].initial = emp
+            except Exception:
+                selected_employee = None
+
+        employee_filter = Q(pk=-1)  # start empty; add allowed employees below
+        if request and request.user.is_superuser:
+            employee_filter |= Q(is_active=True)
+        elif request:
+            try:
+                emp = request.user.employee_get
+                employee_filter |= Q(pk=emp.pk)
+                selected_employee = selected_employee or emp
             except Exception:
                 pass
+
+        if selected_employee:
+            employee_filter |= Q(pk=selected_employee.pk)
+            self.initial["employee"] = selected_employee
+            self.fields["employee"].initial = selected_employee
+
+        self.fields["employee"].queryset = Employee.objects.filter(employee_filter).order_by(
+            "employee_first_name"
+        )
 
         # If editing, pre-populate priority and deadline from the linked ticket
         if self.instance and self.instance.pk and hasattr(self.instance, "ticket") and self.instance.ticket:
