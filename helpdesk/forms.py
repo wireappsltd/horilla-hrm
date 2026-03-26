@@ -12,6 +12,7 @@ Classes:
 
 Usage:
 from django import forms
+from django.db.models import Q
 
 class YourForm(forms.Form):
     field_name = forms.CharField()
@@ -24,8 +25,10 @@ class YourForm(forms.Form):
 from typing import Any
 
 from django import forms
-from django.contrib.auth.models import User
+from django.contrib.auth.models import Group, User
+from django.db.models import Q
 from django.template.loader import render_to_string
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from base.forms import ModelForm
@@ -187,6 +190,15 @@ class PasswordResetRequestForm(forms.ModelForm):
         widget=forms.Select(attrs={"class": "oh-select oh-select-2 w-100"}),
     )
 
+    forward_to = forms.ModelMultipleChoiceField(
+        queryset=User.objects.none(),
+        label=_("Forward To"),
+        required=True,
+        widget=forms.SelectMultiple(
+            attrs={"class": "oh-select oh-select-2 w-100"}
+        ),
+    )
+
     deadline = forms.DateField(
         required=False,
         label=_("Due Date"),
@@ -196,13 +208,6 @@ class PasswordResetRequestForm(forms.ModelForm):
                 "type": "date",
             }
         ),
-    )
-
-    forward_to = forms.ModelMultipleChoiceField(
-        queryset=User.objects.none(),
-        label=_("Forward To"),
-        required=True,
-        widget=forms.SelectMultiple(attrs={"class": "oh-select oh-select-2 w-100"}),
     )
 
     class Meta:
@@ -227,6 +232,20 @@ class PasswordResetRequestForm(forms.ModelForm):
 
     def __init__(self, *args, request=None, **kwargs):
         super().__init__(*args, **kwargs)
+        today = timezone.localdate()
+        self.fields["deadline"].widget.attrs["min"] = today.isoformat()
+
+        # Resolve the employee tied to this request (ticket owner)
+        selected_employee = None
+        if self.instance and self.instance.pk and getattr(self.instance, "ticket", None):
+            selected_employee = getattr(self.instance.ticket, "employee_id", None)
+        if not selected_employee and self.instance and self.instance.pk and self.instance.user_id:
+            try:
+                selected_employee = Employee.objects.get(
+                    employee_work_info__company_email=self.instance.user_id
+                )
+            except Exception:
+                selected_employee = None
 
         self.fields["forward_to"].queryset = (
             User.objects.filter(groups__name=ISO_GROUP_NAME, is_active=True)
@@ -256,49 +275,62 @@ class PasswordResetRequestForm(forms.ModelForm):
         if request:
             is_iso_officer = request.user.groups.filter(name=ISO_GROUP_NAME).exists()
 
-        ticket_employee = None
-        if self.instance and self.instance.pk and hasattr(self.instance, "ticket") and self.instance.ticket:
-            ticket_employee = self.instance.ticket.employee_id
-
-        # Track the employee we want selected in the dropdown
-        selected_employee = None
-
+        employee_filter = Q(pk=-1)  # start empty; add allowed employees below
         if request and (request.user.is_superuser or is_iso_officer):
-            qs = Employee.objects.filter(is_active=True)
-            if ticket_employee:
-                qs = qs | Employee.objects.filter(pk=ticket_employee.pk)
-            self.fields["employee"].queryset = qs.order_by("employee_first_name")
+            employee_filter |= Q(is_active=True)
         elif request:
             try:
                 emp = request.user.employee_get
-                qs = Employee.objects.filter(pk=emp.pk)
-                if ticket_employee:
-                    qs = qs | Employee.objects.filter(pk=ticket_employee.pk)
-                self.fields["employee"].queryset = qs
-                self.fields["employee"].initial = emp
-                selected_employee = emp  # default to current user for non-admins
+                employee_filter |= Q(pk=emp.pk)
+                selected_employee = selected_employee or emp
             except Exception:
-                self.fields["employee"].queryset = Employee.objects.none()
+                pass
 
-        # If editing an existing request, pre-select the matching employee (email),
-        # otherwise fall back to the ticket owner.
-        if self.instance and self.instance.pk:
-            if self.instance.user_id:
-                try:
-                    selected_employee = Employee.objects.get(
-                        employee_work_info__company_email=self.instance.user_id
-                    )
-                except Exception:
-                    pass
-            if not selected_employee and ticket_employee:
-                selected_employee = ticket_employee
-
-        # Always set initial to the resolved employee so the dropdown stays populated
         if selected_employee:
+            employee_filter |= Q(pk=selected_employee.pk)
+            self.initial["employee"] = selected_employee
             self.fields["employee"].initial = selected_employee
 
+        self.fields["employee"].queryset = Employee.objects.filter(employee_filter).order_by(
+            "employee_first_name"
+        )
+
+        # ── Forward To: show ISO group members (+ superuser employees) ──
+        iso_group = Group.objects.filter(name=ISO_GROUP_NAME).first()
+        if iso_group:
+            iso_employee_qs = Employee.objects.filter(
+                employee_user_id__groups=iso_group,
+                is_active=True,
+            )
+        else:
+            # Fallback: if the ISO group doesn't exist, show superuser employees
+            iso_employee_qs = Employee.objects.filter(
+                employee_user_id__is_superuser=True,
+                is_active=True,
+            )
+        self.fields["forward_to"].queryset = iso_employee_qs.order_by(
+            "employee_first_name"
+        )
+
+        # Pre-select: if editing, use the existing raised_on IDs; otherwise default to all ISO members
+        if self.instance and self.instance.pk and hasattr(self.instance, "ticket") and self.instance.ticket:
+            existing_ids = [
+                rid.strip()
+                for rid in (self.instance.ticket.raised_on or "").split(",")
+                if rid.strip()
+            ]
+            if existing_ids:
+                self.initial["forward_to"] = iso_employee_qs.filter(
+                    id__in=existing_ids
+                )
+            else:
+                self.initial["forward_to"] = iso_employee_qs
+        else:
+            # New form: default to all ISO group members
+            self.initial["forward_to"] = iso_employee_qs
+
         # If editing, pre-populate priority and deadline from the linked ticket
-        if ticket_employee and self.instance and self.instance.pk and hasattr(self.instance, "ticket") and self.instance.ticket:
+        if self.instance and self.instance.pk and hasattr(self.instance, "ticket") and self.instance.ticket:
             self.fields["priority"].initial = self.instance.ticket.priority
             self.fields["deadline"].initial = self.instance.ticket.deadline
 
@@ -323,6 +355,15 @@ class PasswordResetRequestForm(forms.ModelForm):
                 % {"max_length": self.REASON_MAX_LENGTH}
             )
         return reason
+
+    def clean_deadline(self):
+        deadline = self.cleaned_data.get("deadline")
+        if deadline is None:
+            return deadline
+        today = timezone.localdate()
+        if deadline < today:
+            raise forms.ValidationError(_("Due date cannot be in the past."))
+        return deadline
 
     def save(self, commit=True):
         instance = super().save(commit=False)
