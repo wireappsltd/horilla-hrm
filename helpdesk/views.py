@@ -1971,6 +1971,27 @@ def _get_password_reset_ticket_type():
     return ticket_type
 
 
+def _format_password_reset_user(employee):
+    """Return a clean display string for the Password Reset user."""
+    if not employee:
+        return ""
+    try:
+        # Use get_full_name() which returns only "First Last" without badge.
+        full_name = (employee.get_full_name() or "").strip()
+    except Exception:
+        full_name = ""
+
+    badge = getattr(employee, "badge_id", "") or ""
+
+    if full_name and badge:
+        return f"{full_name} ({badge})"
+    elif full_name:
+        return full_name
+    elif badge:
+        return badge
+    # Fallback to str(employee) which already includes badge.
+    return str(employee).strip()
+
 
 @login_required
 @hx_request_required
@@ -1993,14 +2014,14 @@ def password_reset_request_create(request):
             reason = form.cleaned_data["reason"]
 
             assigning_type = "individual"
-            raised_on = str(selected_employee.id)
-            try:
-                user_email = selected_employee.employee_work_info.company_email or ""
-            except Exception:
-                user_email = ""
-            user_display = str(selected_employee)
-            if user_email and user_email not in user_display:
-                user_display = f"{user_display} ({user_email})"
+            forward_to_employees = form.cleaned_data.get("forward_to")
+            if forward_to_employees:
+                raised_on = ",".join(
+                    str(emp.id) for emp in forward_to_employees
+                )
+            else:
+                raised_on = str(selected_employee.id)
+            user_display = _format_password_reset_user(selected_employee)
             description = (
                 f"<b>Password Reset Request Details:</b><br><br>"
                 f"<b>Platform:</b> {platform}<br>"
@@ -2108,15 +2129,11 @@ def password_reset_request_update(request, pr_id):
             platform = form.cleaned_data["platform"]
             selected_employee = form.cleaned_data["employee"]
             reason = form.cleaned_data["reason"]
-            try:
-                user_email = selected_employee.employee_work_info.company_email or ""
-            except Exception:
-                user_email = ""
-            user_display = str(selected_employee)
-            if user_email and user_email not in user_display:
-                user_display = f"{user_display} ({user_email})"
+            user_display = _format_password_reset_user(selected_employee)
 
-            # FIX: update the ticket owner to the (possibly changed) selected employee
+            # Re-fetch the ticket fresh from DB to avoid stale reference
+            ticket = Ticket.objects.get(pk=pr_request.ticket_id)
+
             ticket.employee_id = selected_employee
             ticket.priority = form.cleaned_data.get("priority")
             ticket.deadline = form.cleaned_data.get("deadline")
@@ -2127,10 +2144,16 @@ def password_reset_request_update(request, pr_id):
                 f"<b>User:</b> {user_display}<br>"
                 f"<b>Reason:</b> {reason}"
             )[:255]
-            ticket.raised_on = str(selected_employee.id)
+            forward_to_employees = form.cleaned_data.get("forward_to")
+            if forward_to_employees:
+                ticket.raised_on = ",".join(
+                    str(emp.id) for emp in forward_to_employees
+                )
+            else:
+                ticket.raised_on = str(selected_employee.id)
             ticket.save()
 
-            # Refresh assigned_to: ensure the selected employee is assigned
+            # Refresh assigned_to: reassign to the employee
             ticket.assigned_to.clear()
             ticket.assigned_to.add(selected_employee)
 
