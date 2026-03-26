@@ -446,13 +446,51 @@ class AttendanceForm(BaseModelForm):
 
     def save(self, commit=True):
         instance = super().save(commit=False)
+        attendance_date = self.data.get("attendance_date")
         for emp_id in self.data.getlist("employee_id"):
             if int(emp_id) != int(instance.employee_id.id):
+                # Check for existing pure pending request (not validated/approved)
+                existing = Attendance.objects.filter(
+                    employee_id__id=emp_id,
+                    attendance_date=attendance_date,
+                    is_validate_request=True,
+                    is_validate_request_approved=False,
+                    attendance_validated=False,
+                ).first()
                 data_copy = self.data.copy()
                 data_copy.update({"employee_id": str(emp_id)})
-                attendance = AttendanceUpdateForm(data_copy).save(commit=False)
-                attendance.save()
+                if existing:
+                    attendance = AttendanceUpdateForm(
+                        data_copy, instance=existing
+                    ).save(commit=False)
+                    attendance.requested_data = None
+                    attendance.request_type = "create_request"
+                    attendance.save()
+                else:
+                    attendance = AttendanceUpdateForm(data_copy).save(commit=False)
+                    attendance.save()
         if commit:
+            # Check for existing pure pending request (not validated/approved)
+            # for the primary employee as well
+            existing = Attendance.objects.filter(
+                employee_id=instance.employee_id,
+                attendance_date=attendance_date,
+                is_validate_request=True,
+                is_validate_request_approved=False,
+                attendance_validated=False,
+            ).first()
+            if existing:
+                existing.shift_id = instance.shift_id
+                existing.work_type_id = instance.work_type_id
+                existing.attendance_clock_in = instance.attendance_clock_in
+                existing.attendance_clock_in_date = instance.attendance_clock_in_date
+                existing.attendance_clock_out = instance.attendance_clock_out
+                existing.attendance_clock_out_date = instance.attendance_clock_out_date
+                existing.attendance_worked_hour = instance.attendance_worked_hour
+                existing.requested_data = None
+                existing.request_type = "create_request"
+                existing.save()
+                return existing
             instance.save()
         return instance
 
@@ -480,14 +518,23 @@ class AttendanceForm(BaseModelForm):
             attendance_date=self.data["attendance_date"]
         ).filter(employee_id__id__in=employee_ids)
         if existing_attendance.exists():
-            employee_names = [
-                attendance.employee_id.__str__() for attendance in existing_attendance
-            ]
-            raise ValidationError(
-                {
-                    "employee_id": f"Already attendance exists for {', '.join(employee_names)} employees"
-                }
+            # Only block employees whose attendance is already approved/validated.
+            # Pure pending request records will be updated in save().
+            approved_attendance = existing_attendance.exclude(
+                is_validate_request=True,
+                is_validate_request_approved=False,
+                attendance_validated=False,
             )
+            if approved_attendance.exists():
+                employee_names = [
+                    attendance.employee_id.__str__()
+                    for attendance in approved_attendance
+                ]
+                raise ValidationError(
+                    {
+                        "employee_id": f"Already attendance exists for {', '.join(employee_names)} employees"
+                    }
+                )
         worked_hours = self.cleaned_data.get("attendance_worked_hour")
         check_in_time = self.cleaned_data.get("attendance_clock_in")
         check_out_time = self.cleaned_data.get("attendance_clock_out")
@@ -1156,28 +1203,66 @@ class NewRequestForm(AttendanceRequestForm):
             "is_get_compensation_leave": self.cleaned_data.get("is_get_compensation_leave"),
         }
         if attendances.exists():
-            data["employee_id"] = employee.id
-            data["attendance_date"] = str(attendance_date)
-            data["attendance_clock_in_date"] = self.data["attendance_clock_in_date"]
-            data["attendance_clock_in"] = self.data["attendance_clock_in"]
-            data["attendance_clock_out"] = (
-                None
-                if data["attendance_clock_out"] == "None"
-                else data["attendance_clock_out"]
-            )
-            data["attendance_clock_out_date"] = (
-                None
-                if data["attendance_clock_out_date"] == "None"
-                else data["attendance_clock_out_date"]
-            )
-            data["shift_id"] = self.data["shift_id"]
             attendance = attendances.first()
-            for key, value in data.items():
-                data[key] = str(value)
-            attendance.requested_data = json.dumps(data)
+            # If the existing attendance is a pure pending request (not yet
+            # approved or validated), update it directly with the latest data
+            # instead of creating a separate update-request.
+            if (
+                attendance.is_validate_request
+                and not attendance.is_validate_request_approved
+                and not attendance.attendance_validated
+            ):
+                attendance.shift_id = self.cleaned_data["shift_id"]
+                attendance.attendance_clock_in_date = self.cleaned_data[
+                    "attendance_clock_in_date"
+                ]
+                attendance.attendance_clock_in = check_in_time
+                attendance.attendance_clock_out = check_out_time
+                attendance.attendance_clock_out_date = self.cleaned_data[
+                    "attendance_clock_out_date"
+                ]
+                attendance.attendance_worked_hour = worked_hours
+                attendance.is_get_compensation_leave = self.cleaned_data.get(
+                    "is_get_compensation_leave"
+                )
+                # Clear stale requested_data and ensure request_type is
+                # correct so the request view displays the right columns.
+                attendance.requested_data = None
+                attendance.request_type = "create_request"
+                attendance.save()
+                self.new_instance = None
+                return
+
+            # Attendance is already approved — store the new values as a
+            # requested_data JSON so it goes through the approval workflow.
+            # Use the same format as serialize() so the diff view works correctly.
+            requested = {
+                "employee_id": str(employee.id),
+                "attendance_date": str(attendance_date),
+                "attendance_clock_in_date": str(
+                    self.cleaned_data["attendance_clock_in_date"]
+                ),
+                "attendance_clock_in": str(check_in_time),
+                "attendance_clock_out": str(check_out_time),
+                "attendance_clock_out_date": str(
+                    self.cleaned_data["attendance_clock_out_date"]
+                ),
+                "shift_id": str(
+                    self.cleaned_data["shift_id"].id
+                    if self.cleaned_data["shift_id"]
+                    else ""
+                ),
+                "work_type_id": str(
+                    attendance.work_type_id.id
+                    if attendance.work_type_id
+                    else ""
+                ),
+                "attendance_worked_hour": str(worked_hours),
+                "minimum_hour": attendance.minimum_hour,
+            }
+            attendance.requested_data = json.dumps(requested)
             attendance.is_validate_request = True
-            # if attendance.request_type != "create_request":attendance.request_type = "update_request"
-            # attendance.request_description = self.data["request_description"]
+            attendance.request_type = "update_request"
             attendance.save()
             self.new_instance = None
             return
