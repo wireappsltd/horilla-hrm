@@ -8946,6 +8946,11 @@ body {
   color: hsl(0, 0%, 100%);
 }
 
+.oh-badge--success {
+  background-color: hsl(148, 71%, 44%);
+  color: hsl(0, 0%, 100%);
+}
+
 .oh-badge--secondary {
   background-color: hsl(8, 77%, 56%);
   color: hsl(0, 0%, 100%);
