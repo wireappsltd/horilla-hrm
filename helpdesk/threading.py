@@ -266,7 +266,16 @@ class PasswordResetMailThread(Thread):
       - "iso_review": Notifies the requesting employee about approval/rejection.
     """
 
-    def __init__(self, request, ticket, type, pr_request=None, action=None, feedback=None):
+    def __init__(
+        self,
+        request,
+        ticket,
+        type,
+        pr_request=None,
+        action=None,
+        feedback=None,
+        iso_recipients=None,
+    ):
         Thread.__init__(self)
         self.daemon = True
         self.ticket = ticket
@@ -274,6 +283,7 @@ class PasswordResetMailThread(Thread):
         self.pr_request = pr_request
         self.action = action
         self.feedback = feedback or ""
+        self.iso_recipients = iso_recipients or []
         self.host = request.get_host()
         self.protocol = "https" if request.is_secure() else "http"
 
@@ -302,6 +312,15 @@ class PasswordResetMailThread(Thread):
         from django.db.models import Q
 
         employees = []
+        if self.iso_recipients:
+            for user in self.iso_recipients:
+                try:
+                    if hasattr(user, "employee_get") and user.employee_get:
+                        employees.append(user.employee_get)
+                except Exception:
+                    continue
+            return employees
+
         try:
             iso_or_super = AuthUser.objects.filter(
                 Q(groups__name=ISO_GROUP_NAME) | Q(is_superuser=True),

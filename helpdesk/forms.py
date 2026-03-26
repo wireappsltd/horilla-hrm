@@ -24,6 +24,7 @@ class YourForm(forms.Form):
 from typing import Any
 
 from django import forms
+from django.contrib.auth.models import User
 from django.template.loader import render_to_string
 from django.utils.translation import gettext_lazy as _
 
@@ -197,9 +198,16 @@ class PasswordResetRequestForm(forms.ModelForm):
         ),
     )
 
+    forward_to = forms.ModelMultipleChoiceField(
+        queryset=User.objects.none(),
+        label=_("Forward To"),
+        required=True,
+        widget=forms.SelectMultiple(attrs={"class": "oh-select oh-select-2 w-100"}),
+    )
+
     class Meta:
         model = PasswordResetRequest
-        fields = ["platform", "employee", "reason"]
+        fields = ["platform", "employee", "forward_to", "reason"]
         widgets = {
             "platform": forms.Select(
                 attrs={"class": "oh-select oh-select-2 w-100"}
@@ -219,6 +227,13 @@ class PasswordResetRequestForm(forms.ModelForm):
 
     def __init__(self, *args, request=None, **kwargs):
         super().__init__(*args, **kwargs)
+
+        self.fields["forward_to"].queryset = (
+            User.objects.filter(groups__name=ISO_GROUP_NAME, is_active=True)
+            .distinct()
+            .order_by("first_name", "username")
+        )
+        self.fields["forward_to"].label_from_instance = self._forward_to_label
 
         reason_error_message = _("Reason cannot exceed %(max_length)s characters.") % {
             "max_length": self.REASON_MAX_LENGTH,
@@ -287,6 +302,19 @@ class PasswordResetRequestForm(forms.ModelForm):
             self.fields["priority"].initial = self.instance.ticket.priority
             self.fields["deadline"].initial = self.instance.ticket.deadline
 
+        if self.instance and self.instance.pk:
+            self.fields["forward_to"].initial = self.instance.forward_to.all()
+
+    def _forward_to_label(self, user):
+        try:
+            employee = user.employee_get
+            full_name = employee.get_full_name()
+            if full_name:
+                return full_name
+        except Exception:
+            pass
+        return user.get_full_name() or user.username
+
     def clean_reason(self):
         reason = (self.cleaned_data.get("reason") or "").strip()
         if len(reason) > self.REASON_MAX_LENGTH:
@@ -309,6 +337,7 @@ class PasswordResetRequestForm(forms.ModelForm):
                 instance.user_id = ""
         if commit:
             instance.save()
+            instance.forward_to.set(self.cleaned_data.get("forward_to", []))
         return instance
 
 

@@ -238,6 +238,12 @@ class PasswordResetRequest(HorillaModel):
     )
     user_id = models.EmailField(verbose_name=_("User ID (Email)"))
     reason = models.TextField(verbose_name=_("Reason for Request"))
+    forward_to = models.ManyToManyField(
+        User,
+        blank=True,
+        related_name="forwarded_password_reset_requests",
+        verbose_name=_("Forward To"),
+    )
 
     iso_status = models.CharField(
         max_length=20,
@@ -263,6 +269,21 @@ class PasswordResetRequest(HorillaModel):
 
     def __str__(self):
         return f"Password Reset – {self.platform} – {self.ticket}"
+
+    def get_forward_to_users(self):
+        """Return selected forwarding users as a queryset."""
+        return self.forward_to.select_related("employee_get").all()
+
+    def get_forward_to_display(self):
+        """Return a comma-separated list of forwarded-to user display names."""
+        users = self.get_forward_to_users()
+        names = []
+        for user in users:
+            try:
+                names.append(user.employee_get.get_full_name())
+            except Exception:
+                names.append(user.get_full_name() or user.username)
+        return ", ".join([name for name in names if name])
 
     def clean(self, *args, **kwargs):
         super().clean(*args, **kwargs)

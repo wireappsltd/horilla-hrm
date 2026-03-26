@@ -550,11 +550,21 @@
                             </div>
                             <div class="oh-helpdesk__subcard-body">
                                 <ul class="oh-helpdesk__subcard-items">
-                                    {% for obj in ticket.get_raised_on_objects %}
-                                    <li class="oh-helpdesk__subcard-item">{{ obj }}</li>
-                                    {% empty %}
-                                    <li class="oh-helpdesk__subcard-item">—</li>
-                                    {% endfor %}
+                                    {% if password_reset_request %}
+                                        {% for officer_user in password_reset_request.forward_to.all %}
+                                            <li class="oh-helpdesk__subcard-item">
+                                                {{ officer_user.employee_get.get_full_name|default:officer_user.get_full_name|default:officer_user.username }}
+                                            </li>
+                                        {% empty %}
+                                            <li class="oh-helpdesk__subcard-item">—</li>
+                                        {% endfor %}
+                                    {% else %}
+                                        {% for obj in ticket.get_raised_on_objects %}
+                                            <li class="oh-helpdesk__subcard-item">{{ obj }}</li>
+                                        {% empty %}
+                                            <li class="oh-helpdesk__subcard-item">—</li>
+                                        {% endfor %}
+                                    {% endif %}
                                 </ul>
                             </div>
                         </div>

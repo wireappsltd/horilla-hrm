@@ -1923,6 +1923,21 @@ def _get_iso_officer_users():
     return list(iso_users)
 
 
+def _get_forward_employee_ids_and_employees(users):
+    """Map selected auth users to employee IDs for Ticket.forwarding compatibility."""
+    employee_ids = []
+    employees = []
+    for user in users:
+        try:
+            employee = user.employee_get
+            if employee:
+                employee_ids.append(str(employee.id))
+                employees.append(employee)
+        except Exception:
+            continue
+    return employee_ids, employees
+
+
 @login_required
 def iso_forms_home(request):
     """ISO Forms landing page showing password reset requests."""
@@ -1990,10 +2005,14 @@ def password_reset_request_create(request):
 
             platform = form.cleaned_data["platform"]
             selected_employee = form.cleaned_data["employee"]
+            selected_forward_users = list(form.cleaned_data["forward_to"])
             reason = form.cleaned_data["reason"]
 
             assigning_type = "individual"
-            raised_on = str(selected_employee.id)
+            forward_employee_ids, forward_employees = _get_forward_employee_ids_and_employees(
+                selected_forward_users
+            )
+            raised_on = ",".join(forward_employee_ids) or str(selected_employee.id)
             try:
                 user_email = selected_employee.employee_work_info.company_email or ""
             except Exception:
@@ -2023,14 +2042,17 @@ def password_reset_request_create(request):
             ticket.save()
 
             ticket.assigned_to.add(selected_employee)
+            if forward_employees:
+                ticket.assigned_to.add(*forward_employees)
 
             pr_request = form.save(commit=False)
             pr_request.ticket = ticket
             pr_request.iso_status = "PENDING"
             pr_request.save()
+            pr_request.forward_to.set(selected_forward_users)
 
             # In-app notification to all ISO officers and admins
-            iso_officer_users = _get_iso_officer_users()
+            iso_officer_users = selected_forward_users
             try:
                 notify.send(
                     selected_employee,
@@ -2053,6 +2075,7 @@ def password_reset_request_create(request):
                     ticket,
                     type="new_request",
                     pr_request=pr_request,
+                    iso_recipients=selected_forward_users,
                 )
                 mail_thread.start()
             except Exception as exc:
@@ -2107,6 +2130,7 @@ def password_reset_request_update(request, pr_id):
 
             platform = form.cleaned_data["platform"]
             selected_employee = form.cleaned_data["employee"]
+            selected_forward_users = list(form.cleaned_data["forward_to"])
             reason = form.cleaned_data["reason"]
             try:
                 user_email = selected_employee.employee_work_info.company_email or ""
@@ -2117,6 +2141,9 @@ def password_reset_request_update(request, pr_id):
                 user_display = f"{user_display} ({user_email})"
 
             # FIX: update the ticket owner to the (possibly changed) selected employee
+            forward_employee_ids, forward_employees = _get_forward_employee_ids_and_employees(
+                selected_forward_users
+            )
             ticket.employee_id = selected_employee
             ticket.priority = form.cleaned_data.get("priority")
             ticket.deadline = form.cleaned_data.get("deadline")
@@ -2127,12 +2154,14 @@ def password_reset_request_update(request, pr_id):
                 f"<b>User:</b> {user_display}<br>"
                 f"<b>Reason:</b> {reason}"
             )[:255]
-            ticket.raised_on = str(selected_employee.id)
+            ticket.raised_on = ",".join(forward_employee_ids) or str(selected_employee.id)
             ticket.save()
 
-            # Refresh assigned_to: ensure the selected employee is assigned
+            # Refresh assigned_to: ensure owner and selected forwarding officers are assigned
             ticket.assigned_to.clear()
             ticket.assigned_to.add(selected_employee)
+            if forward_employees:
+                ticket.assigned_to.add(*forward_employees)
 
             messages.success(request, _("Password reset request updated successfully."))
             return HttpResponse("<script>window.location.reload()</script>")
