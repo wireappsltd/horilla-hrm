@@ -1973,6 +1973,7 @@ def iso_forms_home(request):
                 Q(ticket__employee_id=current_employee)
                 | Q(ticket__assigned_to=current_employee)
                 | Q(ticket__raised_on=str(current_employee.id))
+                | Q(reviewed_by=request.user)
             ).distinct()
         else:
             queryset = queryset.none()
