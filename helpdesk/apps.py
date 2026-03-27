@@ -6,6 +6,7 @@ class HelpdeskConfig(AppConfig):
     name = "helpdesk"
 
     def ready(self):
+        from helpdesk import signals
         from django.urls import include, path
 
         from horilla.horilla_settings import APPS

@@ -25,7 +25,7 @@ class YourForm(forms.Form):
 from typing import Any
 
 from django import forms
-from django.contrib.auth.models import Group
+from django.contrib.auth.models import Group, User
 from django.db.models import Q
 from django.template.loader import render_to_string
 from django.utils import timezone
@@ -175,6 +175,8 @@ class PasswordResetRequestForm(forms.ModelForm):
     On save, user_email is populated from the selected employee's company email.
     """
 
+    REASON_MAX_LENGTH = 250
+
     employee = forms.ModelChoiceField(
         queryset=Employee.objects.none(),  # populated in __init__
         label=_("User ID (Email)"),
@@ -189,7 +191,7 @@ class PasswordResetRequestForm(forms.ModelForm):
     )
 
     forward_to = forms.ModelMultipleChoiceField(
-        queryset=Employee.objects.none(),  # populated in __init__
+        queryset=User.objects.none(),
         label=_("Forward To"),
         required=True,
         widget=forms.SelectMultiple(
@@ -244,6 +246,29 @@ class PasswordResetRequestForm(forms.ModelForm):
                 )
             except Exception:
                 selected_employee = None
+
+        self.fields["forward_to"].queryset = (
+            User.objects.filter(groups__name=ISO_GROUP_NAME, is_active=True)
+            .distinct()
+            .order_by("first_name", "username")
+        )
+        self.fields["forward_to"].label_from_instance = self._forward_to_label
+
+        reason_error_message = _("Reason cannot exceed %(max_length)s characters.") % {
+            "max_length": self.REASON_MAX_LENGTH,
+        }
+        reason_field = self.fields["reason"]
+        reason_field.max_length = self.REASON_MAX_LENGTH
+        reason_field.help_text = _("Max %(max_length)s characters") % {
+            "max_length": self.REASON_MAX_LENGTH,
+        }
+        reason_field.error_messages["max_length"] = reason_error_message
+        reason_field.widget.attrs.update(
+            {
+                "data-maxlength": str(self.REASON_MAX_LENGTH),
+                "data-maxlength-message": reason_error_message,
+            }
+        )
 
         # Who can pick any employee: superuser or ISO officer
         is_iso_officer = False
@@ -309,6 +334,28 @@ class PasswordResetRequestForm(forms.ModelForm):
             self.fields["priority"].initial = self.instance.ticket.priority
             self.fields["deadline"].initial = self.instance.ticket.deadline
 
+        if self.instance and self.instance.pk:
+            self.fields["forward_to"].initial = self.instance.forward_to.all()
+
+    def _forward_to_label(self, user):
+        try:
+            employee = user.employee_get
+            full_name = employee.get_full_name()
+            if full_name:
+                return full_name
+        except Exception:
+            pass
+        return user.get_full_name() or user.username
+
+    def clean_reason(self):
+        reason = (self.cleaned_data.get("reason") or "").strip()
+        if len(reason) > self.REASON_MAX_LENGTH:
+            raise forms.ValidationError(
+                _("Reason cannot exceed %(max_length)s characters.")
+                % {"max_length": self.REASON_MAX_LENGTH}
+            )
+        return reason
+
     def clean_deadline(self):
         deadline = self.cleaned_data.get("deadline")
         if deadline is None:
@@ -331,6 +378,7 @@ class PasswordResetRequestForm(forms.ModelForm):
                 instance.user_id = ""
         if commit:
             instance.save()
+            instance.forward_to.set(self.cleaned_data.get("forward_to", []))
         return instance
 
 

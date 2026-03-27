@@ -4,6 +4,7 @@ from datetime import datetime
 from django import apps
 from django.contrib.auth.models import User
 from django.db import models
+from django.db.models import Q
 from django.db.models.signals import post_delete, post_save
 from django.forms import ValidationError
 from django.utils.translation import gettext_lazy as _
@@ -238,6 +239,12 @@ class PasswordResetRequest(HorillaModel):
     )
     user_id = models.EmailField(verbose_name=_("User ID (Email)"))
     reason = models.TextField(verbose_name=_("Reason for Request"))
+    forward_to = models.ManyToManyField(
+        User,
+        blank=True,
+        related_name="forwarded_password_reset_requests",
+        verbose_name=_("Forward To"),
+    )
 
     iso_status = models.CharField(
         max_length=20,
@@ -264,12 +271,66 @@ class PasswordResetRequest(HorillaModel):
     def __str__(self):
         return f"Password Reset – {self.platform} – {self.ticket}"
 
+    def get_forward_to_users(self):
+        """Return selected forwarding users as a queryset."""
+        return self.forward_to.select_related("employee_get").all()
+
+    def get_forward_to_display(self):
+        """Return a comma-separated list of forwarded-to user display names."""
+        users = self.get_forward_to_users()
+        names = []
+        for user in users:
+            try:
+                names.append(user.employee_get.get_full_name())
+            except Exception:
+                names.append(user.get_full_name() or user.username)
+        return ", ".join([name for name in names if name])
+
     def clean(self, *args, **kwargs):
         super().clean(*args, **kwargs)
         if self.iso_status == "REJECTED" and not self.iso_feedback:
             raise ValidationError(
                 {"iso_feedback": _("Feedback is required when rejecting a request.")}
             )
+
+
+def cleanup_iso_user_password_reset_assignments(user):
+    """
+    Remove a user from ISO password reset routing when ISO group membership is removed.
+    """
+    if not user:
+        return
+
+    employee = getattr(user, "employee_get", None)
+    request_filter = Q(forward_to=user)
+    if employee:
+        request_filter |= Q(ticket__assigned_to=employee)
+
+    requests = (
+        PasswordResetRequest.objects.filter(request_filter)
+        .select_related("ticket", "ticket__employee_id")
+        .distinct()
+    )
+
+    for request in requests:
+        ticket = request.ticket
+
+        if request.forward_to.filter(pk=user.pk).exists():
+            request.forward_to.remove(user)
+
+        if employee and ticket.assigned_to.filter(pk=employee.pk).exists():
+            ticket.assigned_to.remove(employee)
+
+        if employee and ticket.assigning_type == "individual":
+            existing_ids = ticket._parse_raised_on_ids()
+            filtered_ids = [obj_id for obj_id in existing_ids if obj_id != str(employee.id)]
+            if not filtered_ids and ticket.employee_id_id:
+                filtered_ids = [str(ticket.employee_id_id)]
+
+            updated_raised_on = ",".join(filtered_ids)
+            if updated_raised_on != (ticket.raised_on or ""):
+                ticket.raised_on = updated_raised_on
+                ticket.save(update_fields=["raised_on"])
 
 
 class ClaimRequest(HorillaModel):
