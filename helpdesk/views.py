@@ -1090,7 +1090,7 @@ def ticket_change_assignees(request, ticket_id):
                     ticket.save(update_fields=["employee_id", "assigning_type", "raised_on"])
 
                     work_info = getattr(new_owner, "employee_work_info", None)
-                    work_email = getattr(work_info, "company_email", None) if work_info else None
+                    work_email = getattr(work_info, "email", None) if work_info else None
                     if work_email:
                         pr_request.user_id = work_email
                         pr_request.save(update_fields=["user_id", "updated_at"])
@@ -1967,7 +1967,16 @@ def _get_forward_employee_ids_and_employees(users):
             if employee:
                 employee_ids.append(str(employee.id))
                 employees.append(employee)
+        except Employee.DoesNotExist:
+            # User has no related Employee; skip silently to preserve existing behavior.
+            continue
         except Exception:
+            # Log unexpected exceptions so they can be investigated instead of being hidden.
+            logger.exception(
+                "Unexpected error while mapping user %s to Employee in "
+                "_get_forward_employee_ids_and_employees",
+                getattr(user, "pk", user),
+            )
             continue
     return employee_ids, employees
 
@@ -2103,7 +2112,7 @@ def password_reset_request_create(request):
 
             notification_actor = getattr(request.user, "employee_get", selected_employee)
 
-            # In-app notification to all ISO officers and admins
+            # In-app notification to selected ISO officers/admins (forward recipients)
             iso_officer_users = selected_forward_users
             try:
                 if iso_officer_users:
