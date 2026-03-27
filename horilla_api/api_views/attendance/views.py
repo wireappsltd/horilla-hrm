@@ -245,12 +245,30 @@ class AttendanceView(APIView):
 
     @manager_permission_required("attendance.add_attendance")
     def post(self, request):
+        employee_id = request.data.get("employee_id")
+        attendance_date = request.data.get("attendance_date", date.today())
+        # If a pure pending request (not validated/approved) exists,
+        # update it directly instead of rejecting.
+        existing = Attendance.objects.filter(
+            employee_id=employee_id,
+            attendance_date=attendance_date,
+            is_validate_request=True,
+            is_validate_request_approved=False,
+            attendance_validated=False,
+        ).first()
+        if existing:
+            serializer = AttendanceSerializer(instance=existing, data=request.data)
+            if serializer.is_valid():
+                instance = serializer.save()
+                instance.requested_data = None
+                instance.request_type = "create_request"
+                instance.save()
+                return Response(serializer.data, status=200)
+            return Response(serializer.errors, status=400)
         serializer = AttendanceSerializer(data=request.data)
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data, status=200)
-        employee_id = request.data.get("employee_id")
-        attendance_date = request.data.get("attendance_date", date.today())
         if Attendance.objects.filter(
             employee_id=employee_id, attendance_date=attendance_date
         ).exists():
@@ -435,12 +453,32 @@ class AttendanceRequestView(APIView):
         return pagenation.get_paginated_response(serializer.data)
 
     def post(self, request):
+        employee_id = request.data.get("employee_id")
+        attendance_date = request.data.get("attendance_date", date.today())
+        # If a pure pending request (not validated/approved) exists,
+        # update it directly instead of rejecting.
+        existing = Attendance.objects.filter(
+            employee_id=employee_id,
+            attendance_date=attendance_date,
+            is_validate_request=True,
+            is_validate_request_approved=False,
+            attendance_validated=False,
+        ).first()
+        if existing:
+            serializer = AttendanceRequestSerializer(
+                instance=existing, data=request.data
+            )
+            if serializer.is_valid():
+                instance = serializer.save()
+                instance.requested_data = None
+                instance.request_type = "create_request"
+                instance.save()
+                return Response(serializer.data, status=200)
+            return Response(serializer.errors, status=400)
         serializer = AttendanceRequestSerializer(data=request.data)
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data, status=200)
-        employee_id = request.data.get("employee_id")
-        attendance_date = request.data.get("attendance_date", date.today())
         if Attendance.objects.filter(
             employee_id=employee_id, attendance_date=attendance_date
         ).exists():
