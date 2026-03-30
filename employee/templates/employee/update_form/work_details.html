@@ -85,6 +85,11 @@
       return;
     }
 
+    // Employee type does not have dependent dropdown updates.
+    if (id !== "#dynamicDept" && id !== "#dynamicJobPosition") {
+      return;
+    }
+
     let url, dropdownId, createText, emptyText;
     const data =
       id === "#dynamicDept" ? { department_id: value } : { job_id: value };
