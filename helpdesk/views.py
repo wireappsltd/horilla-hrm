@@ -2098,7 +2098,7 @@ def password_reset_request_create(request):
                 f"<b>Platform:</b> {platform}<br>"
                 f"<b>User:</b> {user_display}<br>"
                 f"<b>Reason:</b> {reason}"
-            )[:255]
+            )
 
             # ticket owner is the selected employee, not the admin submitting
             ticket = Ticket(
@@ -2243,7 +2243,7 @@ def password_reset_request_update(request, pr_id):
                 f"<b>Platform:</b> {platform}<br>"
                 f"<b>User:</b> {user_display}<br>"
                 f"<b>Reason:</b> {reason}"
-            )[:255]
+            )
             ticket.raised_on = ",".join(forward_employee_ids) or str(selected_employee.id)
             ticket.save()
 
