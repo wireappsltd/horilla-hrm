@@ -512,7 +512,7 @@
                     <div class="oh-helpdesk__card-header d-flex justify-content-between align-items-center">
                         <span class="oh-helpdesk__card-title">{% trans "Responsibility" %}</span>
                         <div class="d-flex align-items-center gap-2">
-                            <span class="oh-helpdesk__card-title text-{{color}}">{{remaining}} </span>
+                            <span class="oh-helpdesk__card-title text-{{color}}" style="white-space: nowrap;">{{remaining}}</span>
                             {% if password_reset_request and password_reset_request.iso_status == 'PENDING' %}
                                 {% if request.user.is_superuser or is_iso_officer or request.user.employee_get == ticket.employee_id %}
                                 <button
