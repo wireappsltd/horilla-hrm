@@ -212,8 +212,11 @@ class PasswordResetRequestForm(forms.ModelForm):
 
     class Meta:
         model = PasswordResetRequest
-        fields = ["platform", "employee", "forward_to", "reason"]
+        fields = ["request_type", "platform", "employee", "forward_to", "reason"]
         widgets = {
+            "request_type": forms.Select(
+                attrs={"class": "oh-select oh-select-2 w-100"}
+            ),
             "platform": forms.Select(
                 attrs={"class": "oh-select oh-select-2 w-100"}
             ),
@@ -226,6 +229,7 @@ class PasswordResetRequestForm(forms.ModelForm):
             ),
         }
         labels = {
+            "request_type": _("Type"),
             "platform": _("Platform"),
             "reason": _("Reason for request"),
         }

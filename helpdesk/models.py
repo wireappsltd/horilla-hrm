@@ -62,6 +62,10 @@ ISO_STATUS_CHOICES = [
     ("REJECTED", "Rejected"),
 ]
 
+ISO_REQUEST_TYPE_CHOICES = [
+    ("password_reset", "Password Reset Request"),
+]
+
 
 class DepartmentManager(HorillaModel):
     manager = models.ForeignKey(
@@ -231,6 +235,12 @@ class PasswordResetRequest(HorillaModel):
         Ticket,
         on_delete=models.CASCADE,
         related_name="password_reset_request",
+    )
+    request_type = models.CharField(
+        max_length=50,
+        choices=ISO_REQUEST_TYPE_CHOICES,
+        default="password_reset",
+        verbose_name=_("Type"),
     )
     platform = models.CharField(
         max_length=50,

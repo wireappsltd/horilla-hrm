@@ -9,72 +9,103 @@
         </h1>
     </div>
     <div class="oh-main__titlebar oh-main__titlebar--right">
-        <div class="oh-dropdown ml-2" x-data="{open:false}">
-            <button
-                class="oh-btn oh-btn--secondary oh-btn--shadow"
-                @click="open = !open"
-                @click.outside="open = false"
-            >
-                <ion-icon
-                    name="add-outline"
-                    class="me-1 md hydrated"
-                    role="img"
-                    aria-label="add outline"
-                ></ion-icon>
-                {% trans "Create" %}
-                <ion-icon name="chevron-down-outline" class="ms-1"></ion-icon>
-            </button>
-            <div class="oh-dropdown__menu oh-dropdown__menu--right" x-show="open" style="display:none">
-                <ul class="oh-dropdown__items">
-                    <li class="oh-dropdown__item">
-                        <a
-                            href="#"
-                            class="oh-dropdown__link"
-                            hx-get="{% url 'password-reset-request-create' %}"
-                            hx-target="#passwordResetModalTarget"
-                            hx-swap="innerHTML"
-                            data-toggle="oh-modal-toggle"
-                            data-target="#passwordResetModal"
-                            @click="open = false"
-                        >
-                            <ion-icon name="key-outline" class="me-1"></ion-icon>
-                            {% trans "Password Reset Request" %}
-                        </a>
-                    </li>
-                </ul>
-            </div>
-        </div>
+        <button
+            class="oh-btn oh-btn--secondary oh-btn--shadow ml-2"
+            data-toggle="oh-modal-toggle"
+            data-target="#isoFormPickerModal"
+        >
+            <ion-icon name="add-outline" class="me-1"></ion-icon>
+            {% trans "Create" %}
+        </button>
     </div>
 </section>
 
 <div id="ohMessages"></div>
 
-<div class="oh-wrapper" id="isoFormsContainer">
-    <div class="oh-card mb-4">
-        <div class="d-flex align-items-center p-3">
-            <ion-icon name="key-outline" class="me-2" style="font-size:20px;"></ion-icon>
-            <h5 class="mb-0 fw-bold">{% trans "Pending Password Reset Requests" %}</h5>
-        </div>
-        <div id="passwordResetPendingList">
-            {% include 'helpdesk/iso_forms/_password_reset_list.html' with password_reset_requests=pending_password_reset_requests %}
-        </div>
-    </div>
+{% trans "No pending ISO requests yet." as pending_empty_title %}
+{% trans "Use Create to submit a new ISO request." as pending_empty_subtitle %}
+{% trans "No reviewed ISO requests yet." as reviewed_empty_title %}
+{% trans "Reviewed requests will appear here once acted on." as reviewed_empty_subtitle %}
 
-    <div class="oh-card mb-4">
-        <div class="d-flex align-items-center p-3">
-            <ion-icon name="checkmark-done-outline" class="me-2" style="font-size:20px;"></ion-icon>
-            <div>
-                <h5 class="mb-0 fw-bold">{% trans "Reviewed Password Reset Requests" %}</h5>
-                <small class="text-muted">{% trans "Approved or rejected requests remain visible here for audit purposes." %}</small>
+<div class="oh-wrapper" id="isoFormsContainer">
+    {% if has_iso_requests %}
+        <div class="oh-card mb-4">
+            <div class="d-flex align-items-center p-3">
+                <ion-icon name="key-outline" class="me-2" style="font-size:20px;"></ion-icon>
+                <h5 class="mb-0 fw-bold">{% trans "Pending Password Reset Requests" %}</h5>
+            </div>
+            <div id="passwordResetPendingList">
+                {% include 'helpdesk/iso_forms/_password_reset_list.html' with password_reset_requests=pending_password_reset_requests empty_title=pending_empty_title empty_subtitle=pending_empty_subtitle %}
             </div>
         </div>
-        <div id="passwordResetReviewedList">
-            {% include 'helpdesk/iso_forms/_password_reset_list.html' with password_reset_requests=reviewed_password_reset_requests %}
+
+        <div class="oh-card mb-4">
+            <div class="d-flex align-items-center p-3">
+                <ion-icon name="checkmark-done-outline" class="me-2" style="font-size:20px;"></ion-icon>
+                <div>
+                    <h5 class="mb-0 fw-bold">{% trans "Reviewed Password Reset Requests" %}</h5>
+                    <small class="text-muted">{% trans "Approved or rejected requests remain visible here for audit purposes." %}</small>
+                </div>
+            </div>
+            <div id="passwordResetReviewedList">
+                {% include 'helpdesk/iso_forms/_password_reset_list.html' with password_reset_requests=reviewed_password_reset_requests empty_title=reviewed_empty_title empty_subtitle=reviewed_empty_subtitle %}
+            </div>
         </div>
-    </div>
+    {% else %}
+        <div class="oh-card py-5 d-flex flex-column align-items-center text-center text-muted">
+            <ion-icon name="clipboard-outline" style="font-size:54px;"></ion-icon>
+            <h5 class="mt-3 mb-1 fw-bold">{% trans "No ISO requests have been created yet." %}</h5>
+            <p class="mb-3">{% trans "Create your first ISO request to get started." %}</p>
+            <button
+                class="oh-btn oh-btn--secondary"
+                data-toggle="oh-modal-toggle"
+                data-target="#isoFormPickerModal"
+            >
+                <ion-icon name="add-outline" class="me-1"></ion-icon>
+                {% trans "Create ISO Request" %}
+            </button>
+        </div>
+    {% endif %}
 </div>
 
 <div id="passwordResetModalTarget"></div>
+
+<div class="oh-modal" id="isoFormPickerModal" role="dialog" aria-labelledby="isoFormPickerTitle" aria-hidden="true">
+    <div class="oh-modal__dialog">
+        <div class="oh-modal__dialog-header">
+            <h2 class="oh-modal__dialog-title" id="isoFormPickerTitle">{% trans "Select ISO Form Type" %}</h2>
+            <button class="oh-modal__close" aria-label="Close">
+                <ion-icon name="close-outline"></ion-icon>
+            </button>
+        </div>
+        <div class="oh-modal__dialog-body">
+            <p class="text-muted mb-3">{% trans "Choose the form you want to create." %}</p>
+            <div class="d-flex flex-column gap-2">
+                {% for form_option in iso_form_options %}
+                    <a
+                        href="#"
+                        class="oh-btn oh-btn--light-bkg text-start d-flex align-items-center justify-content-between"
+                        hx-get="{{ form_option.create_url }}"
+                        hx-target="#passwordResetModalTarget"
+                        hx-swap="innerHTML"
+                        data-toggle="oh-modal-toggle"
+                        data-target="#passwordResetModal"
+                        onclick="document.getElementById('isoFormPickerModal').classList.remove('oh-modal--show');"
+                    >
+                        <span class="d-flex align-items-center">
+                            <ion-icon name="{{ form_option.icon }}" class="me-2"></ion-icon>
+                            <span>
+                                <strong>{{ form_option.title }}</strong><br>
+                                <small class="text-muted">{{ form_option.description }}</small>
+                            </span>
+                        </span>
+                        <ion-icon name="chevron-forward-outline"></ion-icon>
+                    </a>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
 
 {# ── Reject Reason Modal ── #}
 <div class="oh-modal" id="rejectReasonModal" role="dialog" aria-labelledby="rejectReasonModalTitle" aria-hidden="true">

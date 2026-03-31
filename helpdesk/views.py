@@ -2007,10 +2007,21 @@ def iso_forms_home(request):
         "-reviewed_at", "-updated_at"
     )
 
+    iso_form_options = [
+        {
+            "title": _("Password Reset Request"),
+            "description": _("Request password reset access for internal systems."),
+            "icon": "key-outline",
+            "create_url": reverse("password-reset-request-create"),
+        }
+    ]
+
     context = {
         "password_reset_requests": queryset,
         "pending_password_reset_requests": pending_requests,
         "reviewed_password_reset_requests": reviewed_requests,
+        "has_iso_requests": queryset.exists(),
+        "iso_form_options": iso_form_options,
         "current_employee": current_employee,
         "is_iso_officer": request.user.is_superuser or _is_iso_officer(request.user),
     }
@@ -2069,6 +2080,7 @@ def password_reset_request_create(request):
             deadline = form.cleaned_data.get("deadline") or (timezone.now() + timedelta(days=7)).date()
 
             platform = form.cleaned_data["platform"]
+            request_type_display = form.instance.get_request_type_display()
             selected_employee = form.cleaned_data["employee"]
             selected_forward_users = list(form.cleaned_data["forward_to"])
             reason = form.cleaned_data["reason"]
@@ -2081,7 +2093,8 @@ def password_reset_request_create(request):
             raised_on = ",".join(forward_employee_ids) or str(selected_employee.id)
             user_display = _format_password_reset_user(selected_employee)
             description = (
-                f"<b>Password Reset Request Details:</b><br><br>"
+                f"<b>{request_type_display} Details:</b><br><br>"
+                f"<b>Type:</b> {request_type_display}<br>"
                 f"<b>Platform:</b> {platform}<br>"
                 f"<b>User:</b> {user_display}<br>"
                 f"<b>Reason:</b> {reason}"
@@ -2089,7 +2102,7 @@ def password_reset_request_create(request):
 
             # ticket owner is the selected employee, not the admin submitting
             ticket = Ticket(
-                title=f"Password Reset – {platform}",
+                title=f"{request_type_display} – {platform}",
                 employee_id=selected_employee,
                 ticket_type=ticket_type,
                 description=description,
@@ -2206,6 +2219,7 @@ def password_reset_request_update(request, pr_id):
             pr_request = form.save()
 
             platform = form.cleaned_data["platform"]
+            request_type_display = pr_request.get_request_type_display()
             selected_employee = form.cleaned_data["employee"]
             selected_forward_users = list(form.cleaned_data["forward_to"])
             reason = form.cleaned_data["reason"]
@@ -2222,9 +2236,10 @@ def password_reset_request_update(request, pr_id):
             ticket.employee_id = selected_employee
             ticket.priority = form.cleaned_data.get("priority")
             ticket.deadline = form.cleaned_data.get("deadline")
-            ticket.title = f"Password Reset – {platform}"
+            ticket.title = f"{request_type_display} – {platform}"
             ticket.description = (
-                f"<b>Password Reset Request Details:</b><br><br>"
+                f"<b>{request_type_display} Details:</b><br><br>"
+                f"<b>Type:</b> {request_type_display}<br>"
                 f"<b>Platform:</b> {platform}<br>"
                 f"<b>User:</b> {user_display}<br>"
                 f"<b>Reason:</b> {reason}"
