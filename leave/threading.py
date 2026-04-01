@@ -28,7 +28,9 @@ class LeaveMailSendThread(Thread):
             return [
                 user.employee_get
                 for user in hr_group.user_set.all()
-                if hasattr(user, "employee_get") and user.employee_get
+                if hasattr(user, "employee_get")
+                and user.employee_get
+                and user.employee_get.is_active
             ]
         except Group.DoesNotExist:
             return []
@@ -98,7 +100,7 @@ class LeaveMailSendThread(Thread):
 
             recipients = []
 
-            if reporting_manager:
+            if reporting_manager and reporting_manager.is_active:
                 recipients.append(reporting_manager)
 
             hr_users = self.get_hr_users()

@@ -282,6 +282,7 @@ def delete_offboarding(request, id):
     """
     try:
         offboarding = Offboarding.objects.get(id=id)
+        OffboardingTask.objects.filter(stage_id__offboarding_id=offboarding).delete()
         offboarding.delete()
         messages.success(request, _("Offboarding deleted"))
     except (Offboarding.DoesNotExist, OverflowError):

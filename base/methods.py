@@ -32,7 +32,7 @@ def users_count(self):
     """
     Restrict Group users_count to selected company context
     """
-    return Employee.objects.filter(employee_user_id__in=self.user_set.all()).count()
+    return Employee.objects.filter(employee_user_id__in=self.user_set.all(), is_active=True).count()
 
 
 Group.add_to_class("users_count", property(users_count))
