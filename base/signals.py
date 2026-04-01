@@ -6,7 +6,8 @@ from datetime import datetime
 from django.apps import apps
 from django.conf import settings
 from django.contrib import messages
-from django.contrib.auth.signals import user_login_failed
+from django.contrib.auth.signals import user_logged_in, user_logged_out, user_login_failed
+from django.core.cache import cache
 from django.db.models import Max, Q
 from django.db.models.signals import m2m_changed, post_migrate, post_save
 from django.dispatch import receiver
@@ -207,6 +208,20 @@ def log_login_failed(sender, credentials, request, **kwargs):
         f"You have {attempts_left} login attempt(s) left before a temporary ban.",
     )
     return redirect("login")
+
+
+@receiver(user_logged_in)
+def mark_user_online(sender, request, user, **kwargs):
+    """Set the online marker immediately on successful login."""
+    cache.set(f"online_user_{user.id}", True, 300)
+
+
+@receiver(user_logged_out)
+def mark_user_offline(sender, request, user, **kwargs):
+    """Clear the online marker immediately on logout."""
+    if user is None:
+        return
+    cache.delete(f"online_user_{user.id}")
 
 
 class Fail2BanMiddleware:

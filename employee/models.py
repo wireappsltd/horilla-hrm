@@ -491,13 +491,24 @@ class Employee(models.Model):
         return False
 
     def is_logged_in(self):
-        """"
-        Check if user is logged in
+        """
+        Check if user is logged in.
         """
         from django.core.cache import cache
+
         user = getattr(self, "employee_user_id", None)
         if not user:
             return False
+
+        request = getattr(horilla_middlewares._thread_locals, "request", None)
+        if (
+            request is not None
+            and getattr(request, "user", None) is not None
+            and request.user.is_authenticated
+            and request.user.id == user.id
+        ):
+            return True
+
         return cache.get(f"online_user_{user.id}") is not None
 
     class Meta:
