@@ -300,20 +300,22 @@ class PasswordResetRequestForm(forms.ModelForm):
         )
 
         # ── Forward To: show ISO group members (+ superuser employees) ──
+        # The forward_to M2M on PasswordResetRequest points to User, so the
+        # queryset must contain User objects (not Employee objects).
         iso_group = Group.objects.filter(name=ISO_GROUP_NAME).first()
         if iso_group:
-            iso_employee_qs = Employee.objects.filter(
-                employee_user_id__groups=iso_group,
+            iso_user_qs = User.objects.filter(
+                groups=iso_group,
                 is_active=True,
-            )
+            ).distinct()
         else:
-            # Fallback: if the ISO group doesn't exist, show superuser employees
-            iso_employee_qs = Employee.objects.filter(
-                employee_user_id__is_superuser=True,
+            # Fallback: if the ISO group doesn't exist, show superuser users
+            iso_user_qs = User.objects.filter(
+                is_superuser=True,
                 is_active=True,
             )
-        self.fields["forward_to"].queryset = iso_employee_qs.order_by(
-            "employee_first_name"
+        self.fields["forward_to"].queryset = iso_user_qs.order_by(
+            "first_name", "username"
         )
 
         # Pre-select: if editing, use the existing raised_on IDs; otherwise default to all ISO members
@@ -324,14 +326,15 @@ class PasswordResetRequestForm(forms.ModelForm):
                 if rid.strip()
             ]
             if existing_ids:
-                self.initial["forward_to"] = iso_employee_qs.filter(
-                    id__in=existing_ids
+                # raised_on stores Employee IDs; map them back to User objects
+                self.initial["forward_to"] = iso_user_qs.filter(
+                    employee_get__id__in=existing_ids
                 )
             else:
-                self.initial["forward_to"] = iso_employee_qs
+                self.initial["forward_to"] = iso_user_qs
         else:
             # New form: default to all ISO group members
-            self.initial["forward_to"] = iso_employee_qs
+            self.initial["forward_to"] = iso_user_qs
 
         # If editing, pre-populate priority and deadline from the linked ticket
         if self.instance and self.instance.pk and hasattr(self.instance, "ticket") and self.instance.ticket:
