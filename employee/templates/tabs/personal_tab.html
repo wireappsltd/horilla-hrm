@@ -199,14 +199,6 @@
 
                                         <li class="oh-profile__card-info-item">
                                             <span class="oh-profile__info-label mb-1">
-                                                <ion-icon name="time-outline"></ion-icon>
-                                                <span>{% trans "Shift Information" %}</span>
-                                            </span>
-                                            <span class="oh-profile__info-value">{{employee.employee_work_info.shift_id|default:_("None")}}</span>
-                                        </li>
-
-                                        <li class="oh-profile__card-info-item">
-                                            <span class="oh-profile__info-label mb-1">
                                                 <ion-icon name="briefcase-outline"></ion-icon>
                                                 <span>{% trans "Employee Type" %}</span>
                                             </span>
@@ -275,14 +267,6 @@
                                                 <span>{% trans "Job Role" %}</span>
                                             </span>
                                             <span class="oh-profile__info-value">{{employee.employee_work_info.job_role_id|default:_("None")}}</span>
-                                        </li>
-
-                                        <li class="oh-profile__card-info-item">
-                                            <span class="oh-profile__info-label mb-1">
-                                                <ion-icon name="time-outline"></ion-icon>
-                                                <span>{% trans "Work Type" %}</span>
-                                            </span>
-                                            <span class="oh-profile__info-value">{{employee.employee_work_info.work_type_id|default:_("None")}}</span>
                                         </li>
 
                                         {% if employee.employee_work_info.employee_type_id.employee_type == "Intern" %}
