@@ -20,7 +20,7 @@ from horilla.methods import get_horilla_model_class
 
 def _update_compensatory_leave_total_days(instance, **kwargs):
     """
-    Recalculate compensatory leave total_days when a mercantile/poya holiday
+    Recalculate compensatory leave total_days when a mercantile holiday
     is created, updated, or deleted.
     """
     from leave.methods import calculate_max_mercantile_leave_days_based_on_holidays
