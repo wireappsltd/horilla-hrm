@@ -192,7 +192,7 @@ def is_carryforward_valid(leave_type, leave_start_date):
 
 def calculate_max_mercantile_leave_days_based_on_holidays():
     """
-    This function calculates the total number of mercantile/poya holiday days
+    This function calculates the total number of mercantile days
     and updates the compensatory leave type's total_days accordingly.
     """
     from base.models import Holidays
