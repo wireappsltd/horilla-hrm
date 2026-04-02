@@ -5,6 +5,7 @@ from django.utils.timezone import now
 from django.apps import apps
 from django.db.models import Q
 
+from base.methods import is_mercantile_or_poya_holiday
 from employee.models import Employee
 from horilla.methods import get_horilla_model_class
 
@@ -187,3 +188,28 @@ def is_carryforward_valid(leave_type, leave_start_date):
         return leave_start_date <= expiry_date
 
     return False
+
+
+def calculate_max_mercantile_leave_days_based_on_holidays():
+    """
+    This function calculates the total number of mercantile/poya holiday days
+    and updates the compensatory leave type's total_days accordingly.
+    """
+    from base.models import Holidays
+    from leave.models import LeaveType
+
+    current_year = now().year
+    holidays = Holidays.objects.filter(
+        Q(is_mercantile_holiday=True),
+        start_date__year=current_year,
+    )
+
+    holiday_dates = set(holiday_dates_list(holidays))
+    total_days = len(holiday_dates)
+
+    LeaveType.objects.filter(is_compensatory_leave=True).update(
+        total_days=total_days,
+        count=total_days
+    )
+    print(total_days)
+    return total_days
