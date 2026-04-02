@@ -130,6 +130,7 @@ from horilla_documents.models import Document, DocumentRequest
 from notifications.signals import notify
 from employee.utils.bank_branch_data import BANK_BRANCH_DATA
 
+
 def return_none(a, b):
     return None
 
@@ -295,6 +296,8 @@ def self_info_update(request):
     )
 
 
+@login_required
+@permission_required("employee.change_employee")
 def profile_edit_access(request, emp_id):
     feature = request.GET.get("feature", None)
     accessibility = DefaultAccessibility.objects.filter(feature=feature).first()
@@ -1449,11 +1452,7 @@ def employee_view_update(request, obj_id, **kwargs):
 
         employee.save()
 
-    if (
-        user
-        and user.reporting_manager.filter(employee_id=employee).exists()
-        or request.user.has_perm("employee.change_employee")
-    ):
+    if request.user.has_perm("employee.change_employee"):
         form = EmployeeForm(instance=employee)
         work_form = EmployeeWorkInformationForm(
             instance=EmployeeWorkInformation.objects.filter(
@@ -1641,6 +1640,9 @@ def employee_create_update_personal_info(request, obj_id=None):
     This method is used to update employee's personal info.
     """
     employee = Employee.objects.filter(id=obj_id).first()
+    if employee and not request.user.has_perm("employee.change_employee"):
+        messages.error(request, _("You don't have permission to update this employee."))
+        return HttpResponse(status=403)
     form = EmployeeForm(request.POST, request.FILES, instance=employee)
     if form.is_valid():
         form.save()
@@ -1697,6 +1699,9 @@ def employee_update_work_info(request, obj_id=None):
     This method is used to update employee work info
     """
     employee = Employee.objects.filter(id=obj_id).first()
+    if employee and not request.user.has_perm("employee.change_employeeworkinformation"):
+        messages.error(request, _("You don't have permission to update this employee."))
+        return HttpResponse(status=403)
     form = EmployeeWorkInformationForm(
         request.POST,
         instance=EmployeeWorkInformation.objects.filter(employee_id=employee).first(),
@@ -1735,6 +1740,9 @@ def employee_update_bank_details(request, obj_id=None):
     This method is used to render form to create employee's bank information.
     """
     employee = Employee.objects.filter(id=obj_id).first()
+    if employee and not request.user.has_perm("employee.change_employeebankdetails"):
+        messages.error(request, _("You don't have permission to update this employee."))
+        return HttpResponse(status=403)
     form = EmployeeBankDetailsForm(
         request.POST,
         instance=EmployeeBankDetails.objects.filter(employee_id=employee).first(),
@@ -1939,6 +1947,8 @@ def employee_update(request, obj_id):
             if form.is_valid():
                 form.save()
                 messages.success(request, _("Employee updated."))
+        else:
+            messages.error(request, _("You don't have permission to update this employee."))
     return render(
         request,
         "employee_personal_info/employee_update_form.html",
