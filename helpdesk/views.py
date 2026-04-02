@@ -2203,8 +2203,6 @@ def password_reset_request_update(request, pr_id):
             return HttpResponse("<script>window.location.reload()</script>")
         form = PasswordResetRequestForm(request.POST, instance=pr_request, request=request)
         if form.is_valid():
-            pr_request = form.save()
-
             platform = form.cleaned_data["platform"]
             selected_employee = form.cleaned_data["employee"]
             selected_forward_users = list(form.cleaned_data["forward_to"])
@@ -2216,7 +2214,8 @@ def password_reset_request_update(request, pr_id):
                 selected_forward_users
             )
 
-            # Re-fetch the ticket fresh from DB to avoid stale reference
+            # Update the ticket FIRST so the owner (employee_id) is always
+            # reassigned together with the description and other fields.
             ticket = Ticket.objects.get(pk=pr_request.ticket_id)
 
             ticket.employee_id = selected_employee
@@ -2232,11 +2231,14 @@ def password_reset_request_update(request, pr_id):
             ticket.raised_on = ",".join(forward_employee_ids) or str(selected_employee.id)
             ticket.save()
 
-            # Refresh assigned_to: ensure owner and selected forwarding officers are assigned
+            # Refresh assigned_to: ensure new owner and forwarding officers are assigned
             ticket.assigned_to.clear()
             ticket.assigned_to.add(selected_employee)
             if forward_employees:
                 ticket.assigned_to.add(*forward_employees)
+
+            # Now save the PasswordResetRequest (user_id, platform, reason, forward_to)
+            pr_request = form.save()
 
             messages.success(request, _("Password reset request updated successfully."))
             return HttpResponse("<script>window.location.reload()</script>")
