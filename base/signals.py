@@ -9,13 +9,33 @@ from django.contrib import messages
 from django.contrib.auth.signals import user_logged_in, user_logged_out, user_login_failed
 from django.core.cache import cache
 from django.db.models import Max, Q
-from django.db.models.signals import m2m_changed, post_migrate, post_save
+from django.db.models.signals import m2m_changed, post_delete, post_migrate, post_save
 from django.dispatch import receiver
 from django.http import Http404
 from django.shortcuts import redirect, render
 
-from base.models import Announcement, PenaltyAccounts
+from base.models import Announcement, Holidays, PenaltyAccounts
 from horilla.methods import get_horilla_model_class
+
+
+def _update_compensatory_leave_total_days(instance, **kwargs):
+    """
+    Recalculate compensatory leave total_days when a mercantile/poya holiday
+    is created, updated, or deleted.
+    """
+    from leave.methods import calculate_max_mercantile_leave_days_based_on_holidays
+
+    calculate_max_mercantile_leave_days_based_on_holidays()
+
+
+@receiver(post_save, sender=Holidays)
+def update_compensatory_leave_on_holiday_save(sender, instance, **kwargs):
+    _update_compensatory_leave_total_days(instance)
+
+
+@receiver(post_delete, sender=Holidays)
+def update_compensatory_leave_on_holiday_delete(sender, instance, **kwargs):
+    _update_compensatory_leave_total_days(instance)
 
 
 @receiver(post_save, sender=PenaltyAccounts)
