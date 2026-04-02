@@ -1081,22 +1081,6 @@ def ticket_change_assignees(request, ticket_id):
 
                 form.save()
 
-                # Keep Password Reset ticket ownership fields aligned with assignee.
-                if pr_request:
-                    new_owner = selected_assignees.first()
-                    ticket.employee_id = new_owner
-                    ticket.assigning_type = "individual"
-                    ticket.raised_on = str(new_owner.id)
-                    ticket.save(update_fields=["employee_id", "assigning_type", "raised_on"])
-
-                    work_info = getattr(new_owner, "employee_work_info", None)
-                    work_email = getattr(work_info, "email", None) if work_info else None
-                    if work_email:
-                        pr_request.user_id = work_email
-                        pr_request.save(update_fields=["user_id", "updated_at"])
-                    else:
-                        # Do not overwrite existing user_id if we cannot resolve a work email.
-                        pr_request.save(update_fields=["updated_at"])
 
                 mail_thread = AddAssigneeThread(
                     request,
@@ -2208,10 +2192,6 @@ def password_reset_request_update(request, pr_id):
             return HttpResponse("<script>window.location.reload()</script>")
         form = PasswordResetRequestForm(request.POST, instance=pr_request, request=request)
         if form.is_valid():
-            pr_request = form.save(commit=False)
-            pr_request.request_type = "password_reset"
-            pr_request.save()
-
             platform = form.cleaned_data["platform"]
             selected_employee = form.cleaned_data["employee"]
             selected_forward_users = list(form.cleaned_data["forward_to"])
@@ -2228,8 +2208,9 @@ def password_reset_request_update(request, pr_id):
                 emp.employee_user_id for emp in selected_forward_users
                 if getattr(emp, "employee_user_id", None)
             ]
-            pr_request.forward_to.set(forward_users)
 
+            # Update the ticket FIRST so the owner (employee_id) is always
+            # reassigned together with the description and other fields.
             # Re-fetch the ticket fresh from DB to avoid stale reference
             ticket = Ticket.objects.get(pk=pr_request.ticket_id)
 
@@ -2246,11 +2227,19 @@ def password_reset_request_update(request, pr_id):
             ticket.raised_on = ",".join(forward_employee_ids) or str(selected_employee.id)
             ticket.save()
 
-            # Refresh assigned_to: ensure owner and selected forwarding officers are assigned
+            # Refresh assigned_to: ensure new owner and forwarding officers are assigned
             ticket.assigned_to.clear()
             ticket.assigned_to.add(selected_employee)
             if forward_employees:
                 ticket.assigned_to.add(*forward_employees)
+
+            # Now save the PasswordResetRequest (user_id, platform, reason, forward_to)
+            pr_request = form.save(commit=False)
+            pr_request.request_type = "password_reset"
+            pr_request.save()
+
+            # Set forward_to M2M after saving the PR request
+            pr_request.forward_to.set(forward_users)
 
             messages.success(request, _("Password reset request updated successfully."))
             return HttpResponse("<script>window.location.reload()</script>")
