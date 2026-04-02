@@ -1081,22 +1081,6 @@ def ticket_change_assignees(request, ticket_id):
 
                 form.save()
 
-                # Keep Password Reset ticket ownership fields aligned with assignee.
-                if pr_request:
-                    new_owner = selected_assignees.first()
-                    ticket.employee_id = new_owner
-                    ticket.assigning_type = "individual"
-                    ticket.raised_on = str(new_owner.id)
-                    ticket.save(update_fields=["employee_id", "assigning_type", "raised_on"])
-
-                    work_info = getattr(new_owner, "employee_work_info", None)
-                    work_email = getattr(work_info, "email", None) if work_info else None
-                    if work_email:
-                        pr_request.user_id = work_email
-                        pr_request.save(update_fields=["user_id", "updated_at"])
-                    else:
-                        # Do not overwrite existing user_id if we cannot resolve a work email.
-                        pr_request.save(update_fields=["updated_at"])
 
                 mail_thread = AddAssigneeThread(
                     request,

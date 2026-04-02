@@ -279,8 +279,8 @@
                     {% elif item.history.changes.0.is_fk == True %}
                     <div class="oh-helpdesk__chat-update">
                         <span>{{item.history.updated_by}} {% trans "changed the ticket " %}{{item.history.changes.0.field|safe}} {% trans " from" %}
-                            <strong>{{item.history.pair.0|fk_history:item.history.changes.0|safe}}</strong> {% trans "to" %}
-                            <strong>{{item.history.pair.1|fk_history:item.history.changes.0|safe}}</strong></span>
+                            <strong>{{item.history.pair.1|fk_history:item.history.changes.0|safe}}</strong> {% trans "to" %}
+                            <strong>{{item.history.pair.0|fk_history:item.history.changes.0|safe}}</strong></span>
                         <span>{{ item.history.pair.0.history_date}}</span>
                     </div>
                     {% else %}
