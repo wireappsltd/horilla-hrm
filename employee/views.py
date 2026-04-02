@@ -1518,6 +1518,7 @@ def employee_view_update(request, obj_id, **kwargs):
                 "work_info_history": work_info_history,
             },
         )
+    messages.error(request, _("You don't have permission to edit this employee's profile."))
     return HttpResponseRedirect(
         request.META.get("HTTP_REFERER", "/employee/employee-view")
     )
