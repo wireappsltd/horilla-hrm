@@ -136,6 +136,7 @@ def request_attendance_view(request):
             "requests_ids": requests_ids,
             "attendances_ids": attendances_ids,
             "f": filter_obj,
+            "pd": previous_data,
             "filter_dict": data_dict,
             "gp_fields": AttendanceRequestReGroup.fields,
         },
