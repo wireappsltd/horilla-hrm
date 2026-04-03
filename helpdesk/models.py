@@ -62,6 +62,10 @@ ISO_STATUS_CHOICES = [
     ("REJECTED", "Rejected"),
 ]
 
+ISO_REQUEST_TYPE_CHOICES = [
+    ("password_reset", "Password Reset Request"),
+]
+
 
 class DepartmentManager(HorillaModel):
     manager = models.ForeignKey(
@@ -244,6 +248,12 @@ class PasswordResetRequest(HorillaModel):
         blank=True,
         related_name="forwarded_password_reset_requests",
         verbose_name=_("Forward To"),
+    )
+    request_type = models.CharField(
+        max_length=50,
+        choices=ISO_REQUEST_TYPE_CHOICES,
+        default="password_reset",
+        verbose_name=_("Type"),
     )
 
     iso_status = models.CharField(
