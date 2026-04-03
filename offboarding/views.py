@@ -282,11 +282,23 @@ def delete_offboarding(request, id):
     """
     try:
         offboarding = Offboarding.objects.get(id=id)
-        OffboardingTask.objects.filter(stage_id__offboarding_id=offboarding).delete()
-        offboarding.delete()
-        messages.success(request, _("Offboarding deleted"))
+        if OffboardingEmployee.objects.filter(
+            stage_id__offboarding_id=offboarding
+        ).exists():
+            messages.error(
+                request,
+                _("Cannot delete offboarding with employees assigned"),
+            )
+        else:
+            OffboardingTask.objects.filter(stage_id__offboarding_id=offboarding).delete()
+            offboarding.delete()
+            messages.success(request, _("Offboarding deleted"))
     except (Offboarding.DoesNotExist, OverflowError):
         messages.error(request, _("Offboarding not found"))
+    if request.headers.get("HX-Request"):
+        response = HttpResponse(status=204)
+        response["HX-Redirect"] = reverse("offboarding-pipeline")
+        return response
     return redirect(filter_pipeline)
 
 
@@ -372,6 +384,9 @@ def add_employee(request):
         initial={"stage_id": stage, "notice_period_ends": end_date}, instance=instance
     )
     form.instance.stage_id = stage
+    form.fields["stage_id"].queryset = OffboardingStage.objects.filter(
+        offboarding_id=stage.offboarding_id
+    )
     if request.method == "POST":
         form = OffboardingEmployeeForm(request.POST, instance=instance)
         if form.is_valid():
@@ -391,6 +406,25 @@ def add_employee(request):
                     task_id=task,
                     defaults={"status": "todo"}
                 )
+
+            if stage.type == "fnf":
+                contract = Contract.objects.filter(
+                    employee_id=instance.employee_id,
+                    contract_status="active"
+                ).first()
+                if contract:
+                    contract.contract_status = "termination_in_progress"
+                    if instance.notice_period_ends:
+                        contract.contract_end_date = instance.notice_period_ends
+                    contract.save(update_fields=["contract_status", "contract_end_date"])
+                if (
+                    instance.last_working_date
+                    and instance.notice_period_ends
+                    and instance.last_working_date < instance.notice_period_ends
+                ):
+                    compute_resignation_balance(
+                        instance.employee_id, instance.last_working_date, instance.notice_period_ends
+                    )
 
             messages.success(request, _("Employee saved"))
             if not instance_id:
@@ -435,6 +469,10 @@ def delete_employee(request):
         )
     else:
         messages.error(request, _("Employees not found"))
+    if request.headers.get("HX-Request"):
+        response = HttpResponse(status=204)
+        response["HX-Redirect"] = reverse("offboarding-pipeline")
+        return response
     return redirect(filter_pipeline)
 
 
@@ -485,11 +523,11 @@ def change_stage(request):
         )
 
         if contracts.exists():
-            contracts.update(
+            updated_count = contracts.update(
                 contract_status='termination_in_progress',
                 contract_end_date=notice_period_end_date
             )
-            logger.info("Terminated %d contract(s) for FNF process.", contracts.count())
+            logger.info("Terminated %d contract(s) for FNF process.", updated_count)
         else:
             logger.info("No active contracts found for FNF process.")
 
@@ -579,24 +617,30 @@ def update_last_working_date(request):
 
     try:
         start_date = datetime.strptime(last_working_date, "%Y-%m-%d").date()
-        end_date = datetime.strptime(notice_period_ends, "%Y-%m-%d").date()
-    except ValueError:
-        return HttpResponseBadRequest("Invalid date format (expected YYYY-MM-DD)")
+    except (ValueError, TypeError):
+        return HttpResponseBadRequest("Invalid date format for last_working_date (expected YYYY-MM-DD)")
 
-    fine_amount = compute_resignation_balance(off_emp.employee_id, start_date, end_date)
+    end_date = None
+    if notice_period_ends:
+        try:
+            end_date = datetime.strptime(notice_period_ends, "%Y-%m-%d").date()
+        except (ValueError, TypeError):
+            return HttpResponseBadRequest("Invalid date format for notice_period_ends (expected YYYY-MM-DD)")
 
     try:
         stage = OffboardingStage.objects.get(id=int(stage_id))
-        print("Stage", stage)
     except OffboardingStage.DoesNotExist:
         return HttpResponseBadRequest("Invalid stage_id")
 
     try:
         employee = OffboardingEmployee.objects.get(id=employee_id)
-        employee.last_working_date = last_working_date
+        employee.last_working_date = start_date
         employee.save(update_fields=["last_working_date"])
     except OffboardingEmployee.DoesNotExist:
         return HttpResponseBadRequest("Employee not found")
+
+    if end_date:
+        compute_resignation_balance(off_emp.employee_id, start_date, end_date)
 
     stage_forms = {}
     stage_forms[str(stage.offboarding_id.id)] = StageSelectForm(
