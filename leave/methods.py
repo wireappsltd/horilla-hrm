@@ -223,5 +223,4 @@ def calculate_max_mercantile_leave_days_based_on_holidays(company_id=None):
         total_days=total_days,
         count=total_days
     )
-    print(total_days)
     return total_days
