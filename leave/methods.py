@@ -5,6 +5,7 @@ from django.utils.timezone import now
 from django.apps import apps
 from django.db.models import Q
 
+from base.methods import is_mercantile_or_poya_holiday
 from employee.models import Employee
 from horilla.methods import get_horilla_model_class
 
@@ -187,3 +188,39 @@ def is_carryforward_valid(leave_type, leave_start_date):
         return leave_start_date <= expiry_date
 
     return False
+
+
+def calculate_max_mercantile_leave_days_based_on_holidays(company_id=None):
+    """
+    This function calculates the total number of mercantile days
+    and updates the compensatory leave type's total_days accordingly.
+
+    If ``company_id`` is provided, the calculation and update are scoped to that
+    company. If ``company_id`` is ``None``, the calculation is performed across
+    all companies (backwards-compatible behavior).
+    """
+    from base.models import Holidays
+    from leave.models import LeaveType
+
+    current_year = now().year
+    holidays_filter = {
+        "is_mercantile_holiday": True,
+        "start_date__year": current_year,
+    }
+    if company_id is not None:
+        holidays_filter["company_id"] = company_id
+
+    holidays = Holidays.objects.filter(**holidays_filter)
+
+    holiday_dates = set(holiday_dates_list(holidays))
+    total_days = len(holiday_dates)
+
+    leave_type_filter = {"is_compensatory_leave": True}
+    if company_id is not None:
+        leave_type_filter["company_id"] = company_id
+
+    LeaveType.objects.filter(**leave_type_filter).update(
+        total_days=total_days,
+        count=total_days
+    )
+    return total_days

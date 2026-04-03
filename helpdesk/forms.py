@@ -25,7 +25,7 @@ class YourForm(forms.Form):
 from typing import Any
 
 from django import forms
-from django.contrib.auth.models import Group, User
+from django.contrib.auth.models import User
 from django.db.models import Q
 from django.template.loader import render_to_string
 from django.utils import timezone
@@ -295,39 +295,30 @@ class PasswordResetRequestForm(forms.ModelForm):
             "employee_first_name"
         )
 
-        # ── Forward To: show ISO group members (+ superuser employees) ──
-        iso_group = Group.objects.filter(name=ISO_GROUP_NAME).first()
-        if iso_group:
-            iso_employee_qs = Employee.objects.filter(
-                employee_user_id__groups=iso_group,
-                is_active=True,
-            )
-        else:
-            # Fallback: if the ISO group doesn't exist, show superuser employees
-            iso_employee_qs = Employee.objects.filter(
-                employee_user_id__is_superuser=True,
-                is_active=True,
-            )
-        self.fields["forward_to"].queryset = iso_employee_qs.order_by(
-            "employee_first_name"
-        )
+        # ── Forward To: keep queryset as User objects (set at line 250) ──
+        # The model's forward_to M2M targets User, so the queryset must use
+        # User objects.  The queryset was already set above; we only need to
+        # build a reference to the ISO-member User queryset for initial values.
+        iso_user_qs = self.fields["forward_to"].queryset
 
-        # Pre-select: if editing, use the existing raised_on IDs; otherwise default to all ISO members
+        # Pre-select: if editing, use the saved forward_to users; otherwise default to all ISO members
         if self.instance and self.instance.pk and hasattr(self.instance, "ticket") and self.instance.ticket:
+            # For editing, the authoritative initial comes from the M2M (line 337 below).
+            # Fallback: map raised_on Employee IDs → User objects.
             existing_ids = [
                 rid.strip()
                 for rid in (self.instance.ticket.raised_on or "").split(",")
                 if rid.strip()
             ]
             if existing_ids:
-                self.initial["forward_to"] = iso_employee_qs.filter(
-                    id__in=existing_ids
+                self.initial["forward_to"] = iso_user_qs.filter(
+                    employee_get__id__in=existing_ids
                 )
             else:
-                self.initial["forward_to"] = iso_employee_qs
+                self.initial["forward_to"] = iso_user_qs
         else:
             # New form: default to all ISO group members
-            self.initial["forward_to"] = iso_employee_qs
+            self.initial["forward_to"] = iso_user_qs
 
         # If editing, pre-populate priority and deadline from the linked ticket
         if self.instance and self.instance.pk and hasattr(self.instance, "ticket") and self.instance.ticket:

@@ -51,25 +51,8 @@
 
 <div class="oh-wrapper" id="isoFormsContainer">
     <div class="oh-card mb-4">
-        <div class="d-flex align-items-center p-3">
-            <ion-icon name="key-outline" class="me-2" style="font-size:20px;"></ion-icon>
-            <h5 class="mb-0 fw-bold">{% trans "Pending Password Reset Requests" %}</h5>
-        </div>
-        <div id="passwordResetPendingList">
-            {% include 'helpdesk/iso_forms/_password_reset_list.html' with password_reset_requests=pending_password_reset_requests %}
-        </div>
-    </div>
-
-    <div class="oh-card mb-4">
-        <div class="d-flex align-items-center p-3">
-            <ion-icon name="checkmark-done-outline" class="me-2" style="font-size:20px;"></ion-icon>
-            <div>
-                <h5 class="mb-0 fw-bold">{% trans "Reviewed Password Reset Requests" %}</h5>
-                <small class="text-muted">{% trans "Approved or rejected requests remain visible here for audit purposes." %}</small>
-            </div>
-        </div>
-        <div id="passwordResetReviewedList">
-            {% include 'helpdesk/iso_forms/_password_reset_list.html' with password_reset_requests=reviewed_password_reset_requests %}
+        <div id="isoFormsList">
+            {% include 'helpdesk/iso_forms/_password_reset_list.html' with password_reset_requests=password_reset_requests %}
         </div>
     </div>
 </div>
