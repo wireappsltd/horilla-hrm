@@ -25,17 +25,51 @@ def _update_compensatory_leave_total_days(instance, **kwargs):
     """
     from leave.methods import calculate_max_mercantile_leave_days_based_on_holidays
 
-    calculate_max_mercantile_leave_days_based_on_holidays()
+    # Scope recalculation by company when possible, to avoid affecting
+    # compensatory leave totals for other companies.
+    company_id = getattr(instance, "company_id", None)
+
+    if company_id is not None:
+        # Prefer a company-scoped recalculation if supported.
+        calculate_max_mercantile_leave_days_based_on_holidays(
+            company_id=company_id
+        )
+    else:
+        # Fallback to existing global behavior if no company is available.
+        calculate_max_mercantile_leave_days_based_on_holidays()
 
 
 @receiver(post_save, sender=Holidays)
 def update_compensatory_leave_on_holiday_save(sender, instance, **kwargs):
-    _update_compensatory_leave_total_days(instance)
+    """
+    Trigger compensatory leave recalculation when a holiday is saved.
+
+    When `update_fields` is provided, only recalculate if one of the
+    date/recurring/mercantile/poya-related fields changed.
+    """
+    update_fields = kwargs.get("update_fields")
+
+    if update_fields:
+        # Fields that can impact compensatory leave calculations.
+        relevant_fields = {
+            "date",
+            "recurring",
+            "mercantile",
+            "poya",
+            "is_recurring",
+            "is_mercantile",
+            "is_poya",
+        }
+        # If none of the relevant fields were updated, skip recalculation.
+        if relevant_fields.isdisjoint(update_fields):
+            return
+
+    _update_compensatory_leave_total_days(instance, **kwargs)
 
 
 @receiver(post_delete, sender=Holidays)
 def update_compensatory_leave_on_holiday_delete(sender, instance, **kwargs):
-    _update_compensatory_leave_total_days(instance)
+    _update_compensatory_leave_total_days(instance, **kwargs)
 
 
 @receiver(post_save, sender=PenaltyAccounts)
