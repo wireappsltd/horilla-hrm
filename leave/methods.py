@@ -190,24 +190,36 @@ def is_carryforward_valid(leave_type, leave_start_date):
     return False
 
 
-def calculate_max_mercantile_leave_days_based_on_holidays():
+def calculate_max_mercantile_leave_days_based_on_holidays(company_id=None):
     """
     This function calculates the total number of mercantile days
     and updates the compensatory leave type's total_days accordingly.
+
+    If ``company_id`` is provided, the calculation and update are scoped to that
+    company. If ``company_id`` is ``None``, the calculation is performed across
+    all companies (backwards-compatible behavior).
     """
     from base.models import Holidays
     from leave.models import LeaveType
 
     current_year = now().year
-    holidays = Holidays.objects.filter(
-        Q(is_mercantile_holiday=True),
-        start_date__year=current_year,
-    )
+    holidays_filter = {
+        "is_mercantile_holiday": True,
+        "start_date__year": current_year,
+    }
+    if company_id is not None:
+        holidays_filter["company_id"] = company_id
+
+    holidays = Holidays.objects.filter(**holidays_filter)
 
     holiday_dates = set(holiday_dates_list(holidays))
     total_days = len(holiday_dates)
 
-    LeaveType.objects.filter(is_compensatory_leave=True).update(
+    leave_type_filter = {"is_compensatory_leave": True}
+    if company_id is not None:
+        leave_type_filter["company_id"] = company_id
+
+    LeaveType.objects.filter(**leave_type_filter).update(
         total_days=total_days,
         count=total_days
     )
