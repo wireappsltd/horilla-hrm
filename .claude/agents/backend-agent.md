@@ -103,9 +103,26 @@ Always apply appropriate decorators to views:
 
 ### 3. Company-Scoped Queries
 
-Multi-tenancy is enforced via `HorillaCompanyManager` and `CompanyMiddleware`:
+Multi-tenancy is enforced via `HorillaCompanyManager` and `CompanyMiddleware`. **Important:** `HorillaModel` defines `objects = models.Manager()` by default, which is **not** company-scoped. Any model that needs company scoping **must** explicitly set its manager:
 
-- Use `Model.objects.filter(...)` — the company manager auto-scopes queries
+```python
+# WRONG — inherits unscoped models.Manager from HorillaModel, queries return all companies' data
+class MyModel(HorillaModel):
+    company_id = models.ForeignKey(Company, on_delete=models.CASCADE)
+
+# CORRECT — direct company_id field on the model
+class MyModel(HorillaModel):
+    company_id = models.ForeignKey(Company, on_delete=models.CASCADE)
+    objects = HorillaCompanyManager("company_id")
+
+# CORRECT — company reached through a related model (FK traversal)
+class MyDetail(HorillaModel):
+    parent = models.ForeignKey(MyModel, on_delete=models.CASCADE)
+    objects = HorillaCompanyManager("parent__company_id")
+```
+
+- The `related_company_field` argument tells the manager which field path leads to the `Company` FK (use `__` for traversals)
+- `CompanyMiddleware` sets a `company_filter` Q object on model classes; `HorillaCompanyManager.get_queryset()` applies it
 - Never bypass company filtering unless explicitly required
 - Be aware of `base/middleware.py` CompanyMiddleware behavior
 
@@ -260,7 +277,7 @@ Create new commands in the appropriate app's `management/commands/` directory.
 | `horilla/urls.py` | Root URL configuration |
 | `horilla/decorators.py` | All permission decorators (`login_required`, `manager_can_enter`, etc.) |
 | `horilla/models.py` | `HorillaModel` base class |
-| `horilla/horilla_middlewares.py` | `ActiveUserMiddleware` for thread-local request tracking |
+| `horilla/horilla_middlewares.py` | `ThreadLocalMiddleware` for thread-local request tracking, `ActiveUserMiddleware` for online-user tracking via cache |
 | `base/middleware.py` | `CompanyMiddleware`, `ForcePasswordChangeMiddleware`, `TwoFactorAuthMiddleware` |
 | `base/context_processors.py` | Global template context |
 | `base/signals.py` | Model signal handlers |
