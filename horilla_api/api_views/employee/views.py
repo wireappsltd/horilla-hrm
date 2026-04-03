@@ -148,16 +148,16 @@ class EmployeeAPIView(APIView):
     def put(self, request, pk):
         user = request.user
         employee = Employee.objects.get(pk=pk)
-        if (
-            employee
-            in [user.employee_get, request.user.employee_get.get_reporting_manager()]
-        ) or user.has_perm("employee.change_employee"):
-            serializer = EmployeeSerializer(employee, data=request.data, partial=True)
-            if serializer.is_valid():
-                serializer.save()
-                return Response(serializer.data)
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        return Response({"error": "You don't have permission"}, status=400)
+        if not user.has_perm("employee.change_employee"):
+            return Response(
+                {"error": "You don't have permission"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        serializer = EmployeeSerializer(employee, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     @method_decorator(permission_required("employee.delete_employee"))
     def delete(self, request, pk):
