@@ -13,8 +13,19 @@ class LoginAPIView(APIView):
             password = request.data.get("password")
             user = authenticate(username=username, password=password)
             if user:
-                refresh = RefreshToken.for_user(user)
                 employee = user.employee_get
+                if not user.is_superuser:
+                    from payroll.models.models import Contract
+
+                    has_active_contract = Contract.objects.filter(
+                        employee_id=employee, contract_status="active"
+                    ).exists()
+                    if not has_active_contract:
+                        return Response(
+                            {"error": "No active contract found. Please contact your manager."},
+                            status=403,
+                        )
+                refresh = RefreshToken.for_user(user)
                 face_detection = False
                 face_detection_image = None
                 geo_fencing = False
