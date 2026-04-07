@@ -2,6 +2,29 @@
 {% load i18n %}
 {% block content %}
 
+<style>
+    .row-status--grey {
+        border-left: 4px solid grey;
+        border-radius: 5px;
+    }
+    .row-status--red {
+        border-left: 4px solid red;
+        border-radius: 5px;
+    }
+    .row-status--yellowgreen {
+        border-left: 4px solid yellowgreen;
+        border-radius: 5px;
+    }
+    .row-status--blue {
+        border-left: 4px solid dodgerblue;
+        border-radius: 5px;
+    }
+    .row-status--orange {
+        border-left: 4px solid orange;
+        border-radius: 5px;
+    }
+</style>
+
 <section class="oh-wrapper oh-main__topbar">
     <div class="oh-main__titlebar oh-main__titlebar--left">
         <h1 class="oh-main__titlebar-title fw-bold">
@@ -9,41 +32,14 @@
         </h1>
     </div>
     <div class="oh-main__titlebar oh-main__titlebar--right">
-        <div class="oh-dropdown ml-2" x-data="{open:false}">
-            <button
-                class="oh-btn oh-btn--secondary oh-btn--shadow"
-                @click="open = !open"
-                @click.outside="open = false"
-            >
-                <ion-icon
-                    name="add-outline"
-                    class="me-1 md hydrated"
-                    role="img"
-                    aria-label="add outline"
-                ></ion-icon>
-                {% trans "Create" %}
-                <ion-icon name="chevron-down-outline" class="ms-1"></ion-icon>
-            </button>
-            <div class="oh-dropdown__menu oh-dropdown__menu--right" x-show="open" style="display:none">
-                <ul class="oh-dropdown__items">
-                    <li class="oh-dropdown__item">
-                        <a
-                            href="#"
-                            class="oh-dropdown__link"
-                            hx-get="{% url 'password-reset-request-create' %}"
-                            hx-target="#passwordResetModalTarget"
-                            hx-swap="innerHTML"
-                            data-toggle="oh-modal-toggle"
-                            data-target="#passwordResetModal"
-                            @click="open = false"
-                        >
-                            <ion-icon name="key-outline" class="me-1"></ion-icon>
-                            {% trans "Password Reset Request" %}
-                        </a>
-                    </li>
-                </ul>
-            </div>
-        </div>
+        <button
+            class="oh-btn oh-btn--secondary oh-btn--shadow ml-2"
+            data-toggle="oh-modal-toggle"
+            data-target="#isoFormPickerModal"
+        >
+            <ion-icon name="add-outline" class="me-1"></ion-icon>
+            {% trans "Create" %}
+        </button>
     </div>
 </section>
 
@@ -58,6 +54,43 @@
 </div>
 
 <div id="passwordResetModalTarget"></div>
+
+<div class="oh-modal" id="isoFormPickerModal" role="dialog" aria-labelledby="isoFormPickerTitle" aria-hidden="true">
+    <div class="oh-modal__dialog">
+        <div class="oh-modal__dialog-header">
+            <h2 class="oh-modal__dialog-title" id="isoFormPickerTitle">{% trans "Select ISO Form Type" %}</h2>
+            <button class="oh-modal__close" aria-label="Close">
+                <ion-icon name="close-outline"></ion-icon>
+            </button>
+        </div>
+        <div class="oh-modal__dialog-body">
+            <p class="text-muted mb-3">{% trans "Choose the form you want to create." %}</p>
+            <div class="d-flex flex-column gap-2">
+                {% for form_option in iso_form_options %}
+                    <a
+                        href="#"
+                        class="oh-btn oh-btn--light-bkg text-start d-flex align-items-center justify-content-between"
+                        hx-get="{{ form_option.create_url }}"
+                        hx-target="#passwordResetModalTarget"
+                        hx-swap="innerHTML"
+                        data-toggle="oh-modal-toggle"
+                        data-target="#passwordResetModal"
+                        onclick="document.getElementById('isoFormPickerModal').classList.remove('oh-modal--show');"
+                    >
+                        <span class="d-flex align-items-center">
+                            <ion-icon name="{{ form_option.icon }}" class="me-2"></ion-icon>
+                            <span>
+                                <strong>{{ form_option.title }}</strong><br>
+                                <small class="text-muted">{{ form_option.description }}</small>
+                            </span>
+                        </span>
+                        <ion-icon name="chevron-forward-outline"></ion-icon>
+                    </a>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
 
 {# ── Reject Reason Modal ── #}
 <div class="oh-modal" id="rejectReasonModal" role="dialog" aria-labelledby="rejectReasonModalTitle" aria-hidden="true">
