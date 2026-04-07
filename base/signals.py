@@ -6,15 +6,70 @@ from datetime import datetime
 from django.apps import apps
 from django.conf import settings
 from django.contrib import messages
-from django.contrib.auth.signals import user_login_failed
+from django.contrib.auth.signals import user_logged_in, user_logged_out, user_login_failed
+from django.core.cache import cache
 from django.db.models import Max, Q
-from django.db.models.signals import m2m_changed, post_migrate, post_save
+from django.db.models.signals import m2m_changed, post_delete, post_migrate, post_save
 from django.dispatch import receiver
 from django.http import Http404
 from django.shortcuts import redirect, render
 
-from base.models import Announcement, PenaltyAccounts
+from base.models import Announcement, Holidays, PenaltyAccounts
 from horilla.methods import get_horilla_model_class
+
+
+def _update_compensatory_leave_total_days(instance, **kwargs):
+    """
+    Recalculate compensatory leave total_days when a mercantile holiday
+    is created, updated, or deleted.
+    """
+    from leave.methods import calculate_max_mercantile_leave_days_based_on_holidays
+
+    # Scope recalculation by company when possible, to avoid affecting
+    # compensatory leave totals for other companies.
+    company_id = getattr(instance, "company_id", None)
+
+    if company_id is not None:
+        # Prefer a company-scoped recalculation if supported.
+        calculate_max_mercantile_leave_days_based_on_holidays(
+            company_id=company_id
+        )
+    else:
+        # Fallback to existing global behavior if no company is available.
+        calculate_max_mercantile_leave_days_based_on_holidays()
+
+
+@receiver(post_save, sender=Holidays)
+def update_compensatory_leave_on_holiday_save(sender, instance, **kwargs):
+    """
+    Trigger compensatory leave recalculation when a holiday is saved.
+
+    When `update_fields` is provided, only recalculate if one of the
+    date/recurring/mercantile/poya-related fields changed.
+    """
+    update_fields = kwargs.get("update_fields")
+
+    if update_fields:
+        # Fields that can impact compensatory leave calculations.
+        relevant_fields = {
+            "date",
+            "recurring",
+            "mercantile",
+            "poya",
+            "is_recurring",
+            "is_mercantile",
+            "is_poya",
+        }
+        # If none of the relevant fields were updated, skip recalculation.
+        if relevant_fields.isdisjoint(update_fields):
+            return
+
+    _update_compensatory_leave_total_days(instance, **kwargs)
+
+
+@receiver(post_delete, sender=Holidays)
+def update_compensatory_leave_on_holiday_delete(sender, instance, **kwargs):
+    _update_compensatory_leave_total_days(instance, **kwargs)
 
 
 @receiver(post_save, sender=PenaltyAccounts)
@@ -207,6 +262,20 @@ def log_login_failed(sender, credentials, request, **kwargs):
         f"You have {attempts_left} login attempt(s) left before a temporary ban.",
     )
     return redirect("login")
+
+
+@receiver(user_logged_in)
+def mark_user_online(sender, request, user, **kwargs):
+    """Set the online marker immediately on successful login."""
+    cache.set(f"online_user_{user.id}", True, 300)
+
+
+@receiver(user_logged_out)
+def mark_user_offline(sender, request, user, **kwargs):
+    """Clear the online marker immediately on logout."""
+    if user is None:
+        return
+    cache.delete(f"online_user_{user.id}")
 
 
 class Fail2BanMiddleware:

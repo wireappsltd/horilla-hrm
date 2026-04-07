@@ -136,6 +136,7 @@ def request_attendance_view(request):
             "requests_ids": requests_ids,
             "attendances_ids": attendances_ids,
             "f": filter_obj,
+            "pd": previous_data,
             "filter_dict": data_dict,
             "gp_fields": AttendanceRequestReGroup.fields,
         },
@@ -216,7 +217,9 @@ def request_new(request):
             # preserve the compensation leave toggle on validation error re-render.
             show_compensation = False
             compensation_form = None
+            show_duplicate_warning = False
             attendance_date = request.POST.get("attendance_date")
+            employee_id = request.POST.get("employee_id")
             if attendance_date:
                 try:
                     parsed_date = datetime.strptime(attendance_date, "%Y-%m-%d").date()
@@ -226,6 +229,11 @@ def request_new(request):
                         compensation_form = AttendanceForm()
                 except (ValueError, TypeError):
                     pass
+            if employee_id and attendance_date:
+                show_duplicate_warning = Attendance.objects.filter(
+                    employee_id=employee_id,
+                    attendance_date=attendance_date,
+                ).exists()
             return render(
                 request,
                 "requests/attendance/request_new_form.html",
@@ -234,6 +242,7 @@ def request_new(request):
                     "bulk": False,
                     "show_compensation": show_compensation,
                     "compensation_form": compensation_form,
+                    "show_duplicate_warning": show_duplicate_warning,
                 },
             )
     return render(
@@ -481,6 +490,7 @@ def approve_validate_attendance_request(request, attendance_id):
     attendance.is_validate_request_approved = True
     attendance.is_validate_request = False
     attendance.request_description = None
+    attendance.request_type = None
     attendance.save()
     allocate_compensation_leave(request,attendance)
     if attendance.requested_data is not None:
@@ -498,6 +508,8 @@ def approve_validate_attendance_request(request, attendance_id):
         Attendance.objects.filter(id=attendance_id).update(**requested_data)
         # DUE TO AFFECT THE OVERTIME CALCULATION ON SAVE METHOD, SAVE THE INSTANCE ONCE MORE
         attendance = Attendance.objects.get(id=attendance_id)
+        attendance.requested_data = None
+        attendance.request_type = None
         attendance.save()
 
     if (
@@ -598,6 +610,7 @@ def cancel_attendance_request(request, attendance_id):
             or is_reportingmanager(request)
             or request.user.has_perm("attendance.change_attendance")
         ):
+            is_create_request = attendance.request_type == "create_request"
             attendance.is_validate_request_approved = False
             attendance.is_validate_request = False
             attendance.request_description = None
@@ -605,7 +618,7 @@ def cancel_attendance_request(request, attendance_id):
             attendance.request_type = None
 
             attendance.save()
-            if attendance.request_type == "create_request":
+            if is_create_request:
                 attendance.delete()
                 messages.success(request, _("The requested attendance is removed."))
             else:
@@ -679,6 +692,7 @@ def bulk_approve_attendance_request(request):
         attendance.is_validate_request_approved = True
         attendance.is_validate_request = False
         attendance.request_description = None
+        attendance.request_type = None
         attendance.save()
         if attendance.requested_data is not None:
             requested_data = json.loads(attendance.requested_data)
@@ -695,6 +709,8 @@ def bulk_approve_attendance_request(request):
             Attendance.objects.filter(id=attendance_id).update(**requested_data)
             # DUE TO AFFECT THE OVERTIME CALCULATION ON SAVE METHOD, SAVE THE INSTANCE ONCE MORE
             attendance = Attendance.objects.get(id=attendance_id)
+            attendance.requested_data = None
+            attendance.request_type = None
             attendance.save()
         if (
             attendance.attendance_clock_out is None
@@ -804,13 +820,14 @@ def bulk_reject_attendance_request(request):
                 or is_reportingmanager(request)
                 or request.user.has_perm("attendance.change_attendance")
             ):
+                is_create_request = attendance.request_type == "create_request"
                 attendance.is_validate_request_approved = False
                 attendance.is_validate_request = False
                 attendance.request_description = None
                 attendance.requested_data = None
                 attendance.request_type = None
                 attendance.save()
-                if attendance.request_type == "create_request":
+                if is_create_request:
                     attendance.delete()
                     messages.success(request, _("The requested attendance is removed."))
                 else:

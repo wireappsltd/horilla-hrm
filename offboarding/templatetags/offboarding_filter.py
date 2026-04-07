@@ -173,6 +173,40 @@ def completed_tasks(tasks):
     """
     return tasks.filter(status__in=["completed", "not_applicable"]).count()
 
+
+@register.filter("stage_completed_tasks")
+def stage_completed_tasks(employee: OffboardingEmployee, stage: OffboardingStage):
+    """
+    Returns the count of completed/not_applicable tasks for all stages up to and
+    including the current stage, plus global tasks (stage_id=None).
+    """
+    from django.db.models import Q
+    stages_up_to = OffboardingStage.objects.filter(
+        offboarding_id=stage.offboarding_id,
+        sequence__lte=stage.sequence,
+    )
+    return employee.employeetask_set.filter(
+        Q(task_id__stage_id__in=stages_up_to) | Q(task_id__stage_id__isnull=True),
+        status__in=["completed", "not_applicable"],
+    ).count()
+
+
+@register.filter("stage_total_tasks")
+def stage_total_tasks(employee: OffboardingEmployee, stage: OffboardingStage):
+    """
+    Returns the total task count for all stages up to and including the current stage,
+    plus global tasks (stage_id=None). Fine tasks are included naturally since they
+    have stage_id=None and are only assigned to FNF employees with an active contract.
+    """
+    from django.db.models import Q
+    stages_up_to = OffboardingStage.objects.filter(
+        offboarding_id=stage.offboarding_id,
+        sequence__lte=stage.sequence,
+    )
+    return employee.employeetask_set.filter(
+        Q(task_id__stage_id__in=stages_up_to) | Q(task_id__stage_id__isnull=True),
+    ).count()
+
 @register.filter("is_employee_tasks")
 def is_employee_tasks(employee_tasks, task):
     """

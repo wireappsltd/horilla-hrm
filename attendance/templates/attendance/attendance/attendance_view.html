@@ -63,6 +63,32 @@
 <button hidden hx-post="{% url "update-title" %}" hx-target="#objectDetailsModalTarget" id="updateTitleSpan"></button>
 
 <script>
+    // Re-apply active tab after HTMX swaps #tab_contents
+    function activateAttendanceTab() {
+        var activeTab = localStorage.getItem("activeTabAttendance");
+        if (activeTab != null) {
+            var tab = $('[data-target="' + activeTab + '"]');
+            var tabContent = $(activeTab);
+            tab.attr("class", "oh-tabs__tab oh-tabs__tab--active");
+            tabContent.attr("class", "oh-tabs__content oh-tabs__content--active");
+        } else {
+            $('[data-target="#tab_1"]').attr("class", "oh-tabs__tab oh-tabs__tab--active");
+            $("#tab_1").attr("class", "oh-tabs__content oh-tabs__content--active");
+        }
+    }
+    document.body.addEventListener('htmx:afterSettle', function(event) {
+        if (event.detail.target && event.detail.target.id === 'tab_contents') {
+            activateAttendanceTab();
+        }
+    });
+    // Also activate on initial load
+    $(document).ready(function () {
+        activateAttendanceTab();
+        $(document).on("click", ".oh-tabs__tab", function (e) {
+            localStorage.setItem("activeTabAttendance", $(this).attr("data-target"));
+        });
+    });
+
     function dateChange(selectElement) {
         var selectedDate = selectElement.val();
         let parentForm = selectElement.parents().closest("form");

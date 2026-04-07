@@ -279,8 +279,8 @@
                     {% elif item.history.changes.0.is_fk == True %}
                     <div class="oh-helpdesk__chat-update">
                         <span>{{item.history.updated_by}} {% trans "changed the ticket " %}{{item.history.changes.0.field|safe}} {% trans " from" %}
-                            <strong>{{item.history.pair.0|fk_history:item.history.changes.0|safe}}</strong> {% trans "to" %}
-                            <strong>{{item.history.pair.1|fk_history:item.history.changes.0|safe}}</strong></span>
+                            <strong>{{item.history.pair.1|fk_history:item.history.changes.0|safe}}</strong> {% trans "to" %}
+                            <strong>{{item.history.pair.0|fk_history:item.history.changes.0|safe}}</strong></span>
                         <span>{{ item.history.pair.0.history_date}}</span>
                     </div>
                     {% else %}
@@ -359,6 +359,30 @@
                             <li class="helpdesk__card-item">
                                 <span class="helpdesk__card-label">{% trans "Created:" %}</span>
                                 <span class="helpdesk__card-value">{{ticket.created_date}}</span>
+                            </li>
+                            <li class="helpdesk__card-item d-flex justify-content-between align-items-center">
+                                <div>
+                                    <span class="helpdesk__card-label">{% trans "Due Date:" %}</span>
+                                    <span class="helpdesk__card-value">
+                                        {{ ticket.deadline|default:_("Not set") }}
+                                    </span>
+                                </div>
+                                {% if password_reset_request and password_reset_request.iso_status == 'PENDING' %}
+                                    {% if request.user.is_superuser or is_iso_officer or request.user.employee_get == ticket.employee_id %}
+                                    <button
+                                        class="oh-btn oh-btn--light-bkg p-2"
+                                        title="{% trans 'Edit due date' %}"
+                                        hx-get="{% url 'password-reset-request-update' password_reset_request.id %}"
+                                        hx-target="#passwordResetModalTarget"
+                                        hx-swap="innerHTML"
+                                        data-toggle="oh-modal-toggle"
+                                        data-target="#passwordResetModal"
+                                        onclick="event.stopPropagation();"
+                                    >
+                                        <ion-icon name="calendar-outline"></ion-icon>
+                                    </button>
+                                    {% endif %}
+                                {% endif %}
                             </li>
                             <li class="helpdesk__card-item">
                                 {% if password_reset_request and password_reset_request.iso_status != 'PENDING' and not request.user.is_superuser %}
@@ -485,9 +509,27 @@
                 {% endif %}
                 <!-- Responsibility Card -->
                 <div class="oh-helpdesk__card">
-                    <div class="oh-helpdesk__card-header d-flex justify-content-between">
+                    <div class="oh-helpdesk__card-header d-flex justify-content-between align-items-center">
                         <span class="oh-helpdesk__card-title">{% trans "Responsibility" %}</span>
-                        <span class="oh-helpdesk__card-title text-{{color}}">{{remaining}} </span>
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="oh-helpdesk__card-title text-{{color}}">{{remaining}} </span>
+                            {% if password_reset_request and password_reset_request.iso_status == 'PENDING' %}
+                                {% if request.user.is_superuser or is_iso_officer or request.user.employee_get == ticket.employee_id %}
+                                <button
+                                    class="oh-btn oh-btn--light-bkg p-2"
+                                    title="{% trans 'Edit due date' %}"
+                                    hx-get="{% url 'password-reset-request-update' password_reset_request.id %}"
+                                    hx-target="#passwordResetModalTarget"
+                                    hx-swap="innerHTML"
+                                    data-toggle="oh-modal-toggle"
+                                    data-target="#passwordResetModal"
+                                    onclick="event.stopPropagation();"
+                                >
+                                    <ion-icon name="calendar-outline"></ion-icon>
+                                </button>
+                                {% endif %}
+                            {% endif %}
+                        </div>
                     </div>
                     <div class="oh-helpdesk__card-body">
                         <div class="oh-helpdesk__subcard">
@@ -508,11 +550,21 @@
                             </div>
                             <div class="oh-helpdesk__subcard-body">
                                 <ul class="oh-helpdesk__subcard-items">
-                                    {% for obj in ticket.get_raised_on_objects %}
-                                    <li class="oh-helpdesk__subcard-item">{{ obj }}</li>
-                                    {% empty %}
-                                    <li class="oh-helpdesk__subcard-item">—</li>
-                                    {% endfor %}
+                                    {% if password_reset_request %}
+                                        {% for officer_user in password_reset_request.forward_to.all %}
+                                            <li class="oh-helpdesk__subcard-item">
+                                                {{ officer_user.employee_get.get_full_name|default:officer_user.get_full_name|default:officer_user.username }}
+                                            </li>
+                                        {% empty %}
+                                            <li class="oh-helpdesk__subcard-item">—</li>
+                                        {% endfor %}
+                                    {% else %}
+                                        {% for obj in ticket.get_raised_on_objects %}
+                                            <li class="oh-helpdesk__subcard-item">{{ obj }}</li>
+                                        {% empty %}
+                                            <li class="oh-helpdesk__subcard-item">—</li>
+                                        {% endfor %}
+                                    {% endif %}
                                 </ul>
                             </div>
                         </div>
@@ -684,7 +736,7 @@
     var ALLOWED_EXTENSIONS = ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
         '.jpg', '.jpeg', '.png', '.gif', '.svg', '.webp', '.txt', '.csv', '.html',
         '.mp3', '.wav', '.ogg', '.m4a'];
-    var MAX_FILE_SIZE_MB = 10;
+    var MAX_FILE_SIZE_MB = 5;
 
     function validateFiles(files) {
         for (var i = 0; i < files.length; i++) {
@@ -693,12 +745,12 @@
             if (ALLOWED_EXTENSIONS.indexOf(ext) === -1) {
                 Swal.fire ? Swal.fire('Error', "File '" + file.name + "' has unsupported type '" + ext + "'. Allowed types: " + ALLOWED_EXTENSIONS.join(', '), 'error')
                     : alert("File '" + file.name + "' has unsupported type '" + ext + "'.");
-                return false;
+                return false; // stop further processing when invalid type
             }
             if (file.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
                 Swal.fire ? Swal.fire('Error', "File '" + file.name + "' exceeds the maximum size of " + MAX_FILE_SIZE_MB + " MB.", 'error')
                     : alert("File '" + file.name + "' exceeds the maximum size of " + MAX_FILE_SIZE_MB + " MB.");
-                return false;
+                return false; // stop and prevent submission on oversize file
             }
         }
         return true;
@@ -896,7 +948,12 @@
     })
 </script>
 
+<div id="passwordResetModalTarget"></div>
+
 <script type="module" src="https://unpkg.com/ionicons@5.5.2/dist/ionicons/ionicons.esm.js"></script>
 <script nomodule src="https://unpkg.com/ionicons@5.5.2/dist/ionicons/ionicons.js"></script>
 
 {% endblock %}
+
+
+

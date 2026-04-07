@@ -157,3 +157,88 @@
     update();
   })();
 </script>
+
+<script>
+  (function () {
+    function isIntern($select) {
+      if (!$select || !$select.length) return false;
+      const internTypeId = ($select.attr("data-intern-type-id") || "").trim();
+      if (internTypeId && String($select.val()) === internTypeId) return true;
+      const selectedText = $select.find("option:selected").text().trim().toLowerCase();
+      return selectedText.indexOf("intern") !== -1;
+    }
+
+    function toggleForSelect(selectEl) {
+      const $select = window.jQuery(selectEl);
+      if (!$select.length) return;
+      const show = isIntern($select);
+      let $scope = $select.closest("form");
+      if (!$scope.length) {
+        $scope = $select.closest(".oh-profile-section__card, .card");
+      }
+      let $targets = $scope.find(".intern-salary-fields");
+      if (!$targets.length) {
+        $targets = window.jQuery(".intern-salary-fields");
+      }
+      $targets.toggle(show);
+    }
+
+    function applyAll(root) {
+      const $root = root ? window.jQuery(root) : window.jQuery(document);
+      const $selects = $root.find("#id_employee_type_id");
+      if ($root.is("#id_employee_type_id")) {
+        toggleForSelect($root[0]);
+      }
+      $selects.each(function () {
+        toggleForSelect(this);
+      });
+    }
+
+    if (window.jQuery && !window.__internSalaryDelegatedBound) {
+      window.__internSalaryDelegatedBound = true;
+      window
+        .jQuery(document)
+        .on(
+          "change.internSalary select2:select.internSalary select2:clear.internSalary",
+          "#id_employee_type_id",
+          function () {
+            toggleForSelect(this);
+          }
+        );
+    }
+
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", function () {
+        applyAll(document);
+      });
+    } else {
+      applyAll(document);
+    }
+
+    if (!window.__internSalaryLiveInitBound) {
+      window.__internSalaryLiveInitBound = true;
+      document.addEventListener("htmx:afterSwap", function (evt) {
+        applyAll(evt.target || document);
+      });
+      document.addEventListener("htmx:afterSettle", function (evt) {
+        applyAll(evt.target || document);
+      });
+
+      // Fallback for custom dropdown wrappers that skip change/select2 events.
+      window.__internSalaryValueCache = window.__internSalaryValueCache || {};
+      setInterval(function () {
+        if (!window.jQuery) return;
+        window.jQuery("#id_employee_type_id").each(function () {
+          const key = this.form ? this.form.id || this.form.action || "default" : "default";
+          const cacheKey = key + "::" + (this.name || "employee_type_id");
+          const currentValue = String(window.jQuery(this).val() || "");
+          if (window.__internSalaryValueCache[cacheKey] !== currentValue) {
+            window.__internSalaryValueCache[cacheKey] = currentValue;
+            toggleForSelect(this);
+          }
+        });
+      }, 250);
+    }
+  })();
+</script>
+

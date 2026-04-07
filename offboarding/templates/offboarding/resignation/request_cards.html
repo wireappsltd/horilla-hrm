@@ -141,6 +141,9 @@
                 </div>
             </div>
             <h3 class="oh-faq-card__title">{{ record.title }}</h3>
+            {% if record.exit_reason %}
+            <p class="mb-1"><strong>{% trans "Resignation Reason" %}:</strong> {{ record.exit_reason }}</p>
+            {% endif %}
             <div
                 class="oh-faq-card__desc"
                 style="overflow: auto; min-height: 200px"

@@ -12,6 +12,7 @@ Classes:
 
 Usage:
 from django import forms
+from django.db.models import Q
 
 class YourForm(forms.Form):
     field_name = forms.CharField()
@@ -24,7 +25,10 @@ class YourForm(forms.Form):
 from typing import Any
 
 from django import forms
+from django.contrib.auth.models import User
+from django.db.models import Q
 from django.template.loader import render_to_string
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from base.forms import ModelForm
@@ -35,6 +39,7 @@ from employee.models import Employee
 from helpdesk.models import (
     FAQ,
     PRIORITY,
+    ISO_GROUP_NAME,
     Attachment,
     Comment,
     DepartmentManager,
@@ -170,6 +175,8 @@ class PasswordResetRequestForm(forms.ModelForm):
     On save, user_email is populated from the selected employee's company email.
     """
 
+    REASON_MAX_LENGTH = 250
+
     employee = forms.ModelChoiceField(
         queryset=Employee.objects.none(),  # populated in __init__
         label=_("User ID (Email)"),
@@ -181,6 +188,15 @@ class PasswordResetRequestForm(forms.ModelForm):
         initial="medium",
         label=_("Priority"),
         widget=forms.Select(attrs={"class": "oh-select oh-select-2 w-100"}),
+    )
+
+    forward_to = forms.ModelMultipleChoiceField(
+        queryset=User.objects.none(),
+        label=_("Forward To"),
+        required=True,
+        widget=forms.SelectMultiple(
+            attrs={"class": "oh-select oh-select-2 w-100"}
+        ),
     )
 
     deadline = forms.DateField(
@@ -196,7 +212,7 @@ class PasswordResetRequestForm(forms.ModelForm):
 
     class Meta:
         model = PasswordResetRequest
-        fields = ["platform", "employee", "reason"]
+        fields = ["platform", "employee", "forward_to", "reason"]
         widgets = {
             "platform": forms.Select(
                 attrs={"class": "oh-select oh-select-2 w-100"}
@@ -216,35 +232,129 @@ class PasswordResetRequestForm(forms.ModelForm):
 
     def __init__(self, *args, request=None, **kwargs):
         super().__init__(*args, **kwargs)
+        today = timezone.localdate()
+        self.fields["deadline"].widget.attrs["min"] = today.isoformat()
 
-        if request and request.user.is_superuser:
-            # Admins can pick any active employee
-            self.fields["employee"].queryset = Employee.objects.filter(
-                is_active=True
-            ).order_by("employee_first_name")
-        elif request:
-            # Regular users can only pick themselves
+        # Resolve the employee tied to this request (ticket owner)
+        selected_employee = None
+        if self.instance and self.instance.pk and getattr(self.instance, "ticket", None):
+            selected_employee = getattr(self.instance.ticket, "employee_id", None)
+        if not selected_employee and self.instance and self.instance.pk and self.instance.user_id:
             try:
-                emp = request.user.employee_get
-                self.fields["employee"].queryset = Employee.objects.filter(pk=emp.pk)
-                self.fields["employee"].initial = emp
-            except Exception:
-                self.fields["employee"].queryset = Employee.objects.none()
-
-        # If editing an existing request, pre-select the matching employee
-        if self.instance and self.instance.pk and self.instance.user_id:
-            try:
-                emp = Employee.objects.get(
+                selected_employee = Employee.objects.get(
                     employee_work_info__company_email=self.instance.user_id
                 )
-                self.fields["employee"].initial = emp
+            except Exception:
+                selected_employee = None
+
+        self.fields["forward_to"].queryset = (
+            User.objects.filter(groups__name=ISO_GROUP_NAME, is_active=True)
+            .distinct()
+            .order_by("first_name", "username")
+        )
+        self.fields["forward_to"].label_from_instance = self._forward_to_label
+
+        reason_error_message = _("Reason cannot exceed %(max_length)s characters.") % {
+            "max_length": self.REASON_MAX_LENGTH,
+        }
+        reason_field = self.fields["reason"]
+        reason_field.max_length = self.REASON_MAX_LENGTH
+        reason_field.help_text = _("Max %(max_length)s characters") % {
+            "max_length": self.REASON_MAX_LENGTH,
+        }
+        reason_field.error_messages["max_length"] = reason_error_message
+        reason_field.widget.attrs.update(
+            {
+                "data-maxlength": str(self.REASON_MAX_LENGTH),
+                "data-maxlength-message": reason_error_message,
+            }
+        )
+
+        # Who can pick any employee: superuser or ISO officer
+        is_iso_officer = False
+        if request:
+            is_iso_officer = request.user.groups.filter(name=ISO_GROUP_NAME).exists()
+
+        employee_filter = Q(pk=-1)  # start empty; add allowed employees below
+        if request and (request.user.is_superuser or is_iso_officer):
+            employee_filter |= Q(is_active=True)
+        elif request:
+            try:
+                emp = request.user.employee_get
+                employee_filter |= Q(pk=emp.pk)
+                selected_employee = selected_employee or emp
             except Exception:
                 pass
+
+        if selected_employee:
+            employee_filter |= Q(pk=selected_employee.pk)
+            self.initial["employee"] = selected_employee
+            self.fields["employee"].initial = selected_employee
+
+        self.fields["employee"].queryset = Employee.objects.filter(employee_filter).order_by(
+            "employee_first_name"
+        )
+
+        # ── Forward To: keep queryset as User objects (set at line 250) ──
+        # The model's forward_to M2M targets User, so the queryset must use
+        # User objects.  The queryset was already set above; we only need to
+        # build a reference to the ISO-member User queryset for initial values.
+        iso_user_qs = self.fields["forward_to"].queryset
+
+        # Pre-select: if editing, use the saved forward_to users; otherwise default to all ISO members
+        if self.instance and self.instance.pk and hasattr(self.instance, "ticket") and self.instance.ticket:
+            # For editing, the authoritative initial comes from the M2M (line 337 below).
+            # Fallback: map raised_on Employee IDs → User objects.
+            existing_ids = [
+                rid.strip()
+                for rid in (self.instance.ticket.raised_on or "").split(",")
+                if rid.strip()
+            ]
+            if existing_ids:
+                self.initial["forward_to"] = iso_user_qs.filter(
+                    employee_get__id__in=existing_ids
+                )
+            else:
+                self.initial["forward_to"] = iso_user_qs
+        else:
+            # New form: default to all ISO group members
+            self.initial["forward_to"] = iso_user_qs
 
         # If editing, pre-populate priority and deadline from the linked ticket
         if self.instance and self.instance.pk and hasattr(self.instance, "ticket") and self.instance.ticket:
             self.fields["priority"].initial = self.instance.ticket.priority
             self.fields["deadline"].initial = self.instance.ticket.deadline
+
+        if self.instance and self.instance.pk:
+            self.fields["forward_to"].initial = self.instance.forward_to.all()
+
+    def _forward_to_label(self, user):
+        try:
+            employee = user.employee_get
+            full_name = employee.get_full_name()
+            if full_name:
+                return full_name
+        except Exception:
+            pass
+        return user.get_full_name() or user.username
+
+    def clean_reason(self):
+        reason = (self.cleaned_data.get("reason") or "").strip()
+        if len(reason) > self.REASON_MAX_LENGTH:
+            raise forms.ValidationError(
+                _("Reason cannot exceed %(max_length)s characters.")
+                % {"max_length": self.REASON_MAX_LENGTH}
+            )
+        return reason
+
+    def clean_deadline(self):
+        deadline = self.cleaned_data.get("deadline")
+        if deadline is None:
+            return deadline
+        today = timezone.localdate()
+        if deadline < today:
+            raise forms.ValidationError(_("Due date cannot be in the past."))
+        return deadline
 
     def save(self, commit=True):
         instance = super().save(commit=False)
@@ -259,6 +369,7 @@ class PasswordResetRequestForm(forms.ModelForm):
                 instance.user_id = ""
         if commit:
             instance.save()
+            instance.forward_to.set(self.cleaned_data.get("forward_to", []))
         return instance
 
 
@@ -403,7 +514,7 @@ ALLOWED_FILE_EXTENSIONS = [
     ".txt", ".csv", ".html",
     ".mp3", ".wav", ".ogg", ".m4a",
 ]
-MAX_FILE_SIZE_MB = 10  # Maximum file size in MB
+MAX_FILE_SIZE_MB = 5  # Maximum file size in MB
 
 
 class AttachmentForm(forms.ModelForm):

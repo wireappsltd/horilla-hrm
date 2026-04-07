@@ -216,7 +216,7 @@ class TaskForm(ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["stage_id"].empty_label = "All Stages in Offboarding"
-        self.fields["managers"].empty_label = None
+        self.fields["managers"].required = False
 
     def as_p(self):
         """

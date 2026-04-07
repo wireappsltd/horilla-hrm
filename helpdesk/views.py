@@ -1059,17 +1059,28 @@ def ticket_change_assignees(request, ticket_id):
         if request.method == "POST":
             form = TicketAssigneesForm(request.POST, instance=ticket)
             if form.is_valid():
-                form.save(commit=False)
+                selected_assignees = form.cleaned_data["assigned_to"]
 
-                new_assignee_ids = form.cleaned_data["assigned_to"].values_list(
-                    "id", flat=True
-                )
+                # Password reset tickets must be owned by exactly one assignee.
+                if pr_request and selected_assignees.count() != 1:
+                    form.add_error(
+                        "assigned_to",
+                        _("Password reset requests must be assigned to exactly one user."),
+                    )
+                    return render(
+                        request,
+                        "helpdesk/ticket/forms/change_assinees.html",
+                        {"form": form, "ticket_id": ticket_id},
+                    )
+
+                new_assignee_ids = selected_assignees.values_list("id", flat=True)
                 added_assignee_ids = set(new_assignee_ids) - set(prev_assignee_ids)
                 removed_assignee_ids = set(prev_assignee_ids) - set(new_assignee_ids)
                 added_assignees = Employee.objects.filter(id__in=added_assignee_ids)
                 removed_assignees = Employee.objects.filter(id__in=removed_assignee_ids)
 
                 form.save()
+
 
                 mail_thread = AddAssigneeThread(
                     request,
@@ -1911,6 +1922,13 @@ def _is_iso_officer(user):
     return user.groups.filter(name=ISO_GROUP_NAME).exists()
 
 
+def _is_password_reset_request_owner(user, pr_request):
+    """Return True when the authenticated user owns the password reset request."""
+    current_employee = getattr(user, "employee_get", None)
+    ticket_employee = getattr(pr_request.ticket, "employee_id", None)
+    return bool(current_employee and ticket_employee and current_employee == ticket_employee)
+
+
 def _get_iso_officer_users():
     """
     Return a list of User objects who are ISO officers (members of the ISO
@@ -1921,6 +1939,36 @@ def _get_iso_officer_users():
         is_active=True,
     ).distinct()
     return list(iso_users)
+
+
+def _get_forward_employee_ids_and_employees(users):
+    """Map selected auth users or employees to employee IDs for Ticket.forwarding compatibility."""
+    employee_ids = []
+    employees = []
+    for item in users:
+        try:
+            # If item is already an Employee instance, use it directly.
+            if isinstance(item, Employee):
+                employee_ids.append(str(item.id))
+                employees.append(item)
+            else:
+                # item is a User; resolve via reverse relation.
+                employee = item.employee_get
+                if employee:
+                    employee_ids.append(str(employee.id))
+                    employees.append(employee)
+        except Employee.DoesNotExist:
+            # User has no related Employee; skip silently to preserve existing behavior.
+            continue
+        except Exception:
+            # Log unexpected exceptions so they can be investigated instead of being hidden.
+            logger.exception(
+                "Unexpected error while mapping user %s to Employee in "
+                "_get_forward_employee_ids_and_employees",
+                getattr(item, "pk", item),
+            )
+            continue
+    return employee_ids, employees
 
 
 @login_required
@@ -1939,9 +1987,11 @@ def iso_forms_home(request):
                 Q(ticket__employee_id=current_employee)
                 | Q(ticket__assigned_to=current_employee)
                 | Q(ticket__raised_on=str(current_employee.id))
+                | Q(reviewed_by=request.user)
             ).distinct()
         else:
             queryset = queryset.none()
+
 
     context = {
         "password_reset_requests": queryset,
@@ -1964,6 +2014,27 @@ def _get_password_reset_ticket_type():
     return ticket_type
 
 
+def _format_password_reset_user(employee):
+    """Return a clean display string for the Password Reset user."""
+    if not employee:
+        return ""
+    try:
+        # Use get_full_name() which returns only "First Last" without badge.
+        full_name = (employee.get_full_name() or "").strip()
+    except Exception:
+        full_name = ""
+
+    badge = getattr(employee, "badge_id", "") or ""
+
+    if full_name and badge:
+        return f"{full_name} ({badge})"
+    elif full_name:
+        return full_name
+    elif badge:
+        return badge
+    # Fallback to str(employee) which already includes badge.
+    return str(employee).strip()
+
 
 @login_required
 @hx_request_required
@@ -1983,17 +2054,16 @@ def password_reset_request_create(request):
 
             platform = form.cleaned_data["platform"]
             selected_employee = form.cleaned_data["employee"]
+            selected_forward_users = list(form.cleaned_data["forward_to"])
             reason = form.cleaned_data["reason"]
 
             assigning_type = "individual"
-            raised_on = str(selected_employee.id)
-            try:
-                user_email = selected_employee.employee_work_info.company_email or ""
-            except Exception:
-                user_email = ""
-            user_display = str(selected_employee)
-            if user_email and user_email not in user_display:
-                user_display = f"{user_display} ({user_email})"
+            # Map selected User objects to Employee IDs (forward_to uses User model)
+            forward_employee_ids, forward_employees = _get_forward_employee_ids_and_employees(
+                selected_forward_users
+            )
+            raised_on = ",".join(forward_employee_ids) or str(selected_employee.id)
+            user_display = _format_password_reset_user(selected_employee)
             description = (
                 f"<b>Password Reset Request Details:</b><br><br>"
                 f"<b>Platform:</b> {platform}<br>"
@@ -2016,28 +2086,53 @@ def password_reset_request_create(request):
             ticket.save()
 
             ticket.assigned_to.add(selected_employee)
+            if forward_employees:
+                ticket.assigned_to.add(*forward_employees)
 
             pr_request = form.save(commit=False)
             pr_request.ticket = ticket
             pr_request.iso_status = "PENDING"
+            pr_request.request_type = "password_reset"
             pr_request.save()
+            # forward_to is M2M to User; convert Employee objects to their User
+            forward_users = [
+                emp.employee_user_id for emp in selected_forward_users
+                if getattr(emp, "employee_user_id", None)
+            ]
+            pr_request.forward_to.set(forward_users)
 
-            # In-app notification to all ISO officers and admins
-            iso_officer_users = _get_iso_officer_users()
+            notification_actor = getattr(request.user, "employee_get", selected_employee)
+
+            # In-app notification to selected ISO officers/admins (forward recipients)
             try:
-                notify.send(
-                    selected_employee,
-                    recipient=iso_officer_users,
-                    verb=f"New Password Reset request submitted for {selected_employee.get_full_name()} on {platform}.",
-                    verb_ar="تم تقديم طلب إعادة تعيين كلمة المرور.",
-                    verb_de="Eine neue Anfrage zum Zurücksetzen des Passworts wurde eingereicht.",
-                    verb_es="Se ha enviado una nueva solicitud de restablecimiento de contraseña.",
-                    verb_fr="Une nouvelle demande de réinitialisation de mot de passe a été soumise.",
-                    icon="key",
-                    redirect=reverse("ticket-detail", kwargs={"ticket_id": ticket.id}),
-                )
+                if forward_users:
+                    notify.send(
+                        notification_actor,
+                        recipient=forward_users,
+                        verb=f"New Password Reset request submitted for {selected_employee.get_full_name()} on {platform}.",
+                        verb_ar="تم تقديم طلب إعادة تعيين كلمة المرور.",
+                        verb_de="Eine neue Anfrage zum Zurücksetzen des Passworts wurde eingereicht.",
+                        verb_es="Se ha enviado una nueva solicitud de restablecimiento de contraseña.",
+                        verb_fr="Une nouvelle demande de réinitialisation de mot de passe a été soumise.",
+                        icon="key",
+                        redirect=reverse("ticket-detail", kwargs={"ticket_id": ticket.id}),
+                    )
             except Exception as exc:
                 logger.error("Password reset notify error: %s", exc)
+
+            # In-app confirmation notification to the requester
+            requestor_user = getattr(selected_employee, "employee_user_id", None)
+            try:
+                if requestor_user:
+                    notify.send(
+                        notification_actor,
+                        recipient=requestor_user,
+                        verb=f"Your password reset request for {platform} has been submitted and is pending ISO approval.",
+                        icon="key",
+                        redirect=reverse("ticket-detail", kwargs={"ticket_id": ticket.id}),
+                    )
+            except Exception as exc:
+                logger.error("Password reset requester notify error: %s", exc)
 
             # Email notification to ISO officers and confirmation to requester
             try:
@@ -2046,6 +2141,7 @@ def password_reset_request_create(request):
                     ticket,
                     type="new_request",
                     pr_request=pr_request,
+                    iso_recipients=forward_users,
                 )
                 mail_thread.start()
             except Exception as exc:
@@ -2070,7 +2166,11 @@ def password_reset_request_update(request, pr_id):
     pr_request = PasswordResetRequest.objects.get(id=pr_id)
     ticket = pr_request.ticket
 
-    if request.user.employee_get != ticket.employee_id and not request.user.is_superuser:
+    current_employee = getattr(request.user, "employee_get", None)
+    is_iso_officer = _is_iso_officer(request.user)
+    has_access = request.user.is_superuser or is_iso_officer or current_employee == ticket.employee_id
+
+    if not has_access:
         messages.info(request, _("You don't have permission."))
         if "HTTP_HX_REQUEST" in request.META:
             return render(request, "decorator_404.html")
@@ -2092,20 +2192,28 @@ def password_reset_request_update(request, pr_id):
             return HttpResponse("<script>window.location.reload()</script>")
         form = PasswordResetRequestForm(request.POST, instance=pr_request, request=request)
         if form.is_valid():
-            pr_request = form.save()
-
             platform = form.cleaned_data["platform"]
             selected_employee = form.cleaned_data["employee"]
+            selected_forward_users = list(form.cleaned_data["forward_to"])
             reason = form.cleaned_data["reason"]
-            try:
-                user_email = selected_employee.employee_work_info.company_email or ""
-            except Exception:
-                user_email = ""
-            user_display = str(selected_employee)
-            if user_email and user_email not in user_display:
-                user_display = f"{user_display} ({user_email})"
+            user_display = _format_password_reset_user(selected_employee)
 
-            # FIX: update the ticket owner to the (possibly changed) selected employee
+            # Map selected Employee objects to Employee IDs
+            forward_employee_ids, forward_employees = _get_forward_employee_ids_and_employees(
+                selected_forward_users
+            )
+
+            # forward_to is M2M to User; convert Employee objects to their User
+            forward_users = [
+                emp.employee_user_id for emp in selected_forward_users
+                if getattr(emp, "employee_user_id", None)
+            ]
+
+            # Update the ticket FIRST so the owner (employee_id) is always
+            # reassigned together with the description and other fields.
+            # Re-fetch the ticket fresh from DB to avoid stale reference
+            ticket = Ticket.objects.get(pk=pr_request.ticket_id)
+
             ticket.employee_id = selected_employee
             ticket.priority = form.cleaned_data.get("priority")
             ticket.deadline = form.cleaned_data.get("deadline")
@@ -2116,12 +2224,22 @@ def password_reset_request_update(request, pr_id):
                 f"<b>User:</b> {user_display}<br>"
                 f"<b>Reason:</b> {reason}"
             )[:255]
-            ticket.raised_on = str(selected_employee.id)
+            ticket.raised_on = ",".join(forward_employee_ids) or str(selected_employee.id)
             ticket.save()
 
-            # Refresh assigned_to: ensure the selected employee is assigned
+            # Refresh assigned_to: ensure new owner and forwarding officers are assigned
             ticket.assigned_to.clear()
             ticket.assigned_to.add(selected_employee)
+            if forward_employees:
+                ticket.assigned_to.add(*forward_employees)
+
+            # Now save the PasswordResetRequest (user_id, platform, reason, forward_to)
+            pr_request = form.save(commit=False)
+            pr_request.request_type = "password_reset"
+            pr_request.save()
+
+            # Set forward_to M2M after saving the PR request
+            pr_request.forward_to.set(forward_users)
 
             messages.success(request, _("Password reset request updated successfully."))
             return HttpResponse("<script>window.location.reload()</script>")
@@ -2141,6 +2259,13 @@ def iso_review_password_reset(request, pr_id):
         return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
 
     pr_request = PasswordResetRequest.objects.get(id=pr_id)
+
+    if _is_password_reset_request_owner(request.user, pr_request):
+        messages.info(
+            request,
+            _("You cannot approve or reject your own password reset request."),
+        )
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
 
     if pr_request.iso_status != "PENDING":
         messages.info(request, _("This request has already been reviewed."))
@@ -2359,4 +2484,3 @@ def password_reset_request_delete(request, pr_id):
             messages.error(request, _("You cannot delete this password reset request."))
 
     return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
-
