@@ -1081,22 +1081,6 @@ def ticket_change_assignees(request, ticket_id):
 
                 form.save()
 
-                # Keep Password Reset ticket ownership fields aligned with assignee.
-                if pr_request:
-                    new_owner = selected_assignees.first()
-                    ticket.employee_id = new_owner
-                    ticket.assigning_type = "individual"
-                    ticket.raised_on = str(new_owner.id)
-                    ticket.save(update_fields=["employee_id", "assigning_type", "raised_on"])
-
-                    work_info = getattr(new_owner, "employee_work_info", None)
-                    work_email = getattr(work_info, "email", None) if work_info else None
-                    if work_email:
-                        pr_request.user_id = work_email
-                        pr_request.save(update_fields=["user_id", "updated_at"])
-                    else:
-                        # Do not overwrite existing user_id if we cannot resolve a work email.
-                        pr_request.save(update_fields=["updated_at"])
 
                 mail_thread = AddAssigneeThread(
                     request,
@@ -1958,15 +1942,21 @@ def _get_iso_officer_users():
 
 
 def _get_forward_employee_ids_and_employees(users):
-    """Map selected auth users to employee IDs for Ticket.forwarding compatibility."""
+    """Map selected auth users or employees to employee IDs for Ticket.forwarding compatibility."""
     employee_ids = []
     employees = []
-    for user in users:
+    for item in users:
         try:
-            employee = user.employee_get
-            if employee:
-                employee_ids.append(str(employee.id))
-                employees.append(employee)
+            # If item is already an Employee instance, use it directly.
+            if isinstance(item, Employee):
+                employee_ids.append(str(item.id))
+                employees.append(item)
+            else:
+                # item is a User; resolve via reverse relation.
+                employee = item.employee_get
+                if employee:
+                    employee_ids.append(str(employee.id))
+                    employees.append(employee)
         except Employee.DoesNotExist:
             # User has no related Employee; skip silently to preserve existing behavior.
             continue
@@ -1975,7 +1965,7 @@ def _get_forward_employee_ids_and_employees(users):
             logger.exception(
                 "Unexpected error while mapping user %s to Employee in "
                 "_get_forward_employee_ids_and_employees",
-                getattr(user, "pk", user),
+                getattr(item, "pk", item),
             )
             continue
     return employee_ids, employees
@@ -2002,10 +1992,6 @@ def iso_forms_home(request):
         else:
             queryset = queryset.none()
 
-    pending_requests = queryset.filter(iso_status="PENDING")
-    reviewed_requests = queryset.exclude(iso_status="PENDING").order_by(
-        "-reviewed_at", "-updated_at"
-    )
 
     iso_form_options = [
         {
@@ -2018,12 +2004,9 @@ def iso_forms_home(request):
 
     context = {
         "password_reset_requests": queryset,
-        "pending_password_reset_requests": pending_requests,
-        "reviewed_password_reset_requests": reviewed_requests,
-        "has_iso_requests": queryset.exists(),
-        "iso_form_options": iso_form_options,
         "current_employee": current_employee,
         "is_iso_officer": request.user.is_superuser or _is_iso_officer(request.user),
+        "iso_form_options": iso_form_options,
     }
     return render(request, "helpdesk/iso_forms/index.html", context)
 
@@ -2121,18 +2104,23 @@ def password_reset_request_create(request):
             pr_request = form.save(commit=False)
             pr_request.ticket = ticket
             pr_request.iso_status = "PENDING"
+            pr_request.request_type = "password_reset"
             pr_request.save()
-            pr_request.forward_to.set(selected_forward_users)
+            # forward_to is M2M to User; convert Employee objects to their User
+            forward_users = [
+                emp.employee_user_id for emp in selected_forward_users
+                if getattr(emp, "employee_user_id", None)
+            ]
+            pr_request.forward_to.set(forward_users)
 
             notification_actor = getattr(request.user, "employee_get", selected_employee)
 
             # In-app notification to selected ISO officers/admins (forward recipients)
-            iso_officer_users = selected_forward_users
             try:
-                if iso_officer_users:
+                if forward_users:
                     notify.send(
                         notification_actor,
-                        recipient=iso_officer_users,
+                        recipient=forward_users,
                         verb=f"New Password Reset request submitted for {selected_employee.get_full_name()} on {platform}.",
                         verb_ar="تم تقديم طلب إعادة تعيين كلمة المرور.",
                         verb_de="Eine neue Anfrage zum Zurücksetzen des Passworts wurde eingereicht.",
@@ -2165,7 +2153,7 @@ def password_reset_request_create(request):
                     ticket,
                     type="new_request",
                     pr_request=pr_request,
-                    iso_recipients=selected_forward_users,
+                    iso_recipients=forward_users,
                 )
                 mail_thread.start()
             except Exception as exc:
@@ -2216,8 +2204,6 @@ def password_reset_request_update(request, pr_id):
             return HttpResponse("<script>window.location.reload()</script>")
         form = PasswordResetRequestForm(request.POST, instance=pr_request, request=request)
         if form.is_valid():
-            pr_request = form.save()
-
             platform = form.cleaned_data["platform"]
             request_type_display = pr_request.get_request_type_display()
             selected_employee = form.cleaned_data["employee"]
@@ -2225,11 +2211,19 @@ def password_reset_request_update(request, pr_id):
             reason = form.cleaned_data["reason"]
             user_display = _format_password_reset_user(selected_employee)
 
-            # Map selected User objects to Employee IDs (forward_to uses User model)
+            # Map selected Employee objects to Employee IDs
             forward_employee_ids, forward_employees = _get_forward_employee_ids_and_employees(
                 selected_forward_users
             )
 
+            # forward_to is M2M to User; convert Employee objects to their User
+            forward_users = [
+                emp.employee_user_id for emp in selected_forward_users
+                if getattr(emp, "employee_user_id", None)
+            ]
+
+            # Update the ticket FIRST so the owner (employee_id) is always
+            # reassigned together with the description and other fields.
             # Re-fetch the ticket fresh from DB to avoid stale reference
             ticket = Ticket.objects.get(pk=pr_request.ticket_id)
 
@@ -2247,11 +2241,19 @@ def password_reset_request_update(request, pr_id):
             ticket.raised_on = ",".join(forward_employee_ids) or str(selected_employee.id)
             ticket.save()
 
-            # Refresh assigned_to: ensure owner and selected forwarding officers are assigned
+            # Refresh assigned_to: ensure new owner and forwarding officers are assigned
             ticket.assigned_to.clear()
             ticket.assigned_to.add(selected_employee)
             if forward_employees:
                 ticket.assigned_to.add(*forward_employees)
+
+            # Now save the PasswordResetRequest (user_id, platform, reason, forward_to)
+            pr_request = form.save(commit=False)
+            pr_request.request_type = "password_reset"
+            pr_request.save()
+
+            # Set forward_to M2M after saving the PR request
+            pr_request.forward_to.set(forward_users)
 
             messages.success(request, _("Password reset request updated successfully."))
             return HttpResponse("<script>window.location.reload()</script>")

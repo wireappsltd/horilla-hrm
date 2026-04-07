@@ -2027,6 +2027,7 @@ def all_deductions(pay_head):
 
 
 @login_required
+@permission_required("payroll.view_payslip")
 def payslip_detailed_export_data(request):
     """
     This view create the data for exporting payslip data based on selected fields and filters,

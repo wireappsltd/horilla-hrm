@@ -41,7 +41,7 @@ def permission_required(function, perm):
             return function(request, *args, **kwargs)
 
         else:
-            messages.info(request, "You dont have permission.")
+            messages.error(request, "You don't have permission.")
             previous_url = request.META.get("HTTP_REFERER", "/")
             key = "HTTP_HX_REQUEST"
             if key in request.META.keys():
@@ -186,7 +186,7 @@ def manager_can_enter(function, perm):
         if user.has_perm(perm) or is_manager:
             return function(request, *args, **kwargs)
         else:
-            messages.info(request, "You dont have permission.")
+            messages.error(request, "You don't have permission.")
             previous_url = request.META.get("HTTP_REFERER", "/")
             script = f'<script>window.location.href = "{previous_url}"</script>'
             key = "HTTP_HX_REQUEST"
@@ -220,7 +220,7 @@ def is_recruitment_manager(function, perm):
         if user.has_perm(perm) or is_manager:
             return function(request, *args, **kwargs)
         else:
-            messages.info(request, "You dont have permission.")
+            messages.error(request, "You don't have permission.")
             previous_url = request.META.get("HTTP_REFERER", "/")
             script = f'<script>window.location.href = "{previous_url}"</script>'
             key = "HTTP_HX_REQUEST"
@@ -392,7 +392,7 @@ def meeting_manager_can_enter(function, perm, answerable=False):
         if user.has_perm(perm) or is_manager or is_answer_employee:
             return function(request, *args, **kwargs)
         else:
-            messages.info(request, "You dont have permission.")
+            messages.error(request, "You don't have permission.")
             previous_url = request.META.get("HTTP_REFERER", "/")
             script = f'<script>window.location.href = "{previous_url}"</script>'
             key = "HTTP_HX_REQUEST"

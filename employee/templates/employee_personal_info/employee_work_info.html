@@ -62,6 +62,10 @@
                     {{work_form.salary_hour.errors}}
                     {{work_form.salary_hour}}
                 </div>
+                <div class="col-md-6 mb-4 intern-salary-fields" style="display:none;">
+                    {{work_form.salary_currency.errors}}
+                    {{work_form.salary_currency}}
+                </div>
                 <div class="col-md-6 mb-4">
                     {{work_form.tags.errors}}
                     {{work_form.tags}}
@@ -165,16 +169,74 @@
     </div>
 </div>
 <script>
-$(document).ready(function () {
-    function toggleSalaryFields() {
-        var selectedText = $("#id_employee_type_id option:selected").text().trim().toLowerCase();
-        if (selectedText === "intern") {
-            $(".intern-salary-fields").show();
-        } else {
-            $(".intern-salary-fields").hide();
-        }
+  (function () {
+    function isIntern($select) {
+      if (!$select || !$select.length) return false;
+      const internTypeId = ($select.attr("data-intern-type-id") || "").trim();
+      if (internTypeId && String($select.val()) === internTypeId) return true;
+      return $select.find("option:selected").text().trim().toLowerCase().indexOf("intern") !== -1;
     }
-    toggleSalaryFields();
-    $("#id_employee_type_id").on("change", toggleSalaryFields);
-});
+
+    function toggleForSelect(selectEl) {
+      const $select = $(selectEl);
+      if (!$select.length) return;
+      const show = isIntern($select);
+      let $scope = $select.closest("form");
+      if (!$scope.length) {
+        $scope = $select.closest(".oh-profile-section__card, .card");
+      }
+      let $targets = $scope.find(".intern-salary-fields");
+      if (!$targets.length) {
+        $targets = $(".intern-salary-fields");
+      }
+      $targets.toggle(show);
+    }
+
+    function applyAll(root) {
+      const $root = root ? $(root) : $(document);
+      const $selects = $root.find("#id_employee_type_id");
+      if ($root.is("#id_employee_type_id")) {
+        toggleForSelect($root[0]);
+      }
+      $selects.each(function () {
+        toggleForSelect(this);
+      });
+    }
+
+    if (!window.__internSalaryDelegatedBound) {
+      window.__internSalaryDelegatedBound = true;
+      $(document).on(
+        "change.internSalary select2:select.internSalary select2:clear.internSalary",
+        "#id_employee_type_id",
+        function () {
+          toggleForSelect(this);
+        }
+      );
+    }
+
+    applyAll(document);
+
+    if (!window.__internSalaryLiveInitBound) {
+      window.__internSalaryLiveInitBound = true;
+      document.addEventListener("htmx:afterSwap", function (evt) {
+        applyAll(evt.target || document);
+      });
+      document.addEventListener("htmx:afterSettle", function (evt) {
+        applyAll(evt.target || document);
+      });
+
+      window.__internSalaryValueCache = window.__internSalaryValueCache || {};
+      setInterval(function () {
+        $("#id_employee_type_id").each(function () {
+          const key = this.form ? this.form.id || this.form.action || "default" : "default";
+          const cacheKey = key + "::" + (this.name || "employee_type_id");
+          const currentValue = String($(this).val() || "");
+          if (window.__internSalaryValueCache[cacheKey] !== currentValue) {
+            window.__internSalaryValueCache[cacheKey] = currentValue;
+            toggleForSelect(this);
+          }
+        });
+      }, 250);
+    }
+  })();
 </script>

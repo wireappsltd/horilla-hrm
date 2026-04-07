@@ -327,6 +327,7 @@ class LeaveRequestUpdationForm(BaseModelForm):
             "start_date_breakdown",
             "end_date",
             "end_date_breakdown",
+            "manager",
             "attachment",
             "description",
         ]

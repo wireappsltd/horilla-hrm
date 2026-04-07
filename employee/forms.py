@@ -35,6 +35,7 @@ from django.utils.translation import gettext as _
 from django.utils.translation import gettext_lazy as trans
 from django.core.validators import validate_email
 from django.core.exceptions import ValidationError
+from base.models import EmployeeType
 from base.methods import eval_validate, reload_queryset
 from employee.models import (
     Actiontype,
@@ -54,6 +55,15 @@ from horilla import horilla_middlewares
 from horilla_audit.models import AccountBlockUnblock
 
 logger = logging.getLogger(__name__)
+
+
+def get_intern_employee_type_id():
+    intern_id = (
+        EmployeeType.objects.filter(employee_type__iexact="intern")
+        .values_list("id", flat=True)
+        .first()
+    )
+    return str(intern_id) if intern_id else ""
 
 
 class ModelForm(forms.ModelForm):
@@ -418,6 +428,7 @@ class EmployeeWorkInformationForm(ModelForm):
 
     def __init__(self, *args, disable=False, **kwargs):
         super().__init__(*args, **kwargs)
+        intern_employee_type_id = get_intern_employee_type_id()
         self.fields["email"].widget.attrs["autocomplete"] = "email"
 
         self.fields["job_position_id"].widget.attrs.update(
@@ -461,13 +472,18 @@ class EmployeeWorkInformationForm(ModelForm):
                             widget=forms.Select(
                                 attrs={
                                     "class":"oh-select oh-select-2 color-red select2-hidden-accessible create-blue",
-                                    "onchange": f'onDynamicCreate(this.value,"{urls.get(field.label)}");',
+                                    "onchange": f'if (typeof onDynamicCreate === "function") {{ onDynamicCreate(this.value,"{urls.get(field.label)}"); }}',
                                 }
                             ),
                         )
                         self.fields[label].choices += [
                             ("create", _("Create New {} ").format(translated_label))
                         ]
+
+        if "employee_type_id" in self.fields:
+            self.fields["employee_type_id"].widget.attrs[
+                "data-intern-type-id"
+            ] = intern_employee_type_id
 
         rm_field = "reporting_manager_id" if "reporting_manager_id" in self.fields else "reporting_manager"
         current_employee = getattr(self.instance, "employee_id", None)
@@ -561,6 +577,11 @@ class EmployeeWorkInformationUpdateForm(ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
+        if "employee_type_id" in self.fields:
+            self.fields["employee_type_id"].widget.attrs["data-intern-type-id"] = (
+                get_intern_employee_type_id()
+            )
 
         rm_field = "reporting_manager_id" if "reporting_manager_id" in self.fields else "reporting_manager"
         current_employee = getattr(self.instance, "employee_id", None)

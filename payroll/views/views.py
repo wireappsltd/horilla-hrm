@@ -481,6 +481,8 @@ def update_payslip_status(request, payslip_id):
     return render(request, "payroll/payslip/individual_payslip_summery.html", data)
 
 
+@login_required
+@permission_required("payroll.change_payslip")
 def update_payslip_status_no_id(request):
     """
     This method is used to update the payslip confirmation status
@@ -627,7 +629,6 @@ def view_payslip_pdf(request, payslip_id):
 
 
 @login_required
-# @permission_required("payroll.view_payslip")
 def view_created_payslip(request, payslip_id, **kwargs):
     """
     This method is used to view the saved payslips
@@ -729,6 +730,7 @@ def view_payroll_dashboard(request):
 
 
 @login_required
+@permission_required("payroll.view_payslip")
 def dashboard_employee_chart(request):
     """
     payroll dashboard employee chart data
@@ -806,6 +808,8 @@ def dashboard_employee_chart(request):
         return JsonResponse(response)
 
 
+@login_required
+@permission_required("payroll.view_payslip")
 def payslip_details(request):
     """
     payroll dashboard payslip details data
@@ -830,6 +834,7 @@ def payslip_details(request):
 
 
 @login_required
+@permission_required("payroll.view_payslip")
 def dashboard_department_chart(request):
     """
     payroll dashboard department chart data
@@ -895,6 +900,8 @@ def dashboard_department_chart(request):
         return JsonResponse(response)
 
 
+@login_required
+@permission_required("payroll.view_contract")
 def contract_ending(request):
     """
     payroll dashboard contract ending details data
@@ -930,6 +937,8 @@ def contract_ending(request):
     return JsonResponse(response)
 
 
+@login_required
+@permission_required("payroll.view_payslip")
 def payslip_export(request):
     """
     payroll dashboard exporting to excell data
@@ -1489,6 +1498,7 @@ def generate_payslip_pdf(template_path, context, html=False):
         return HttpResponse(f"Error generating PDF: {str(e)}", status=500)
 
 
+@login_required
 def payslip_pdf(request, id):
     """
     Generate the payslip as a PDF and return it in an HttpResponse.
@@ -1812,7 +1822,15 @@ def delete_payrollrequest_comment(request, comment_id):
     This method is used to delete Reimbursement request comments
     """
     script = ""
-    comment = ReimbursementrequestComment.objects.filter(id=comment_id)
+    comment = ReimbursementrequestComment.objects.filter(id=comment_id).first()
+    if comment is None:
+        return HttpResponse(script)
+    if (
+        comment.employee_id.employee_user_id != request.user
+        and not request.user.has_perm("payroll.delete_reimbursementrequestcomment")
+    ):
+        messages.error(request, _("You don't have permission to delete this comment."))
+        return HttpResponse(script)
     comment.delete()
     messages.success(request, _("Comment deleted successfully!"))
     return HttpResponse(script)

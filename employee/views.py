@@ -130,6 +130,47 @@ from horilla_documents.models import Document, DocumentRequest
 from notifications.signals import notify
 from employee.utils.bank_branch_data import BANK_BRANCH_DATA
 
+def _get_manager_department(manager):
+    """Return the department of the manager, or None."""
+    work_info = getattr(manager, "employee_work_info", None)
+    if work_info:
+        return getattr(work_info, "department_id", None)
+    return None
+
+
+def _get_employee_department(employee):
+    """Return the department of the employee, or None."""
+    work_info = getattr(employee, "employee_work_info", None)
+    if work_info:
+        return getattr(work_info, "department_id", None)
+    return None
+
+
+def is_manager_of(request, employee, perm=None):
+    """
+    Check if the requesting user has permission or is a manager of the given
+    employee within the same department.
+    Users with the explicit permission (e.g. HR) bypass the department check.
+    Returns True if access should be granted, False otherwise.
+    """
+    user = request.user
+    if perm and user.has_perm(perm):
+        return True
+    if user.employee_get == employee:
+        return True
+    manager = Employee.objects.filter(employee_user_id=user).first()
+    if not manager:
+        return False
+    manager_dept = _get_manager_department(manager)
+    employee_dept = _get_employee_department(employee)
+    if not manager_dept or not employee_dept or manager_dept != employee_dept:
+        return False
+    # Within same department, check reporting manager relationship
+    return getattr(employee, "employee_work_info", None) and (
+        employee.employee_work_info.reporting_manager_id == manager
+    )
+
+
 def return_none(a, b):
     return None
 
@@ -180,13 +221,15 @@ def _check_reporting_manager(request, *args, **kwargs):
         obj_id = kwargs["obj_id"]
         emp = Employee.objects.get(id=obj_id)
         re_manager = None
-        if emp.employee_work_info.reporting_manager_id != None:
+        if emp.employee_work_info.reporting_manager_id is not None:
             re_manager = emp.employee_work_info.reporting_manager_id
         employee = request.user.employee_get
-        if re_manager != None:
-            return re_manager == employee
-        else:
-            return False
+        if re_manager is not None and re_manager == employee:
+            manager_dept = _get_manager_department(employee)
+            emp_dept = _get_employee_department(emp)
+            if manager_dept and emp_dept and manager_dept == emp_dept:
+                return True
+        return False
     return request.user.employee_get.reporting_manager.exists()
 
 
@@ -295,6 +338,8 @@ def self_info_update(request):
     )
 
 
+@login_required
+@permission_required("employee.change_employee")
 def profile_edit_access(request, emp_id):
     feature = request.GET.get("feature", None)
     accessibility = DefaultAccessibility.objects.filter(feature=feature).first()
@@ -1054,6 +1099,18 @@ def employee_view(request):
     error_message = request.session.pop("error_message", None)
 
     queryset = Employee.objects.filter()
+    if not request.user.has_perm("employee.view_employee"):
+        manager = Employee.objects.filter(
+            employee_user_id=request.user
+        ).first()
+        if manager:
+            manager_dept = _get_manager_department(manager)
+            if manager_dept:
+                queryset = queryset.filter(
+                    employee_work_info__department_id=manager_dept
+                )
+            else:
+                queryset = queryset.filter(id=manager.id)
     filter_obj = EmployeeFilter(request.GET, queryset=queryset).qs
     if request.GET.get("is_active") != "False":
         filter_obj = filter_obj.filter(is_active=True)
@@ -1064,7 +1121,7 @@ def employee_view(request):
     emp = Employee.objects.filter()
 
     # Store the employees in the session
-    request.session["filtered_employees"] = [employee.id for employee in queryset]
+    request.session["filtered_employees"] = [employee.id for employee in filter_obj]
 
     return render(
         request,
@@ -1363,6 +1420,9 @@ def save_employee_bulk_update(request):
 @permission_required("employee.change_employee")
 def employee_account_block_unblock(request, emp_id):
     employee = get_object_or_404(Employee, id=emp_id)
+    if not is_manager_of(request, employee, "employee.change_employee"):
+        messages.info(request, _("You don't have permission to access this employee."))
+        return redirect(employee_view)
     if not employee:
         messages.info(request, _("Employee not found"))
         return redirect(employee_view)
@@ -1413,6 +1473,10 @@ def employee_view_update(request, obj_id, **kwargs):
     """
     This method is used to render update form for employee.
     """
+    target_emp = Employee.objects.filter(id=obj_id).first()
+    if target_emp and not is_manager_of(request, target_emp, "employee.change_employee"):
+        messages.info(request, _("You don't have permission to access this employee."))
+        return redirect(employee_view)
     selected_company_id = request.session["selected_company"]
     user = Employee.objects.filter(employee_user_id=request.user).first()
     work_info_history = HistoryTrackingFields.objects.filter(
@@ -1449,11 +1513,7 @@ def employee_view_update(request, obj_id, **kwargs):
 
         employee.save()
 
-    if (
-        user
-        and user.reporting_manager.filter(employee_id=employee).exists()
-        or request.user.has_perm("employee.change_employee")
-    ):
+    if request.user.has_perm("employee.change_employee"):
         form = EmployeeForm(instance=employee)
         work_form = EmployeeWorkInformationForm(
             instance=EmployeeWorkInformation.objects.filter(
@@ -1519,6 +1579,7 @@ def employee_view_update(request, obj_id, **kwargs):
                 "work_info_history": work_info_history,
             },
         )
+    messages.error(request, _("You don't have permission to edit this employee's profile."))
     return HttpResponseRedirect(
         request.META.get("HTTP_REFERER", "/employee/employee-view")
     )
@@ -1531,6 +1592,10 @@ def update_profile_image(request, obj_id):
     """
     This method is used to upload a profile image
     """
+    target_emp = Employee.objects.filter(id=obj_id).first()
+    if target_emp and not is_manager_of(request, target_emp, "employee.change_employee"):
+        messages.info(request, _("You don't have permission to access this employee."))
+        return redirect(employee_view)
     try:
         employee = Employee.objects.get(id=obj_id)
         img = request.FILES["employee_profile"]
@@ -1577,6 +1642,9 @@ def remove_profile_image(request, obj_id):
     Args: obj_id : Employee model instance id
     """
     employee = Employee.objects.get(id=obj_id)
+    if not is_manager_of(request, employee, "employee.change_employee"):
+        messages.info(request, _("You don't have permission to access this employee."))
+        return redirect(employee_view)
     if employee.employee_profile.name == "":
         messages.info(request, _("No profile image to remove."))
         response = render(
@@ -1641,6 +1709,9 @@ def employee_create_update_personal_info(request, obj_id=None):
     This method is used to update employee's personal info.
     """
     employee = Employee.objects.filter(id=obj_id).first()
+    if employee and not request.user.has_perm("employee.change_employee"):
+        messages.error(request, _("You don't have permission to update this employee."))
+        return HttpResponse(status=403)
     form = EmployeeForm(request.POST, request.FILES, instance=employee)
     if form.is_valid():
         form.save()
@@ -1697,6 +1768,9 @@ def employee_update_work_info(request, obj_id=None):
     This method is used to update employee work info
     """
     employee = Employee.objects.filter(id=obj_id).first()
+    if employee and not request.user.has_perm("employee.change_employeeworkinformation"):
+        messages.error(request, _("You don't have permission to update this employee."))
+        return HttpResponse(status=403)
     form = EmployeeWorkInformationForm(
         request.POST,
         instance=EmployeeWorkInformation.objects.filter(employee_id=employee).first(),
@@ -1735,6 +1809,9 @@ def employee_update_bank_details(request, obj_id=None):
     This method is used to render form to create employee's bank information.
     """
     employee = Employee.objects.filter(id=obj_id).first()
+    if employee and not request.user.has_perm("employee.change_employeebankdetails"):
+        messages.error(request, _("You don't have permission to update this employee."))
+        return HttpResponse(status=403)
     form = EmployeeBankDetailsForm(
         request.POST,
         instance=EmployeeBankDetails.objects.filter(employee_id=employee).first(),
@@ -1924,6 +2001,8 @@ def employee_update(request, obj_id):
         obj_id : employee id
     """
     employee = Employee.objects.get(id=obj_id)
+    if not is_manager_of(request, employee, "employee.change_employee"):
+        return render(request, "decorator_404.html")
     form = EmployeeForm(instance=employee)
     work_info = EmployeeWorkInformation.objects.filter(employee_id=employee).first()
     bank_info = EmployeeBankDetails.objects.filter(employee_id=employee).first()
@@ -1939,6 +2018,8 @@ def employee_update(request, obj_id):
             if form.is_valid():
                 form.save()
                 messages.success(request, _("Employee updated."))
+        else:
+            messages.error(request, _("You don't have permission to update this employee."))
     return render(
         request,
         "employee_personal_info/employee_update_form.html",
@@ -2275,9 +2356,18 @@ def employee_search(request):
     template = "employee_personal_info/employee_card.html"
     if view == "list":
         template = "employee_personal_info/employee_list.html"
-    employees = filtersubordinatesemployeemodel(
-        request, employees, "employee.view_employee"
-    )
+    if not request.user.has_perm("employee.view_employee"):
+        manager = Employee.objects.filter(
+            employee_user_id=request.user
+        ).first()
+        if manager:
+            manager_dept = _get_manager_department(manager)
+            if manager_dept:
+                employees = employees.filter(
+                    employee_work_info__department_id=manager_dept
+                )
+            else:
+                employees = employees.filter(id=manager.id)
     employees = sortby(request, employees, "orderby")
     data_dict = parse_qs(previous_data)
     get_key_instances(Employee, data_dict)
@@ -2303,6 +2393,11 @@ def employee_work_info_view_create(request, obj_id):
     """
 
     employee = Employee.objects.get(id=obj_id)
+    if not is_manager_of(
+        request, employee, "employee.add_employeeworkinformation"
+    ):
+        messages.info(request, _("You don't have permission to access this employee."))
+        return redirect(employee_view)
     form = EmployeeForm(instance=employee)
 
     work_form = EmployeeWorkInformationUpdateForm(request.POST)
@@ -2339,6 +2434,11 @@ def employee_work_info_view_update(request, obj_id):
     """
 
     work_information = EmployeeWorkInformation.objects.get(id=obj_id)
+    if not is_manager_of(
+        request, work_information.employee_id, "employee.change_employeeworkinformation"
+    ):
+        messages.info(request, _("You don't have permission to access this employee."))
+        return redirect(employee_view)
     form = EmployeeForm(instance=work_information.employee_id)
     bank_form = EmployeeBankDetailsUpdateForm(
         instance=work_information.employee_id.employee_bank_details
@@ -2367,6 +2467,9 @@ def employee_bank_details_view_create(request, obj_id):
         obj_id : employee instance id
     """
     employee = Employee.objects.get(id=obj_id)
+    if not is_manager_of(request, employee, "employee.add_employeebankdetails"):
+        messages.info(request, _("You don't have permission to access this employee."))
+        return redirect(employee_view)
     form = EmployeeForm(instance=employee)
     bank_form = EmployeeBankDetailsUpdateForm(request.POST)
     work_form_instance = EmployeeWorkInformation.objects.filter(
@@ -2395,6 +2498,11 @@ def employee_bank_details_view_update(request, obj_id):
     This method is used to update employee bank details.
     """
     employee_bank_instance = EmployeeBankDetails.objects.get(id=obj_id)
+    if not is_manager_of(
+        request, employee_bank_instance.employee_id, "employee.change_employeebankdetails"
+    ):
+        messages.info(request, _("You don't have permission to access this employee."))
+        return redirect(employee_view)
     form = EmployeeForm(instance=employee_bank_instance.employee_id)
     work_form = EmployeeWorkInformationUpdateForm(
         instance=employee_bank_instance.employee_id.employee_work_info
