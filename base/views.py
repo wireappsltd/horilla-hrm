@@ -612,7 +612,7 @@ def login_user(request):
             from payroll.models.models import Contract
 
             has_active_contract = Contract.objects.filter(
-                employee_id=employee, contract_status="active"
+                employee_id=employee, contract_status="active", is_active=True
             ).exists()
             if not has_active_contract:
                 messages.warning(

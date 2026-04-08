@@ -1,9 +1,13 @@
+import logging
+
 from django.contrib.auth import authenticate
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from ...api_serializers.auth.serializers import GetEmployeeSerializer
+
+logger = logging.getLogger(__name__)
 
 
 class LoginAPIView(APIView):
@@ -18,12 +22,18 @@ class LoginAPIView(APIView):
                     from payroll.models.models import Contract
 
                     has_active_contract = Contract.objects.filter(
-                        employee_id=employee, contract_status="active"
+                        employee_id=employee,
+                        contract_status="active",
+                        is_active=True,
                     ).exists()
                     if not has_active_contract:
+                        logger.warning(
+                            "Login denied for user '%s' (id=%s): no active contract.",
+                            username,
+                            user.pk,
+                        )
                         return Response(
-                            {"error": "No active contract found. Please contact your manager."},
-                            status=403,
+                            {"error": "Invalid credentials"}, status=401
                         )
                 refresh = RefreshToken.for_user(user)
                 face_detection = False
