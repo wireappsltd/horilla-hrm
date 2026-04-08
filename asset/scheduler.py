@@ -84,6 +84,7 @@ def notify_expiring_documents():
                 )
             if today >= expiry_date:
                 document.is_active = False
+                document.save()
 
 
 def notify_upcoming_checkups():
@@ -100,7 +101,7 @@ def notify_upcoming_checkups():
     from horilla.methods import horilla_users_with_perms
 
     today = date.today()
-    notify_date = today
+    notify_date = today + timedelta(days=30)
     from django.conf import settings
     bot = User.objects.filter(username=settings.NOTIFICATION_BOT_USERNAME).first()
     if not bot:
@@ -152,6 +153,7 @@ def notify_upcoming_checkups():
             verb_de=message_de,
             verb_es=message_es,
             verb_fr=message_fr,
+            redirect=reverse("asset-request-allocation-view"),
             label="System",
             icon="calendar",
         )
@@ -210,8 +212,11 @@ def notify_overdue_checkups():
     if not bot:
         return
 
+    # Only notify on the day after the checkup was due, to avoid
+    # sending duplicate overdue notifications every 4 hours forever.
+    yesterday = today - timedelta(days=1)
     overdue_assignments = AssetAssignment.objects.filter(
-        yearly_checkup_date__lt=today,
+        yearly_checkup_date=yesterday,
         checkup_completed=False,
         return_date__isnull=True,
     )
