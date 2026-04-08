@@ -59,6 +59,13 @@ def notify_expiring_documents():
     documents = Document.objects.all()
     from django.conf import settings
     bot = User.objects.filter(username=settings.NOTIFICATION_BOT_USERNAME).first()
+    if not bot:
+        print(
+            f"Notification bot user '{settings.NOTIFICATION_BOT_USERNAME}' was not found; "
+            "skipping expiring document notifications.",
+            file=sys.stderr,
+        )
+        return
     for document in documents:
         if document.expiry_date:
             expiry_date = document.expiry_date
