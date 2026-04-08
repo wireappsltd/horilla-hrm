@@ -5,6 +5,8 @@ This module defines Django models to manage assets, their categories, assigning,
 within an Asset Management System.
 """
 
+from datetime import timedelta
+
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils.translation import gettext_lazy as _
@@ -260,6 +262,21 @@ class AssetAssignment(HorillaModel):
         related_name="assign_images",
         verbose_name=_("Assign Condition Images"),
     )
+    yearly_checkup_date = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name=_("Yearly Check-up Date"),
+    )
+    service_shop_name = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+        verbose_name=_("Service Shop"),
+    )
+    checkup_completed = models.BooleanField(
+        default=False,
+        verbose_name=_("Check-up Completed"),
+    )
     objects = HorillaCompanyManager(
         "assigned_to_employee_id__employee_work_info__company_id"
     )
@@ -270,6 +287,13 @@ class AssetAssignment(HorillaModel):
         ordering = ["-id"]
         verbose_name = _("Asset Allocation")
         verbose_name_plural = _("Asset Allocations")
+
+    def save(self, *args, **kwargs):
+        from datetime import date
+
+        if not self.pk and not self.yearly_checkup_date:
+            self.yearly_checkup_date = date.today() + timedelta(days=365)
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.assigned_to_employee_id} --- {self.asset_id} --- {self.return_status}"
