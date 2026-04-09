@@ -5,6 +5,7 @@ This module is used to define the method for the path in the urls
 """
 
 import json
+import logging
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 from itertools import groupby
@@ -61,6 +62,8 @@ from payroll.models.models import (
 )
 from payroll.models.tax_models import PayrollSettings
 from datetime import date
+
+logger = logging.getLogger(__name__)
 
 # Create your views here.
 
@@ -1495,7 +1498,8 @@ def generate_payslip_pdf(template_path, context, html=False):
         return pdf
     except Exception as e:
         # Handle errors gracefully
-        return HttpResponse(f"Error generating PDF: {str(e)}", status=500)
+        logger.error("Error generating PDF: %s", e)
+        return None
 
 
 @login_required

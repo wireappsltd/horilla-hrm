@@ -212,8 +212,11 @@ class PasswordResetRequestForm(forms.ModelForm):
 
     class Meta:
         model = PasswordResetRequest
-        fields = ["platform", "employee", "forward_to", "reason"]
+        fields = ["request_type", "platform", "employee", "forward_to", "reason"]
         widgets = {
+            "request_type": forms.Select(
+                attrs={"class": "oh-select oh-select-2 w-100"}
+            ),
             "platform": forms.Select(
                 attrs={"class": "oh-select oh-select-2 w-100"}
             ),
@@ -226,6 +229,7 @@ class PasswordResetRequestForm(forms.ModelForm):
             ),
         }
         labels = {
+            "request_type": _("Type"),
             "platform": _("Platform"),
             "reason": _("Reason for request"),
         }
@@ -295,7 +299,7 @@ class PasswordResetRequestForm(forms.ModelForm):
             "employee_first_name"
         )
 
-        # ── Forward To: keep queryset as User objects (set at line 250) ──
+        # ── Forward To: keep queryset as User objects (set above) ──
         # The model's forward_to M2M targets User, so the queryset must use
         # User objects.  The queryset was already set above; we only need to
         # build a reference to the ISO-member User queryset for initial values.
