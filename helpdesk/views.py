@@ -841,6 +841,19 @@ def ticket_detail(request, ticket_id, **kwargs):
                 }
             )
 
+        # Include PasswordResetRequest audit history if one exists
+        password_reset_request = getattr(ticket, "password_reset_request", None)
+        if password_reset_request:
+            pr_trackings = password_reset_request.tracking()
+            for history in pr_trackings:
+                activity_list.append(
+                    {
+                        "type": "history",
+                        "history": history,
+                        "date": history["pair"][0].history_date,
+                    }
+                )
+
         sorted_activity_list = sorted(activity_list, key=itemgetter("date"))
 
         color = "success"

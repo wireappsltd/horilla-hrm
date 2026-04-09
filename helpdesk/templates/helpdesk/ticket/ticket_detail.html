@@ -272,26 +272,30 @@
                     </div>
                     {% endif %}
                     {% elif item.type == 'history' %}
-                    {% if item.history.type == 'Ticket created' %}
+                    {% if item.history.type == 'Ticket created' or item.history.type == 'Password reset request created' %}
                     <div class="oh-helpdesk__chat-update">
                         <span><strong>{{item.history.updated_by}}</strong> {% trans "Created the ticket " %}</span>
                     </div>
-                    {% elif item.history.changes.0.is_fk == True %}
+                    {% else %}
+                    {% for change in item.history.changes %}
+                    {% if change.is_fk == True %}
                     <div class="oh-helpdesk__chat-update">
-                        <span>{{item.history.updated_by}} {% trans "changed the ticket " %}{{item.history.changes.0.field|safe}} {% trans " from" %}
-                            <strong>{{item.history.pair.1|fk_history:item.history.changes.0|safe}}</strong> {% trans "to" %}
-                            <strong>{{item.history.pair.0|fk_history:item.history.changes.0|safe}}</strong></span>
+                        <span>{{item.history.updated_by}} {% trans "changed the ticket " %}{{change.field|safe}} {% trans " from" %}
+                            <strong>{{item.history.pair.1|fk_history:change|safe}}</strong> {% trans "to" %}
+                            <strong>{{item.history.pair.0|fk_history:change|safe}}</strong></span>
                         <span>{{ item.history.pair.0.history_date}}</span>
                     </div>
                     {% else %}
                     <div class="oh-helpdesk__chat-update">
-                        <span>{{item.history.updated_by}} {% trans "changed the ticket " %}{{item.history.changes.0.field|safe}} {% trans " from" %}
-                            <strong>{{item.history.changes.0.old|safe}}</strong>
+                        <span>{{item.history.updated_by}} {% trans "changed the ticket " %}{{change.field|safe}} {% trans " from" %}
+                            <strong>{{change.old|safe}}</strong>
                             <br><br>
                             {% trans "to" %}
-                            <strong>{{item.history.changes.0.new|safe}}</strong></span>
+                            <strong>{{change.new|safe}}</strong></span>
                         <span>{{ item.history.pair.0.history_date}}</span>
                     </div>
+                    {% endif %}
+                    {% endfor %}
                     {% endif %}
                     {% endif %}
                     {% endfor %}
