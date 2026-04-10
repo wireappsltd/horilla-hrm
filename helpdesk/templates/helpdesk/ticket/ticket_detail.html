@@ -482,7 +482,7 @@
                             </li>
                             <li class="helpdesk__card-item">
                                 <span class="helpdesk__card-label">{% trans "User ID:" %}</span>
-                                <span class="helpdesk__card-value">{{ password_reset_request.user_id }}</span>
+                                <span class="helpdesk__card-value">{{ password_reset_request.user_id|default:ticket.employee_id }}</span>
                             </li>
                             {% if password_reset_request.reviewed_by %}
                             <li class="helpdesk__card-item">
@@ -536,14 +536,27 @@
                             <div class="oh-helpdesk__subcard-header">
                                 <span class="oh-helpdesk__subcard-title">{% trans "Forward to" %}</span>
                                 {% if not password_reset_request or password_reset_request.iso_status == 'PENDING' or request.user.is_superuser %}
-                                {% if perms.helpdesk.change_ticket or request.user.employee_get == ticket.employee_id %}
+                                {% if perms.helpdesk.change_ticket or request.user.employee_get == ticket.employee_id or is_iso_officer %}
                                 <div class="oh-btn-group">
+                                    {% if password_reset_request %}
+                                    <button class="oh-btn oh-btn--light-bkg p-3 w-100"
+                                        hx-get="{% url 'password-reset-request-update' password_reset_request.id %}"
+                                        hx-target="#passwordResetModalTarget"
+                                        hx-swap="innerHTML"
+                                        data-toggle="oh-modal-toggle"
+                                        data-target="#passwordResetModal"
+                                        role="button"
+                                        title="{% trans 'Edit' %}">
+                                        <ion-icon name="create-outline"></ion-icon>
+                                    </button>
+                                    {% else %}
                                     <button class="oh-btn oh-btn--light-bkg p-3 w-100"
                                         hx-get="{% url 'ticket-change-raised-on' ticket.id %}"
                                         data-target="#addTagModal" hx-target="#addTagTarget" role="button"
                                         title="{% trans 'Edit' %}">
                                         <ion-icon name="create-outline"></ion-icon>
                                     </button>
+                                    {% endif %}
                                 </div>
                                 {% endif %}
                                 {% endif %}
