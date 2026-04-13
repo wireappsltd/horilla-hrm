@@ -20,12 +20,17 @@
 					action="{%url 'payslip-info-export' %}"
 				{% endif %}
 				method="get"
-				onsubmit="event.stopPropagation();$(this).parents().find('.oh-modal--show').last().toggleClass('oh-modal--show');"
+				onsubmit="event.stopPropagation(); if(!validatePayslipExportDateRange(this)){return false;} $(this).parents().find('.oh-modal--show').last().toggleClass('oh-modal--show');"
 				id="payslipReportForm"
 			>
 				{% csrf_token %}
 				<div id="reportForm">
 					<div class="oh-dropdown__filter-body">
+						<div class="row mb-2">
+							<div class="col-12">
+								<small id="payslipExportDateRangeError" class="text-danger" style="display:none;"></small>
+							</div>
+						</div>
 						{% if not report %}
 						<div class="oh-accordion">
 							<div class="oh-accordion-header">
@@ -263,3 +268,75 @@
 		</div>
 	</div>
 </div>
+<script>
+function validatePayslipExportDateRange(form) {
+	var errorEl = document.getElementById('payslipExportDateRangeError');
+	errorEl.style.display = 'none';
+	errorEl.textContent = '';
+
+	// Check basic start_date / end_date fields
+	var startDate = form.querySelector('[name="start_date"]');
+	var endDate = form.querySelector('[name="end_date"]');
+	// Check advanced date range fields
+	var startDateFrom = form.querySelector('[name="start_date_from"]');
+	var startDateTill = form.querySelector('[name="start_date_till"]');
+	var endDateFrom = form.querySelector('[name="end_date_from"]');
+	var endDateTill = form.querySelector('[name="end_date_till"]');
+
+	// Validate basic date range pair
+	if (startDate && endDate && startDate.value && endDate.value) {
+		var sd = new Date(startDate.value);
+		var ed = new Date(endDate.value);
+		if (ed < sd) {
+			errorEl.textContent = '{% trans "End Date cannot be before Start Date." %}';
+			errorEl.style.display = 'block';
+			return false;
+		}
+		var maxEnd = new Date(sd);
+		maxEnd.setMonth(maxEnd.getMonth() + 1);
+		if (ed > maxEnd) {
+			errorEl.textContent = '{% trans "The date range must not exceed 1 month." %}';
+			errorEl.style.display = 'block';
+			return false;
+		}
+	}
+
+	// Validate advanced start date range
+	if (startDateFrom && startDateTill && startDateFrom.value && startDateTill.value) {
+		var sdf = new Date(startDateFrom.value);
+		var sdt = new Date(startDateTill.value);
+		if (sdt < sdf) {
+			errorEl.textContent = '{% trans "Start Date Till cannot be before Start Date From." %}';
+			errorEl.style.display = 'block';
+			return false;
+		}
+		var maxTill = new Date(sdf);
+		maxTill.setMonth(maxTill.getMonth() + 1);
+		if (sdt > maxTill) {
+			errorEl.textContent = '{% trans "The Start Date range must not exceed 1 month." %}';
+			errorEl.style.display = 'block';
+			return false;
+		}
+	}
+
+	// Validate advanced end date range
+	if (endDateFrom && endDateTill && endDateFrom.value && endDateTill.value) {
+		var edf = new Date(endDateFrom.value);
+		var edt = new Date(endDateTill.value);
+		if (edt < edf) {
+			errorEl.textContent = '{% trans "End Date Till cannot be before End Date From." %}';
+			errorEl.style.display = 'block';
+			return false;
+		}
+		var maxEndTill = new Date(edf);
+		maxEndTill.setMonth(maxEndTill.getMonth() + 1);
+		if (edt > maxEndTill) {
+			errorEl.textContent = '{% trans "The End Date range must not exceed 1 month." %}';
+			errorEl.style.display = 'block';
+			return false;
+		}
+	}
+
+	return true;
+}
+</script>

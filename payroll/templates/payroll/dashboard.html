@@ -77,20 +77,23 @@
                           @click.outside="open = false"
                           style="display: none;"
                           >
-                            <form method = "post" action="{% url 'dashboard-export' %}">
+                            <form method = "post" action="{% url 'dashboard-export' %}" id="dashboardExportForm" onsubmit="return validateDashboardDateRange()">
                                 {% csrf_token %}
                                 <div class="row">
                                     <div class="col-sm-12 col-md-12 col-lg-6">
                                         <div class="oh-input-group">
-                                            <label class="oh-label d-block">{% trans "Start Date" %}</label>
+                                            <label class="oh-label d-block">{% trans "Start Date" %} <span class="text-danger">*</span></label>
                                             {{export_form.start_date}}
                                         </div>
                                     </div>
                                     <div class="col-sm-12 col-md-12 col-lg-6">
                                         <div class="oh-input-group" >
-                                            <label class="oh-label d-block">{% trans "End Date" %}</label>
+                                            <label class="oh-label d-block">{% trans "End Date" %} <span class="text-danger">*</span></label>
                                             {{export_form.end_date}}
                                         </div>
+                                    </div>
+                                    <div class="col-12 mb-2">
+                                        <small id="dashboardDateRangeError" class="text-danger" style="display:none;"></small>
                                     </div>
                                     <div class="col-sm-12 col-md-12 col-lg-6 ">
                                         <div class="oh-input-group">
@@ -240,6 +243,38 @@
             window.location.href='{% url "view-payslip" %}?status=draft'
         })
     })
+
+    function validateDashboardDateRange() {
+        var startInput = document.querySelector('#dashboardExportForm [name="start_date"]');
+        var endInput = document.querySelector('#dashboardExportForm [name="end_date"]');
+        var errorEl = document.getElementById('dashboardDateRangeError');
+        errorEl.style.display = 'none';
+        errorEl.textContent = '';
+
+        if (!startInput.value || !endInput.value) {
+            errorEl.textContent = '{% trans "Both Start Date and End Date are required." %}';
+            errorEl.style.display = 'block';
+            return false;
+        }
+
+        var startDate = new Date(startInput.value);
+        var endDate = new Date(endInput.value);
+
+        if (endDate < startDate) {
+            errorEl.textContent = '{% trans "End Date cannot be before Start Date." %}';
+            errorEl.style.display = 'block';
+            return false;
+        }
+
+        var maxEnd = new Date(startDate);
+        maxEnd.setMonth(maxEnd.getMonth() + 1);
+        if (endDate > maxEnd) {
+            errorEl.textContent = '{% trans "The date range must not exceed 1 month." %}';
+            errorEl.style.display = 'block';
+            return false;
+        }
+        return true;
+    }
 
 </script>
 {% endblock content %}
