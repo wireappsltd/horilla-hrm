@@ -269,10 +269,13 @@ def attendance_date_validate(date):
     :raises ValidationError: If the provided date is in the future.
     """
     today = datetime.today().date()
+    max_allowed = today + timedelta(days=3)
     if not date:
         raise ValidationError(_("Check date format."))
-    elif date > today:
-        raise ValidationError(_("You cannot choose a future date."))
+    elif date > max_allowed:
+        raise ValidationError(
+            _("You cannot choose a date more than 3 days in the future.")
+        )
 
 
 def activity_datetime(attendance_activity):
@@ -767,7 +770,8 @@ def block_future_attendance(attendance_date):
     Otherwise, it returns False.
     """
     today = datetime.today().date()
-    return attendance_date > today
+    max_allowed = today + timedelta(days=3)
+    return attendance_date > max_allowed
 
 def check_employee_joining_date(employee, attendance_date):
     emp_info = EmployeeWorkInformation.objects.filter(
