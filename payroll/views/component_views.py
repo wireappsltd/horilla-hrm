@@ -1171,14 +1171,8 @@ def _validate_export_date_range(request):
                     _("'%(till)s' cannot be before '%(from)s'.")
                     % {"till": field_till, "from": field_from}
                 )
-            # max 1 month: add 1 month to d_from
-            max_date = date(
-                d_from.year + (d_from.month // 12),
-                (d_from.month % 12) + 1,
-                min(d_from.day, 28),
-            )
-            if d_till > max_date:
-                return str(_("The date range must not exceed 1 month."))
+            if (d_till - d_from).days > 31:
+                return str(_("The date range must not exceed 31 days."))
     return None
 
 

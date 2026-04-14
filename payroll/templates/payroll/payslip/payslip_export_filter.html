@@ -293,9 +293,9 @@ function validatePayslipExportDateRange(form) {
 			return false;
 		}
 		var maxEnd = new Date(sd);
-		maxEnd.setMonth(maxEnd.getMonth() + 1);
+		maxEnd.setDate(maxEnd.getDate() + 31);
 		if (ed > maxEnd) {
-			errorEl.textContent = '{% trans "The date range must not exceed 1 month." %}';
+			errorEl.textContent = '{% trans "The date range must not exceed 31 days." %}';
 			errorEl.style.display = 'block';
 			return false;
 		}
@@ -311,9 +311,9 @@ function validatePayslipExportDateRange(form) {
 			return false;
 		}
 		var maxTill = new Date(sdf);
-		maxTill.setMonth(maxTill.getMonth() + 1);
+		maxTill.setDate(maxTill.getDate() + 31);
 		if (sdt > maxTill) {
-			errorEl.textContent = '{% trans "The Start Date range must not exceed 1 month." %}';
+			errorEl.textContent = '{% trans "The Start Date range must not exceed 31 days." %}';
 			errorEl.style.display = 'block';
 			return false;
 		}
@@ -329,9 +329,9 @@ function validatePayslipExportDateRange(form) {
 			return false;
 		}
 		var maxEndTill = new Date(edf);
-		maxEndTill.setMonth(maxEndTill.getMonth() + 1);
+		maxEndTill.setDate(maxEndTill.getDate() + 31);
 		if (edt > maxEndTill) {
-			errorEl.textContent = '{% trans "The End Date range must not exceed 1 month." %}';
+			errorEl.textContent = '{% trans "The End Date range must not exceed 31 days." %}';
 			errorEl.style.display = 'block';
 			return false;
 		}
