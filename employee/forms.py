@@ -204,6 +204,7 @@ class EmployeeForm(ModelForm):
             "placeholder": "Employee ID",
             "style": "text-transform:none;"
         })
+        self.fields["badge_id"].required = False
 
         if instance := kwargs.get("instance"):
             # ----
