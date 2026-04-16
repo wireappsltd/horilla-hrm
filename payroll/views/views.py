@@ -552,7 +552,6 @@ def view_payslip_pdf(request, payslip_id):
         payslip = Payslip.objects.get(id=payslip_id)
         company = Company.objects.filter(hq=True).first()
         today = date.today()
-        process_date_25 = today.replace(day=25)
         if (
             request.user.has_perm("payroll.view_payslip")
             or payslip.employee_id.employee_user_id == request.user
@@ -608,7 +607,7 @@ def view_payslip_pdf(request, payslip_id):
             data["instance"] = payslip
             data["currency"] = PayrollSettings.objects.first().currency_symbol
             data["all_deductions"] = []
-            data["process_date_25"] = process_date_25
+            data["process_date"] = payslip.created_at
             for deduction_list in [
                 data["basic_pay_deductions"],
                 data["gross_pay_deductions"],
@@ -1655,6 +1654,7 @@ def payslip_pdf(request, id):
                     "host": request.get_host(),
                     "protocol": "https" if request.is_secure() else "http",
                     "company": company,
+                    "process_date": payslip.created_at,
                 }
             )
 
