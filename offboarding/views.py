@@ -167,13 +167,20 @@ def pipeline(request):
     """
     # Apply filters and pagination
     employee = request.user.employee_get
-    offboardings = PipelineFilter(request.GET).qs
     if not request.user.has_perm("offboarding.view_offboarding") and not any_manager(
         employee
     ):
-        offboardings = offboardings.filter(
-            offboardingstage__offboardingemployee__employee_id=employee
-        ).distinct()
+        offboarding_ids = (
+            OffboardingEmployee.objects.filter(employee_id=employee)
+            .values_list("stage_id__offboarding_id", flat=True)
+            .distinct()
+        )
+        offboardings = PipelineFilter(
+            request.GET,
+            queryset=Offboarding.objects.entire().filter(id__in=offboarding_ids),
+        ).qs
+    else:
+        offboardings = PipelineFilter(request.GET).qs
     paginated_offboardings = paginator_qry_offboarding_limited(
         offboardings, request.GET.get("page")
     )
@@ -216,13 +223,20 @@ def filter_pipeline(request):
     This method is used filter offboarding process
     """
     employee = request.user.employee_get
-    offboardings = PipelineFilter(request.GET).qs
     if not request.user.has_perm("offboarding.view_offboarding") and not any_manager(
         employee
     ):
-        offboardings = offboardings.filter(
-            offboardingstage__offboardingemployee__employee_id=employee
-        ).distinct()
+        offboarding_ids = (
+            OffboardingEmployee.objects.filter(employee_id=employee)
+            .values_list("stage_id__offboarding_id", flat=True)
+            .distinct()
+        )
+        offboardings = PipelineFilter(
+            request.GET,
+            queryset=Offboarding.objects.entire().filter(id__in=offboarding_ids),
+        ).qs
+    else:
+        offboardings = PipelineFilter(request.GET).qs
     paginated_offboardings = paginator_qry_offboarding_limited(
         offboardings, request.GET.get("page")
     )
