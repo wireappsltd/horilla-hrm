@@ -50,25 +50,13 @@ function toggleColumns(tableId, fieldContainer) {
     }
 }
 function hideCells(jqElement, tableTitle, fieldContainer) {
-    visibleCells = $(`#${fieldContainer}`).find("input[type=checkbox]:checked")
-    let visibleCellsids = []
+    var visibleCells = $(`#${fieldContainer}`).find("input[type=checkbox]:checked")
+    var visibleCellsids = []
     $(`[data-table-name=${tableTitle}] [data-cell-index]`).hide();
     $.each(visibleCells, function (indexInArray, valueOfElement) {
         $(`[data-table-name=${tableTitle}] [data-cell-index=${$(valueOfElement).val()}]`).show();
         visibleCellsids.push($(valueOfElement).val())
     });
-    if (jqElement.is(":checked")) {
-        var storedIdsSet = new Set(JSON.parse(localStorage.getItem(tableTitle)) || []);
-        storedIdsSet.add(jqElement.val());
-        var storedIds = Array.from(storedIdsSet);
-        localStorage.setItem(tableTitle, JSON.stringify(storedIds));
-    } else {
-        var storedIds = JSON.parse(localStorage.getItem(tableTitle)) || [];
-        var index = storedIds.indexOf(jqElement.val());
-        if (index !== -1) {
-            storedIds.splice(index, 1);
-            localStorage.setItem(tableTitle, JSON.stringify(storedIds));
-        }
-    }
+    localStorage.setItem(tableTitle, JSON.stringify(visibleCellsids));
     $(`[data-table-name=${tableTitle}][data-table-name]`).show();
 }
