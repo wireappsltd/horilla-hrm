@@ -204,4 +204,10 @@ urlpatterns = [
         views.asset_dashboard_requests,
         name="main-dashboard-asset-requests",
     ),
+    # TODO: Remove before production — temporary QA testing endpoint
+    path(
+        "trigger-checkup-notifications/",
+        views.trigger_checkup_notifications,
+        name="trigger-checkup-notifications",
+    ),
 ]
