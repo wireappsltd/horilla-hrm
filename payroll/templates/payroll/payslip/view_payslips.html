@@ -151,6 +151,7 @@
                   >
                 </li>
               {% endif %}
+              {%comment%}
               {% if perms.payroll.add_payslip and payslips %}
                 <li class="oh-dropdown__item">
                   <a
@@ -164,6 +165,7 @@
                   >
                 </li>
               {% endif %}
+              {%endcomment%}
                  {% if perms.payroll.add_payslip and payslips %}
                <li class="oh-dropdown__item">
   <a

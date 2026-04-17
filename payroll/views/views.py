@@ -5,7 +5,6 @@ This module is used to define the method for the path in the urls
 """
 
 import json
-import logging
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 from itertools import groupby
@@ -62,8 +61,6 @@ from payroll.models.models import (
 )
 from payroll.models.tax_models import PayrollSettings
 from datetime import date
-
-logger = logging.getLogger(__name__)
 
 # Create your views here.
 
@@ -484,8 +481,6 @@ def update_payslip_status(request, payslip_id):
     return render(request, "payroll/payslip/individual_payslip_summery.html", data)
 
 
-@login_required
-@permission_required("payroll.change_payslip")
 def update_payslip_status_no_id(request):
     """
     This method is used to update the payslip confirmation status
@@ -632,6 +627,7 @@ def view_payslip_pdf(request, payslip_id):
 
 
 @login_required
+# @permission_required("payroll.view_payslip")
 def view_created_payslip(request, payslip_id, **kwargs):
     """
     This method is used to view the saved payslips
@@ -733,7 +729,6 @@ def view_payroll_dashboard(request):
 
 
 @login_required
-@permission_required("payroll.view_payslip")
 def dashboard_employee_chart(request):
     """
     payroll dashboard employee chart data
@@ -811,8 +806,6 @@ def dashboard_employee_chart(request):
         return JsonResponse(response)
 
 
-@login_required
-@permission_required("payroll.view_payslip")
 def payslip_details(request):
     """
     payroll dashboard payslip details data
@@ -837,7 +830,6 @@ def payslip_details(request):
 
 
 @login_required
-@permission_required("payroll.view_payslip")
 def dashboard_department_chart(request):
     """
     payroll dashboard department chart data
@@ -903,8 +895,6 @@ def dashboard_department_chart(request):
         return JsonResponse(response)
 
 
-@login_required
-@permission_required("payroll.view_contract")
 def contract_ending(request):
     """
     payroll dashboard contract ending details data
@@ -940,8 +930,6 @@ def contract_ending(request):
     return JsonResponse(response)
 
 
-@login_required
-@permission_required("payroll.view_payslip")
 def payslip_export(request):
     """
     payroll dashboard exporting to excell data
@@ -954,31 +942,8 @@ def payslip_export(request):
 
     start_date = request.POST.get("start_date")
     end_date = request.POST.get("end_date")
-    # Save original filter dates for metadata (these get reassigned in the loop below)
-    filter_start_date = start_date
-    filter_end_date = end_date
     employee = request.POST.getlist("employees")
     status = request.POST.get("status")
-
-    # Server-side validation: both dates required, max 1 month range
-    if not start_date or not end_date:
-        messages.error(request, _("Both Start Date and End Date are required."))
-        return redirect("view-payroll-dashboard")
-    start_dt = datetime.strptime(start_date, "%Y-%m-%d").date()
-    end_dt = datetime.strptime(end_date, "%Y-%m-%d").date()
-    if end_dt < start_dt:
-        messages.error(request, _("End Date cannot be before Start Date."))
-        return redirect("view-payroll-dashboard")
-    # Check max 1 month
-    max_end = date(
-        start_dt.year + (start_dt.month // 12),
-        (start_dt.month % 12) + 1,
-        start_dt.day if start_dt.day <= 28 else 28,
-    )
-    if end_dt > max_end:
-        messages.error(request, _("The date range must not exceed 1 month."))
-        return redirect("view-payroll-dashboard")
-
     contributions = (
         request.POST.getlist("contributions")
         if request.POST.getlist("contributions")
@@ -1111,25 +1076,6 @@ def payslip_export(request):
                     "status": status_choices.get(payslip.status),
                 },
             )
-        # Append a totals row for numeric columns
-        total_basic = sum(row["basic_pay"] for row in table1_data)
-        total_deduction = sum(row["deduction"] for row in table1_data)
-        total_allowance = sum(row["allowance"] for row in table1_data)
-        total_gross = sum(row["gross_pay"] for row in table1_data)
-        total_net = sum(row["net_pay"] for row in table1_data)
-        table1_data.append(
-            {
-                "employee": "Total",
-                "start_date": "",
-                "end_date": "",
-                "basic_pay": round(total_basic, 2),
-                "deduction": round(total_deduction, 2),
-                "allowance": round(total_allowance, 2),
-                "gross_pay": round(total_gross, 2),
-                "net_pay": round(total_net, 2),
-                "status": "",
-            },
-        )
     else:
         table1_data.append(
             {
@@ -1371,46 +1317,6 @@ def payslip_export(request):
 
     worksheet.set_row(len(df_table1) + len(df_table2) + 9, 30)
 
-    # Bold formatting for the totals row in table1
-    total_row_format = workbook.add_format(
-        {"bold": True, "font_size": 11, "top": 1}
-    )
-    if employee_payslip_list:
-        totals_row_idx = 3 + len(df_table1) - 1  # last data row (0-indexed)
-        for col_num in range(len(df_table1.columns)):
-            cell_value = df_table1.iloc[-1, col_num]
-            worksheet.write(totals_row_idx, col_num, cell_value, total_row_format)
-
-    # Metadata: date, time and username at the bottom left
-    metadata_row = (
-        len(df_table1)
-        + 3
-        + len(df_table2)
-        + len(df_table3)
-        + len(df_table5)
-        + len(df_table4)
-        + 15
-    )
-    metadata_format = workbook.add_format(
-        {"italic": True, "font_size": 10, "font_color": "#555555"}
-    )
-    now = datetime.now()
-    generated_by = request.user.get_full_name() or request.user.username
-    date_range_text = ""
-    if filter_start_date and filter_end_date:
-        date_range_text = f" | Report Period: {filter_start_date} to {filter_end_date}"
-    elif filter_start_date:
-        date_range_text = f" | Report Period: from {filter_start_date}"
-    elif filter_end_date:
-        date_range_text = f" | Report Period: until {filter_end_date}"
-
-    worksheet.write(
-        metadata_row,
-        0,
-        f"Generated by: {generated_by} | Date: {now.strftime('%Y-%m-%d')} | Time: {now.strftime('%H:%M:%S')}{date_range_text}",
-        metadata_format,
-    )
-
     writer.close()
 
     return response
@@ -1580,11 +1486,9 @@ def generate_payslip_pdf(template_path, context, html=False):
         return pdf
     except Exception as e:
         # Handle errors gracefully
-        logger.error("Error generating PDF: %s", e)
-        return None
+        return HttpResponse(f"Error generating PDF: {str(e)}", status=500)
 
 
-@login_required
 def payslip_pdf(request, id):
     """
     Generate the payslip as a PDF and return it in an HttpResponse.
@@ -1908,15 +1812,7 @@ def delete_payrollrequest_comment(request, comment_id):
     This method is used to delete Reimbursement request comments
     """
     script = ""
-    comment = ReimbursementrequestComment.objects.filter(id=comment_id).first()
-    if comment is None:
-        return HttpResponse(script)
-    if (
-        comment.employee_id.employee_user_id != request.user
-        and not request.user.has_perm("payroll.delete_reimbursementrequestcomment")
-    ):
-        messages.error(request, _("You don't have permission to delete this comment."))
-        return HttpResponse(script)
+    comment = ReimbursementrequestComment.objects.filter(id=comment_id)
     comment.delete()
     messages.success(request, _("Comment deleted successfully!"))
     return HttpResponse(script)
