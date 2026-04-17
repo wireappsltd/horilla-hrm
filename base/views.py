@@ -608,6 +608,21 @@ def login_user(request):
             )
             return redirect("login")
 
+        if not user.is_superuser:
+            from payroll.models.models import Contract
+
+            has_active_contract = Contract.objects.filter(
+                employee_id=employee, contract_status="active", is_active=True
+            ).exists()
+            if not has_active_contract:
+                messages.warning(
+                    request,
+                    _(
+                        "No active contract found. Please contact your manager."
+                    ),
+                )
+                return redirect("login")
+
         login(request, user)
 
         messages.success(request, _("Login successful."))
