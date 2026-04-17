@@ -2385,6 +2385,14 @@ def payslip_super_detailed_export(request):
 
     payslips = PayslipFilter(request.GET).qs
 
+    start_date_from = request.GET.get("start_date_from")
+    start_date_till = request.GET.get("start_date_till")
+    if start_date_from:
+        payslips = payslips.filter(start_date__gte=start_date_from)
+    if start_date_till:
+        payslips = payslips.filter(start_date__lte=start_date_till)
+
+
     all_allowance_titles = set()
     all_deduction_titles = set()
 
