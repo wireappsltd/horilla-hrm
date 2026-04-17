@@ -59,6 +59,8 @@ def strtime_seconds(time):
     args:
         time : time in H:M format
     """
+    if not time or time == "None":
+        return 0
 
     ftr = [3600, 60, 1]
     return sum(a * b for a, b in zip(ftr, map(int, time.split(":"))))
