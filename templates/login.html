@@ -120,10 +120,12 @@
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@10"></script>
     <script>
         $(document).ready(function () {
-            if ($(".oh-alert--warning").length > 0) {
+            var warningEl = $(".oh-alert--warning");
+            if (warningEl.length > 0) {
+                var warningText = warningEl.first().text().trim() || 'An issue occurred. Please contact HR administrators for assistance.';
                 Swal.fire({
                     title: 'Access Denied !',
-                    text: 'Your login credentials are currently blocked. Please contact HR administrators for assistance.',
+                    text: warningText,
                     icon: 'warning',
                     confirmButtonText: 'OK',
                 });
