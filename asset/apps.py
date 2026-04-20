@@ -22,6 +22,7 @@ class AssetConfig(AppConfig):
     def ready(self):
         from django.urls import include, path
 
+        from asset import scheduler  # noqa: F401  starts BackgroundScheduler after app registry is ready
         from horilla.horilla_settings import APP_URLS, APPS
         from horilla.urls import urlpatterns
 
