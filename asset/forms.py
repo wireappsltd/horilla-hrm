@@ -311,6 +311,7 @@ class AssetAllocationForm(ModelForm):
             "assigned_date",
             "return_images",
             "is_active",
+            "checkup_completed",
         ]
         widgets = {
             "asset_id": forms.Select(attrs={"class": "oh-select oh-select-2 "}),
@@ -321,6 +322,9 @@ class AssetAllocationForm(ModelForm):
                 attrs={
                     "class": "oh-select oh-select-2 ",
                 },
+            ),
+            "yearly_checkup_date": forms.DateInput(
+                attrs={"type": "date", "class": "oh-input w-100"}
             ),
         }
 

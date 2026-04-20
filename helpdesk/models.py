@@ -236,6 +236,12 @@ class PasswordResetRequest(HorillaModel):
         on_delete=models.CASCADE,
         related_name="password_reset_request",
     )
+    request_type = models.CharField(
+        max_length=50,
+        choices=ISO_REQUEST_TYPE_CHOICES,
+        default="password_reset",
+        verbose_name=_("Type"),
+    )
     platform = models.CharField(
         max_length=50,
         choices=PASSWORD_RESET_PLATFORMS,
@@ -273,6 +279,22 @@ class PasswordResetRequest(HorillaModel):
     reviewed_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True, verbose_name=_("Updated At"))
+    history = HorillaAuditLog(
+        related_name="history_set",
+        bases=[
+            HorillaAuditInfo,
+        ],
+        excluded_fields=[
+            "ticket",
+            "request_type",
+            "forward_to",
+            "reviewed_by",
+            "reviewed_at",
+            "created_at",
+            "updated_at",
+            "is_active",
+        ],
+    )
 
     class Meta:
         verbose_name = _("Password Reset Request")
@@ -280,6 +302,12 @@ class PasswordResetRequest(HorillaModel):
 
     def __str__(self):
         return f"Password Reset – {self.platform} – {self.ticket}"
+
+    def tracking(self):
+        """
+        Return the tracked history of this PasswordResetRequest instance.
+        """
+        return get_diff(self)
 
     def get_forward_to_users(self):
         """Return selected forwarding users as a queryset."""

@@ -813,12 +813,18 @@ def ticket_filter(request):
 @login_required
 def ticket_detail(request, ticket_id, **kwargs):
     ticket = Ticket.objects.get(id=ticket_id)
+    # Check if the user is a forward_to recipient for a password reset request
+    pr = getattr(ticket, "password_reset_request", None)
+    is_forward_to_user = (
+        pr is not None and pr.forward_to.filter(pk=request.user.pk).exists()
+    )
     if (
         request.user.has_perm("helpdesk.view_ticket")
         or ticket.employee_id.get_reporting_manager() == request.user.employee_get
         or is_department_manager(request, ticket)
         or request.user.employee_get == ticket.employee_id
         or request.user.employee_get in ticket.assigned_to.all()
+        or is_forward_to_user
     ):
         today = datetime.now().date()
         c_form = CommentForm()
@@ -840,6 +846,19 @@ def ticket_detail(request, ticket_id, **kwargs):
                     "date": history["pair"][0].history_date,
                 }
             )
+
+        # Include PasswordResetRequest audit history if one exists
+        password_reset_request = getattr(ticket, "password_reset_request", None)
+        if password_reset_request:
+            pr_trackings = password_reset_request.tracking()
+            for history in pr_trackings:
+                activity_list.append(
+                    {
+                        "type": "history",
+                        "history": history,
+                        "date": history["pair"][0].history_date,
+                    }
+                )
 
         sorted_activity_list = sorted(activity_list, key=itemgetter("date"))
 
@@ -1013,6 +1032,18 @@ def ticket_change_raised_on(request, ticket_id):
             form = TicketRaisedOnForm(request.POST, instance=ticket)
             if form.is_valid():
                 form.save()
+                # Sync forward_to M2M for password reset requests
+                if pr_request:
+                    raised_ids = ticket._parse_raised_on_ids()
+                    if raised_ids:
+                        forward_users = User.objects.filter(
+                            employee_get__id__in=raised_ids,
+                            groups__name=ISO_GROUP_NAME,
+                            is_active=True,
+                        ).distinct()
+                        pr_request.forward_to.set(forward_users)
+                    else:
+                        pr_request.forward_to.clear()
                 messages.success(request, _("Responsibility updated for the Ticket"))
                 return HttpResponse("<script>window.location.reload()</script>")
         return render(
@@ -1986,17 +2017,28 @@ def iso_forms_home(request):
             queryset = queryset.filter(
                 Q(ticket__employee_id=current_employee)
                 | Q(ticket__assigned_to=current_employee)
-                | Q(ticket__raised_on=str(current_employee.id))
+                | Q(ticket__raised_on__contains=str(current_employee.id))
+                | Q(forward_to=request.user)
                 | Q(reviewed_by=request.user)
             ).distinct()
         else:
             queryset = queryset.none()
 
 
+    iso_form_options = [
+        {
+            "title": _("Password Reset Request"),
+            "description": _("Request password reset access for internal systems."),
+            "icon": "key-outline",
+            "create_url": reverse("password-reset-request-create"),
+        }
+    ]
+
     context = {
         "password_reset_requests": queryset,
         "current_employee": current_employee,
         "is_iso_officer": request.user.is_superuser or _is_iso_officer(request.user),
+        "iso_form_options": iso_form_options,
     }
     return render(request, "helpdesk/iso_forms/index.html", context)
 
@@ -2053,6 +2095,7 @@ def password_reset_request_create(request):
             deadline = form.cleaned_data.get("deadline") or (timezone.now() + timedelta(days=7)).date()
 
             platform = form.cleaned_data["platform"]
+            request_type_display = form.instance.get_request_type_display()
             selected_employee = form.cleaned_data["employee"]
             selected_forward_users = list(form.cleaned_data["forward_to"])
             reason = form.cleaned_data["reason"]
@@ -2065,15 +2108,16 @@ def password_reset_request_create(request):
             raised_on = ",".join(forward_employee_ids) or str(selected_employee.id)
             user_display = _format_password_reset_user(selected_employee)
             description = (
-                f"<b>Password Reset Request Details:</b><br><br>"
+                f"<b>{request_type_display} Details:</b><br><br>"
+                f"<b>Type:</b> {request_type_display}<br>"
                 f"<b>Platform:</b> {platform}<br>"
                 f"<b>User:</b> {user_display}<br>"
                 f"<b>Reason:</b> {reason}"
-            )[:255]
+            )
 
             # ticket owner is the selected employee, not the admin submitting
             ticket = Ticket(
-                title=f"Password Reset – {platform}",
+                title=f"{request_type_display} – {platform}",
                 employee_id=selected_employee,
                 ticket_type=ticket_type,
                 description=description,
@@ -2086,19 +2130,15 @@ def password_reset_request_create(request):
             ticket.save()
 
             ticket.assigned_to.add(selected_employee)
-            if forward_employees:
-                ticket.assigned_to.add(*forward_employees)
 
             pr_request = form.save(commit=False)
             pr_request.ticket = ticket
             pr_request.iso_status = "PENDING"
             pr_request.request_type = "password_reset"
             pr_request.save()
-            # forward_to is M2M to User; convert Employee objects to their User
-            forward_users = [
-                emp.employee_user_id for emp in selected_forward_users
-                if getattr(emp, "employee_user_id", None)
-            ]
+            # forward_to is M2M to User; selected_forward_users are already
+            # User objects (from the form's forward_to queryset).
+            forward_users = list(selected_forward_users)
             pr_request.forward_to.set(forward_users)
 
             notification_actor = getattr(request.user, "employee_get", selected_employee)
@@ -2193,6 +2233,7 @@ def password_reset_request_update(request, pr_id):
         form = PasswordResetRequestForm(request.POST, instance=pr_request, request=request)
         if form.is_valid():
             platform = form.cleaned_data["platform"]
+            request_type_display = pr_request.get_request_type_display()
             selected_employee = form.cleaned_data["employee"]
             selected_forward_users = list(form.cleaned_data["forward_to"])
             reason = form.cleaned_data["reason"]
@@ -2203,11 +2244,9 @@ def password_reset_request_update(request, pr_id):
                 selected_forward_users
             )
 
-            # forward_to is M2M to User; convert Employee objects to their User
-            forward_users = [
-                emp.employee_user_id for emp in selected_forward_users
-                if getattr(emp, "employee_user_id", None)
-            ]
+            # forward_to is M2M to User; selected_forward_users are already
+            # User objects (from the form's forward_to queryset).
+            forward_users = list(selected_forward_users)
 
             # Update the ticket FIRST so the owner (employee_id) is always
             # reassigned together with the description and other fields.
@@ -2217,21 +2256,20 @@ def password_reset_request_update(request, pr_id):
             ticket.employee_id = selected_employee
             ticket.priority = form.cleaned_data.get("priority")
             ticket.deadline = form.cleaned_data.get("deadline")
-            ticket.title = f"Password Reset – {platform}"
+            ticket.title = f"{request_type_display} – {platform}"
             ticket.description = (
-                f"<b>Password Reset Request Details:</b><br><br>"
+                f"<b>{request_type_display} Details:</b><br><br>"
+                f"<b>Type:</b> {request_type_display}<br>"
                 f"<b>Platform:</b> {platform}<br>"
                 f"<b>User:</b> {user_display}<br>"
                 f"<b>Reason:</b> {reason}"
-            )[:255]
+            )
             ticket.raised_on = ",".join(forward_employee_ids) or str(selected_employee.id)
             ticket.save()
 
-            # Refresh assigned_to: ensure new owner and forwarding officers are assigned
+            # Refresh assigned_to: only the ticket owner should be assigned
             ticket.assigned_to.clear()
             ticket.assigned_to.add(selected_employee)
-            if forward_employees:
-                ticket.assigned_to.add(*forward_employees)
 
             # Now save the PasswordResetRequest (user_id, platform, reason, forward_to)
             pr_request = form.save(commit=False)

@@ -163,6 +163,9 @@ class AttendanceUpdateForm(BaseModelForm):
                 )
             kwargs["initial"] = initial
         super().__init__(*args, **kwargs)
+        max_date = (datetime.date.today() + datetime.timedelta(days=3)).strftime(
+            "%Y-%m-%d"
+        )
         self.fields["employee_id"].widget.attrs.update({"id": str(uuid.uuid4())})
 
         for field in [
@@ -207,13 +210,17 @@ class AttendanceUpdateForm(BaseModelForm):
         # )
         self.fields["attendance_clock_in_date"].widget.attrs.update({
             "style": "pointer-events:none;",
+            "max": max_date,
         })
         self.fields["attendance_worked_hour"].widget.attrs.update({
             "style": "pointer-events:none;",
         })
         self.fields["attendance_clock_out_date"].widget.attrs.update({
             "style": "pointer-events:none;",
+            "max": max_date,
         })
+
+        self.fields["attendance_date"].widget.attrs.update({"max": max_date})
 
         self.fields["attendance_date"].widget.attrs.update({
             "hx-get": reverse("check-compensation"),
@@ -259,7 +266,7 @@ class AttendanceUpdateForm(BaseModelForm):
         is_future_date = block_future_attendance(attendance_date)
         if is_future_date:
             raise ValidationError(
-                _("Attendance cannot be marked for future dates")
+                _("Attendance cannot be marked more than 3 days in the future")
             )
 
         if check_in_time and check_out_time:
@@ -399,17 +406,24 @@ class AttendanceForm(BaseModelForm):
         kwargs["initial"] = initial
 
         super().__init__(*args, **kwargs)
+        max_date = (datetime.date.today() + datetime.timedelta(days=3)).strftime(
+            "%Y-%m-%d"
+        )
         reload_queryset(self.fields)
         self.fields["employee_id"].widget.attrs.update({"id": str(uuid.uuid4())})
         self.fields["attendance_clock_in_date"].widget.attrs.update({
             "style": "pointer-events:none;",
+            "max": max_date,
         })
         self.fields["attendance_worked_hour"].widget.attrs.update({
             "style": "pointer-events:none;",
         })
         self.fields["attendance_clock_out_date"].widget.attrs.update({
             "style": "pointer-events:none;",
+            "max": max_date,
         })
+
+        self.fields["attendance_date"].widget.attrs.update({"max": max_date})
 
         self.fields["attendance_date"].widget.attrs.update({
             "hx-get": reverse("check-compensation"),
@@ -565,7 +579,7 @@ class AttendanceForm(BaseModelForm):
         is_future_date = block_future_attendance(attendance_date)
         if is_future_date:
             raise ValidationError(
-                _("Attendance cannot be marked for future dates")
+                _("Attendance cannot be marked more than 3 days in the future")
             )
 
         if check_in_time and check_out_time:
@@ -942,7 +956,7 @@ class AttendanceRequestForm(BaseModelForm):
         is_future_date = block_future_attendance(attendance_date)
         if is_future_date:
             raise ValidationError(
-                _("Attendance cannot be marked for future dates")
+                _("Attendance cannot be marked more than 3 days in the future")
             )
 
         if check_in_time and check_out_time:

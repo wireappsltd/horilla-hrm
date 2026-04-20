@@ -229,6 +229,8 @@ LANGUAGE_CODE = "en-us"
 
 TIME_ZONE = env("TIME_ZONE", default="Asia/Kolkata")
 
+NOTIFICATION_BOT_USERNAME = env("NOTIFICATION_BOT_USERNAME", default="Horilla Bot")
+
 USE_I18N = True
 
 USE_L10N = True
