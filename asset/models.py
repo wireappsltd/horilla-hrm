@@ -5,8 +5,6 @@ This module defines Django models to manage assets, their categories, assigning,
 within an Asset Management System.
 """
 
-from datetime import timedelta
-
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils.translation import gettext_lazy as _
@@ -289,10 +287,15 @@ class AssetAssignment(HorillaModel):
         verbose_name_plural = _("Asset Allocations")
 
     def save(self, *args, **kwargs):
-        from datetime import date
+        from django.utils import timezone
 
         if not self.pk and not self.yearly_checkup_date:
-            self.yearly_checkup_date = date.today() + timedelta(days=365)
+            today = timezone.localdate()
+            try:
+                self.yearly_checkup_date = today.replace(year=today.year + 1)
+            except ValueError:
+                # Handle Feb 29 on a leap year → use Feb 28 on a non-leap year
+                self.yearly_checkup_date = today.replace(year=today.year + 1, day=28)
         super().save(*args, **kwargs)
 
     def __str__(self):
