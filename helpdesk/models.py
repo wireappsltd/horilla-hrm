@@ -143,6 +143,17 @@ class Ticket(HorillaModel):
         bases=[
             HorillaAuditInfo,
         ],
+        excluded_fields=[
+            "modified_by",
+            "created_by",
+            "created_at",
+            "is_active",
+            "description",
+            "title",
+            "assigning_type",
+            "ticket_type",
+            "raised_on",
+        ],
     )
     objects = HorillaCompanyManager(
         related_company_field="employee_id__employee_work_info__company_id"
@@ -255,12 +266,6 @@ class PasswordResetRequest(HorillaModel):
         related_name="forwarded_password_reset_requests",
         verbose_name=_("Forward To"),
     )
-    request_type = models.CharField(
-        max_length=50,
-        choices=ISO_REQUEST_TYPE_CHOICES,
-        default="password_reset",
-        verbose_name=_("Type"),
-    )
 
     iso_status = models.CharField(
         max_length=20,
@@ -284,15 +289,17 @@ class PasswordResetRequest(HorillaModel):
         bases=[
             HorillaAuditInfo,
         ],
+        m2m_fields=["forward_to"],
         excluded_fields=[
             "ticket",
             "request_type",
-            "forward_to",
             "reviewed_by",
             "reviewed_at",
             "created_at",
             "updated_at",
             "is_active",
+            "modified_by",
+            "created_by",
         ],
     )
 

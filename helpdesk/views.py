@@ -834,6 +834,11 @@ def ticket_detail(request, ticket_id, **kwargs):
         activity_list = []
         comments = ticket.comment.all()
         trackings = ticket.tracking()
+        # Filter out history entries that have no visible changes
+        trackings = [
+            h for h in trackings
+            if h.get("type", "").endswith("created") or h.get("changes")
+        ]
         for comment in comments:
             activity_list.append(
                 {"type": "comment", "comment": comment, "date": comment.date}
@@ -851,6 +856,11 @@ def ticket_detail(request, ticket_id, **kwargs):
         password_reset_request = getattr(ticket, "password_reset_request", None)
         if password_reset_request:
             pr_trackings = password_reset_request.tracking()
+            # Filter out history entries that have no visible changes
+            pr_trackings = [
+                h for h in pr_trackings
+                if h.get("changes")  # exclude "created" entry (already shown by ticket history)
+            ]
             for history in pr_trackings:
                 activity_list.append(
                     {
