@@ -8,6 +8,7 @@ import sys
 from datetime import date, timedelta
 
 from apscheduler.schedulers.background import BackgroundScheduler
+from django.contrib.auth.models import Group
 from django.urls import reverse
 
 from notifications.signals import notify
@@ -174,6 +175,31 @@ def notify_upcoming_checkups():
                 icon="calendar",
             )
 
+        # Notify HR and OPS group users
+        notified_pks = set(permed_users.values_list("pk", flat=True))
+        notified_pks.add(employee.employee_user_id.pk)
+
+        for group_name in ("HR", "OPS"):
+            try:
+                group = Group.objects.get(name=group_name)
+                group_users = group.user_set.exclude(pk__in=notified_pks)
+                if group_users.exists():
+                    notify.send(
+                        bot,
+                        recipient=group_users,
+                        verb=message,
+                        verb_ar=message_ar,
+                        verb_de=message_de,
+                        verb_es=message_es,
+                        verb_fr=message_fr,
+                        redirect=reverse("asset-request-allocation-view"),
+                        label="System",
+                        icon="calendar",
+                    )
+                    notified_pks.update(group_users.values_list("pk", flat=True))
+            except Group.DoesNotExist:
+                pass
+
         # Send email notifications
         from asset.threading import CheckupMailThread
         from employee.models import Employee
@@ -186,12 +212,15 @@ def notify_upcoming_checkups():
             "service_shop": shop,
             "message": message,
         }
+        all_notified_users = User.objects.filter(pk__in=notified_pks).exclude(
+            pk=employee.employee_user_id.pk
+        )
         email_recipients = [employee]
-        if permed_users.exists():
-            hr_employees = Employee.objects.filter(
-                employee_user_id__in=permed_users
+        if all_notified_users.exists():
+            extra_employees = Employee.objects.filter(
+                employee_user_id__in=all_notified_users
             )
-            email_recipients.extend(list(hr_employees))
+            email_recipients.extend(list(extra_employees))
         CheckupMailThread(email_recipients, email_context, is_overdue=False).start()
 
 
@@ -282,6 +311,31 @@ def notify_overdue_checkups():
                 icon="alert-circle",
             )
 
+        # Notify HR and OPS group users
+        notified_pks = set(permed_users.values_list("pk", flat=True))
+        notified_pks.add(employee.employee_user_id.pk)
+
+        for group_name in ("HR", "OPS"):
+            try:
+                group = Group.objects.get(name=group_name)
+                group_users = group.user_set.exclude(pk__in=notified_pks)
+                if group_users.exists():
+                    notify.send(
+                        bot,
+                        recipient=group_users,
+                        verb=message,
+                        verb_ar=message_ar,
+                        verb_de=message_de,
+                        verb_es=message_es,
+                        verb_fr=message_fr,
+                        redirect=reverse("asset-request-allocation-view"),
+                        label="System",
+                        icon="alert-circle",
+                    )
+                    notified_pks.update(group_users.values_list("pk", flat=True))
+            except Group.DoesNotExist:
+                pass
+
         # Send email notifications
         from asset.threading import CheckupMailThread
         from employee.models import Employee
@@ -294,12 +348,15 @@ def notify_overdue_checkups():
             "service_shop": shop,
             "message": message,
         }
+        all_notified_users = User.objects.filter(pk__in=notified_pks).exclude(
+            pk=employee.employee_user_id.pk
+        )
         email_recipients = [employee]
-        if permed_users.exists():
-            hr_employees = Employee.objects.filter(
-                employee_user_id__in=permed_users
+        if all_notified_users.exists():
+            extra_employees = Employee.objects.filter(
+                employee_user_id__in=all_notified_users
             )
-            email_recipients.extend(list(hr_employees))
+            email_recipients.extend(list(extra_employees))
         CheckupMailThread(email_recipients, email_context, is_overdue=True).start()
 
 
