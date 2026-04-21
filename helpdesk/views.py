@@ -813,6 +813,9 @@ def ticket_filter(request):
 @login_required
 def ticket_detail(request, ticket_id, **kwargs):
     ticket = Ticket.objects.get(id=ticket_id)
+    # Allow ISO officers to view password reset tickets
+    is_iso = _is_iso_officer(request.user)
+    has_pr = hasattr(ticket, "password_reset_request")
     # Check if the user is a forward_to recipient for a password reset request
     pr = getattr(ticket, "password_reset_request", None)
     is_forward_to_user = (
@@ -824,6 +827,7 @@ def ticket_detail(request, ticket_id, **kwargs):
         or is_department_manager(request, ticket)
         or request.user.employee_get == ticket.employee_id
         or request.user.employee_get in ticket.assigned_to.all()
+        or (has_pr and is_iso)
         or is_forward_to_user
     ):
         today = datetime.now().date()
@@ -1112,6 +1116,52 @@ def ticket_change_assignees(request, ticket_id):
 
                 form.save()
 
+                # For password reset tickets, sync the new assignee to
+                # ticket.employee_id and PasswordResetRequest.user_id so
+                # the old assignee loses access and the dashboard reflects
+                # the change.
+                if pr_request and selected_assignees.count() == 1:
+                    new_employee = selected_assignees.first()
+                    old_employee = ticket.employee_id
+
+                    if new_employee != old_employee:
+                        ticket.employee_id = new_employee
+                        request_type_display = pr_request.get_request_type_display()
+                        user_display = _format_password_reset_user(new_employee)
+                        ticket.description = (
+                            f"<b>{request_type_display} Details:</b><br><br>"
+                            f"<b>Type:</b> {request_type_display}<br>"
+                            f"<b>Platform:</b> {pr_request.platform}<br>"
+                            f"<b>User:</b> {user_display}<br>"
+                            f"<b>Reason:</b> {pr_request.reason}"
+                        )
+                        ticket.save()
+
+                        # Update the email stored on the PR request
+                        try:
+                            pr_request.user_id = (
+                                new_employee.employee_work_info.company_email or ""
+                            )
+                        except Exception:
+                            pr_request.user_id = ""
+                        pr_request.save()
+
+                        # Audit comment
+                        try:
+                            reviewer_emp = request.user.employee_get
+                            old_name = _format_password_reset_user(old_employee)
+                            new_name = _format_password_reset_user(new_employee)
+                            Comment.objects.create(
+                                comment=(
+                                    f"<strong>Assignee Changed</strong><br>"
+                                    f"Changed from <strong>{old_name}</strong> "
+                                    f"to <strong>{new_name}</strong>."
+                                ),
+                                ticket=ticket,
+                                employee_id=reviewer_emp,
+                            )
+                        except Exception as exc:
+                            logger.error("Assignee change audit comment error: %s", exc)
 
                 mail_thread = AddAssigneeThread(
                     request,
