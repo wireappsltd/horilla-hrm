@@ -867,6 +867,7 @@ def edit_validate_attendance(request, attendance_id):
     form = AttendanceRequestForm(initial=initial)
     form.instance.id = attendance.id
     hx_target = request.META.get("HTTP_HX_TARGET")
+    show_compensation = False
     if request.method == "POST":
         form = AttendanceRequestForm(request.POST, instance=copy.copy(attendance))
         if form.is_valid():
@@ -900,10 +901,21 @@ def edit_validate_attendance(request, attendance_id):
                                 </script>
                                 """
             )
+        attendance_date_str = request.POST.get("attendance_date")
+        if attendance_date_str:
+            try:
+                parsed_date = datetime.strptime(attendance_date_str, "%Y-%m-%d").date()
+                result = is_mercantile_or_poya_holiday(parsed_date)
+                show_compensation = result.get("is_mercantile_holiday", False)
+            except (ValueError, TypeError):
+                pass
+    else:
+        result = is_mercantile_or_poya_holiday(attendance.attendance_date)
+        show_compensation = result.get("is_mercantile_holiday", False)
     return render(
         request,
         "requests/attendance/update_form.html",
-        {"form": form, "hx_target": hx_target},
+        {"form": form, "hx_target": hx_target, "show_compensation": show_compensation},
     )
 
 
