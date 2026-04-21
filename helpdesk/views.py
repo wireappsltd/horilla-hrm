@@ -2136,19 +2136,18 @@ def password_reset_request_create(request):
             pr_request.iso_status = "PENDING"
             pr_request.request_type = "password_reset"
             pr_request.save()
-            # forward_to is M2M to User; selected_forward_users are already
-            # User objects (from the form's forward_to queryset).
-            forward_users = list(selected_forward_users)
-            pr_request.forward_to.set(forward_users)
+            # forward_to is M2M to User – selected_forward_users are already
+            # User objects (from the ModelMultipleChoiceField), so set directly.
+            pr_request.forward_to.set(selected_forward_users)
 
             notification_actor = getattr(request.user, "employee_get", selected_employee)
 
             # In-app notification to selected ISO officers/admins (forward recipients)
             try:
-                if forward_users:
+                if selected_forward_users:
                     notify.send(
                         notification_actor,
-                        recipient=forward_users,
+                        recipient=selected_forward_users,
                         verb=f"New Password Reset request submitted for {selected_employee.get_full_name()} on {platform}.",
                         verb_ar="تم تقديم طلب إعادة تعيين كلمة المرور.",
                         verb_de="Eine neue Anfrage zum Zurücksetzen des Passworts wurde eingereicht.",
@@ -2181,7 +2180,7 @@ def password_reset_request_create(request):
                     ticket,
                     type="new_request",
                     pr_request=pr_request,
-                    iso_recipients=forward_users,
+                    iso_recipients=selected_forward_users,
                 )
                 mail_thread.start()
             except Exception as exc:
@@ -2244,10 +2243,6 @@ def password_reset_request_update(request, pr_id):
                 selected_forward_users
             )
 
-            # forward_to is M2M to User; selected_forward_users are already
-            # User objects (from the form's forward_to queryset).
-            forward_users = list(selected_forward_users)
-
             # Update the ticket FIRST so the owner (employee_id) is always
             # reassigned together with the description and other fields.
             # Re-fetch the ticket fresh from DB to avoid stale reference
@@ -2276,8 +2271,9 @@ def password_reset_request_update(request, pr_id):
             pr_request.request_type = "password_reset"
             pr_request.save()
 
-            # Set forward_to M2M after saving the PR request
-            pr_request.forward_to.set(forward_users)
+            # Set forward_to M2M after saving the PR request –
+            # selected_forward_users are already User objects.
+            pr_request.forward_to.set(selected_forward_users)
 
             messages.success(request, _("Password reset request updated successfully."))
             return HttpResponse("<script>window.location.reload()</script>")
