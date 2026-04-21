@@ -42,6 +42,7 @@ from django.utils import timezone
 from django.utils.html import strip_tags
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.translation import gettext as _
+from django.views.decorators.cache import never_cache
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
@@ -565,10 +566,26 @@ def initialize_job_position_delete(request, obj_id):
     )
 
 
+@never_cache
 def login_user(request):
     """
     Handles user login and authentication.
     """
+    # If the user is already authenticated, prevent them from going back to
+    # the login page (e.g. via the browser back button).
+    if request.user.is_authenticated:
+        try:
+
+            two_factor_enabled = horilla_apps.TWO_FACTORS_AUTHENTICATION
+        except Exception:
+            two_factor_enabled = False
+
+        if two_factor_enabled and not request.session.get(
+            "otp_code_verified", False
+        ):
+            return redirect("/two-factor")
+        return redirect("/")
+
     if request.method == "POST":
         username = request.POST.get("username")
         password = request.POST.get("password")
@@ -824,10 +841,22 @@ def change_username(request):
     return render(request, "base/auth/username_change.html", {"form": form})
 
 
+@never_cache
 def two_factor_auth(request):
     """
     function to handle two-factor authentication for users.
     """
+    # Unauthenticated users should not access the OTP page directly.
+    if not request.user.is_authenticated:
+        return redirect("login")
+
+    # If the user has already verified OTP, prevent them from going back to
+    # the two-factor page (e.g. via the browser back button).
+    if request.method != "POST" and request.session.get(
+        "otp_code_verified", False
+    ):
+        return redirect("/")
+
     # request.session["otp_code"] = None
     try:
         otp = get_otp(request)
