@@ -640,6 +640,21 @@ def login_user(request):
                 )
                 return redirect("login")
 
+        # Enforce the OTP lockout cooldown: even with valid credentials, do
+        # not let the user back in until the cooldown has expired.
+        lockout_remaining = get_otp_lockout_remaining(user)
+        if lockout_remaining > 0:
+            minutes = int((lockout_remaining + 59) // 60)
+            messages.error(
+                request,
+                _(
+                    "Too many invalid OTP attempts. Please try again after "
+                    "%(minutes)s minute(s)."
+                )
+                % {"minutes": minutes},
+            )
+            return redirect("login")
+
         login(request, user)
 
         messages.success(request, _("Login successful."))
@@ -841,6 +856,50 @@ def change_username(request):
     return render(request, "base/auth/username_change.html", {"form": form})
 
 
+# OTP attempt limiting configuration
+OTP_MAX_ATTEMPTS = 5
+OTP_LOCKOUT_SECONDS = 5 * 60  # 5 minutes cooldown
+
+
+def _otp_lockout_cache_key(user):
+    """Return the cache key used to store the OTP lockout for a user."""
+    user_id = getattr(user, "pk", None) or getattr(user, "id", None) or "anon"
+    return f"otp_lockout:{user_id}"
+
+
+def get_otp_lockout_remaining(user):
+    """
+    Return the number of seconds remaining on the OTP lockout for the given
+    user, or 0 if the user is not currently locked out.
+    """
+    from django.core.cache import cache
+
+    if not getattr(user, "is_authenticated", False):
+        return 0
+    expires_at = cache.get(_otp_lockout_cache_key(user))
+    if not expires_at:
+        return 0
+    remaining = int(expires_at - timezone.now().timestamp())
+    return max(remaining, 0)
+
+
+def set_otp_lockout(user):
+    """
+    Lock out the given user from OTP verification for the configured
+    cooldown period.
+    """
+    from django.core.cache import cache
+
+    if not getattr(user, "is_authenticated", False):
+        return
+    expires_at = timezone.now().timestamp() + OTP_LOCKOUT_SECONDS
+    cache.set(
+        _otp_lockout_cache_key(user),
+        expires_at,
+        timeout=OTP_LOCKOUT_SECONDS,
+    )
+
+
 @never_cache
 def two_factor_auth(request):
     """
@@ -857,6 +916,21 @@ def two_factor_auth(request):
     ):
         return redirect("/")
 
+    # Enforce OTP lockout if the user has exceeded the allowed attempts.
+    lockout_remaining = get_otp_lockout_remaining(request.user)
+    if lockout_remaining > 0:
+        minutes = int((lockout_remaining + 59) // 60)
+        messages.error(
+            request,
+            _(
+                "Too many invalid OTP attempts. Please try again after "
+                "%(minutes)s minute(s)."
+            )
+            % {"minutes": minutes},
+        )
+        logout(request)
+        return redirect("login")
+
     # request.session["otp_code"] = None
     try:
         otp = get_otp(request)
@@ -865,24 +939,68 @@ def two_factor_auth(request):
 
     if request.method == "POST":
         user_otp = request.POST.get("otp")
-        if user_otp == otp:
+        if user_otp and user_otp == otp:
             request.session["otp_code"] = None
             request.session["otp_code_timestamp"] = None
             request.session["otp_code_verified"] = True
+            request.session["otp_attempts"] = 0
             request.session.save()
-            messages.success(request, "OTP verified successfully.")
+            messages.success(request, _("OTP verified successfully."))
             return redirect("/")
-        elif otp is None:
-            messages.error(request, "OTP expired. Please request a new one.")
-            return render(request, "base/auth/two_factor_auth.html")
+
+        # Invalid or expired OTP: count this as a failed attempt.
+        attempts = int(request.session.get("otp_attempts", 0)) + 1
+        request.session["otp_attempts"] = attempts
+        request.session.save()
+
+        remaining = OTP_MAX_ATTEMPTS - attempts
+        if remaining <= 0:
+            # Lock out further attempts for the cooldown period and force
+            # the user to re-initiate the login flow.
+            set_otp_lockout(request.user)
+            request.session["otp_code"] = None
+            request.session["otp_code_timestamp"] = None
+            request.session["otp_attempts"] = 0
+            request.session.save()
+            messages.error(
+                request,
+                _(
+                    "Too many invalid OTP attempts. Your account has been "
+                    "temporarily locked. Please try logging in again after "
+                    "%(minutes)s minute(s)."
+                )
+                % {"minutes": OTP_LOCKOUT_SECONDS // 60},
+            )
+            logout(request)
+            return redirect("login")
+
+        if otp is None:
+            messages.error(
+                request,
+                _(
+                    "OTP expired. Please request a new one. "
+                    "%(remaining)s attempt(s) remaining before lockout."
+                )
+                % {"remaining": remaining},
+            )
         else:
-            messages.error(request, "Invalid OTP.")
-            return render(request, "base/auth/two_factor_auth.html")
+            messages.error(
+                request,
+                _(
+                    "Invalid OTP. %(remaining)s attempt(s) remaining before "
+                    "lockout."
+                )
+                % {"remaining": remaining},
+            )
+        return render(request, "base/auth/two_factor_auth.html")
 
     if not horilla_apps.TWO_FACTORS_AUTHENTICATION:
         return redirect("/")
 
     if otp is None:
+        # New OTP is being generated; reset the failed-attempt counter.
+        request.session["otp_attempts"] = 0
+        request.session.save()
         send_otp(request)
     return render(request, "base/auth/two_factor_auth.html")
 
