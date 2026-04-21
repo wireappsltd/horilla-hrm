@@ -73,6 +73,53 @@ def filter_history(histories, track_fields):
     return histories
 
 
+def _format_m2m_values(rows, related_model):
+    """
+    Convert M2M through-table row dicts to a readable comma-separated string.
+    Each row is a dict like {'user_id': 5, 'passwordresetrequest_id': 3}.
+    We resolve the FK pointing to the related_model to get display names.
+    """
+    if not rows:
+        return "None"
+    names = []
+    # Determine which key in the row dicts corresponds to the related model
+    # by matching the model name (e.g., User -> 'user_id')
+    model_name = related_model.__name__.lower()
+    target_key = f"{model_name}_id"
+
+    for row in rows:
+        pk_value = row.get(target_key)
+        if pk_value is None:
+            # Fallback: try any key ending in _id that resolves to the related model
+            for key, value in row.items():
+                if key.endswith("_id") and value:
+                    try:
+                        obj = related_model.objects.get(pk=value)
+                        pk_value = value
+                        break
+                    except Exception:
+                        continue
+        if pk_value is not None:
+            try:
+                obj = related_model.objects.get(pk=pk_value)
+                # Try employee display name
+                if hasattr(obj, "employee_get"):
+                    try:
+                        names.append(obj.employee_get.get_full_name())
+                        continue
+                    except Exception:
+                        pass
+                if hasattr(obj, "get_full_name"):
+                    name = obj.get_full_name()
+                    if name:
+                        names.append(name)
+                        continue
+                names.append(str(obj))
+            except Exception:
+                names.append(str(pk_value))
+    return ", ".join(names) if names else "None"
+
+
 def get_diff(instance):
     """
     This method is used to find the differences in the history
@@ -94,19 +141,28 @@ def get_diff(instance):
             new = change.new
             field = instance._meta.get_field(change.field)
             is_fk = False
-            if (
+            if isinstance(field, models.ManyToManyField):
+                # M2M changes: old/new are lists of through-table dicts
+                # Convert to readable display names
+                related_model = field.related_model
+                old = _format_m2m_values(old, related_model)
+                new = _format_m2m_values(new, related_model)
+            elif (
                 isinstance(field, models.fields.CharField)
                 and field.choices
                 and old
                 and new
             ):
                 choices = dict(field.choices)
-                old = choices[old]
-                new = choices[new]
-            if isinstance(field, models.ForeignKey):
+                old = choices.get(old, old)
+                new = choices.get(new, new)
+            elif isinstance(field, models.ForeignKey):
                 is_fk = True
                 # old = getattr(pair[0], change.field)
                 # new = getattr(pair[1], change.field)
+            # Skip changes where both old and new are empty/None
+            if not old and not new:
+                continue
             diffs.append(
                 {
                     "field": get_field_label(class_name, change.field),
