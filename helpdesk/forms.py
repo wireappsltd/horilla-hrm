@@ -305,21 +305,28 @@ class PasswordResetRequestForm(forms.ModelForm):
         # build a reference to the ISO-member User queryset for initial values.
         iso_user_qs = self.fields["forward_to"].queryset
 
-        # Pre-select: if editing, use the saved forward_to users; otherwise default to all ISO members
-        if self.instance and self.instance.pk and hasattr(self.instance, "ticket") and self.instance.ticket:
-            # For editing, the authoritative initial comes from the M2M (line 337 below).
-            # Fallback: map raised_on Employee IDs → User objects.
-            existing_ids = [
-                rid.strip()
-                for rid in (self.instance.ticket.raised_on or "").split(",")
-                if rid.strip()
-            ]
-            if existing_ids:
-                self.initial["forward_to"] = iso_user_qs.filter(
-                    employee_get__id__in=existing_ids
-                )
+        # Pre-select: if editing, use the saved forward_to M2M; otherwise default to all ISO members
+        if self.instance and self.instance.pk:
+            # For editing, use the saved forward_to M2M as the authoritative initial.
+            # Filter to only include users still in the ISO group.
+            saved_forward = self.instance.forward_to.filter(
+                groups__name=ISO_GROUP_NAME, is_active=True
+            ).distinct()
+            if saved_forward.exists():
+                self.fields["forward_to"].initial = saved_forward
             else:
-                self.initial["forward_to"] = iso_user_qs
+                # Fallback: map raised_on Employee IDs → User objects (for legacy data)
+                existing_ids = [
+                    rid.strip()
+                    for rid in (getattr(self.instance, "ticket", None) and self.instance.ticket.raised_on or "").split(",")
+                    if rid.strip()
+                ]
+                if existing_ids:
+                    self.fields["forward_to"].initial = iso_user_qs.filter(
+                        employee_get__id__in=existing_ids
+                    )
+                else:
+                    self.fields["forward_to"].initial = iso_user_qs
         else:
             # New form: default to all ISO group members
             self.initial["forward_to"] = iso_user_qs
@@ -329,8 +336,6 @@ class PasswordResetRequestForm(forms.ModelForm):
             self.fields["priority"].initial = self.instance.ticket.priority
             self.fields["deadline"].initial = self.instance.ticket.deadline
 
-        if self.instance and self.instance.pk:
-            self.fields["forward_to"].initial = self.instance.forward_to.all()
 
     def _forward_to_label(self, user):
         try:
@@ -362,15 +367,26 @@ class PasswordResetRequestForm(forms.ModelForm):
 
     def save(self, commit=True):
         instance = super().save(commit=False)
-        # Derive user_id from the selected employee's company email
+        # Derive user_id from the selected employee's company email,
+        # falling back to the auth user's email if not available.
         employee = self.cleaned_data.get("employee")
         if employee:
+            email = ""
             try:
-                instance.user_id = (
-                    employee.employee_work_info.company_email or ""
-                )
+                email = employee.employee_work_info.company_email or ""
             except Exception:
-                instance.user_id = ""
+                pass
+            if not email:
+                try:
+                    email = employee.employee_user_id.email or ""
+                except Exception:
+                    pass
+            if not email:
+                try:
+                    email = employee.email or ""
+                except Exception:
+                    pass
+            instance.user_id = email
         if commit:
             instance.save()
             instance.forward_to.set(self.cleaned_data.get("forward_to", []))

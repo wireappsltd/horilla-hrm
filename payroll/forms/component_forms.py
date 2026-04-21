@@ -383,8 +383,6 @@ class PayslipForm(ModelForm):
 
         if start_date and end_date:
             delta = (end_date - start_date).days + 1
-            print("DEBUG: Date difference =", delta)
-
 
             if delta != 30:
                 raise forms.ValidationError(
@@ -453,25 +451,27 @@ class GeneratePayslipForm(HorillaForm):
         end_date = cleaned_data.get("end_date")
 
         today = datetime.date.today()
+        max_allowed = today + datetime.timedelta(days=3)
         if end_date < start_date:
             raise forms.ValidationError(
                 {
                     "end_date": "The end date must be greater than or equal to the start date."
                 }
             )
-        if start_date > today:
+        if start_date > max_allowed:
             raise forms.ValidationError(
-                {"end_date": "The start date cannot be in the future."}
+                {
+                    "start_date": "The start date cannot be more than 3 days in the future."
+                }
             )
 
-        if end_date > today:
+        if end_date > max_allowed:
             raise forms.ValidationError(
-                {"end_date": "The end date cannot be in the future."}
+                {"end_date": "The end date cannot be more than 3 days in the future."}
             )
 
         if start_date and end_date:
             delta = (end_date - start_date).days + 1
-            print("DEBUG: Date difference =", delta)
             if delta != 30:
                 raise forms.ValidationError(
                     f"The payslip period must be exactly 30 days — currently {delta} days."
@@ -481,6 +481,9 @@ class GeneratePayslipForm(HorillaForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        max_date = (datetime.date.today() + datetime.timedelta(days=3)).strftime(
+            "%Y-%m-%d"
+        )
         self.fields["employee_id"].queryset = Employee.objects.filter(
             is_active=True,
             contract_set__isnull=False,
@@ -489,9 +492,13 @@ class GeneratePayslipForm(HorillaForm):
         self.fields["employee_id"].widget.attrs.update(
             {"class": "oh-select oh-select-2", "id": uuid.uuid4()}
         )
-        self.fields["start_date"].widget.attrs.update({"class": "oh-input w-100"})
+        self.fields["start_date"].widget.attrs.update(
+            {"class": "oh-input w-100", "max": max_date}
+        )
         self.fields["group_name"].widget.attrs.update({"class": "oh-input w-100"})
-        self.fields["end_date"].widget.attrs.update({"class": "oh-input w-100"})
+        self.fields["end_date"].widget.attrs.update(
+            {"class": "oh-input w-100", "max": max_date}
+        )
         self.initial["start_date"] = datetime.date.today().replace(day=1)
         self.initial["end_date"] = datetime.date.today()
 

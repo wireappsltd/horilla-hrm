@@ -93,6 +93,8 @@ class ContractFilter(FilterSet):
 
     def __init__(self, data=None, queryset=None, *, request=None, prefix=None):
         super().__init__(data=data, queryset=queryset, request=request, prefix=prefix)
+        if "employee_id" in self.form.fields:
+            self.form.fields["employee_id"].queryset = Employee.objects.filter()
         for field in self.form.fields.keys():
             self.form.fields[field].widget.attrs["id"] = f"{uuid.uuid4()}"
 
