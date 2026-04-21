@@ -859,6 +859,10 @@ def change_username(request):
 # OTP attempt limiting configuration
 OTP_MAX_ATTEMPTS = 5
 OTP_LOCKOUT_SECONDS = 5 * 60  # 5 minutes cooldown
+# OTP validity window: the generated code is accepted only for this many
+# seconds after it is issued. After this window the OTP is rejected and the
+# user must request a new one.
+OTP_VALIDITY_SECONDS = 5 * 60  # 5 minutes
 
 
 def _otp_lockout_cache_key(user):
@@ -1046,12 +1050,13 @@ def set_otp(request):
 def get_otp(request):
     """
     Function to retrieve the OTP code from the session.
-    Checks if the OTP code has expired (10 minutes) and clears it if so.
+    Checks if the OTP code has expired (see ``OTP_VALIDITY_SECONDS``) and
+    clears it if so, forcing the user to request a new one.
     """
-    created_at = request.session.get("otp_code_timestamp", 0)
+    created_at = request.session.get("otp_code_timestamp", 0) or 0
     current_time = timezone.now().timestamp()
 
-    if current_time - created_at > 600:
+    if not created_at or current_time - created_at > OTP_VALIDITY_SECONDS:
         request.session["otp_code"] = None
         request.session["otp_code_timestamp"] = None
         request.session.save()
