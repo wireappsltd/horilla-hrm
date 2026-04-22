@@ -4,6 +4,7 @@ scheduler.py
 This module is used to register scheduled tasks
 """
 
+import logging
 import sys
 from datetime import date, timedelta
 
@@ -12,6 +13,8 @@ from django.contrib.auth.models import Group
 from django.urls import reverse
 
 from notifications.signals import notify
+
+logger = logging.getLogger(__name__)
 
 
 def notify_expiring_assets():
@@ -101,7 +104,7 @@ def notify_upcoming_checkups():
     assigned asset. Notifies the assigned employee and all users with
     asset.view_assetassignment permission (HR/Ops).
     """
-    print("Checkup Running 1")
+    logger.info("[notify_upcoming_checkups] job started")
 
     from django.contrib.auth.models import User
 
@@ -111,16 +114,37 @@ def notify_upcoming_checkups():
     today = date.today()
     notify_date = today + timedelta(days=30)
     from django.conf import settings
+    logger.info(
+        "[notify_upcoming_checkups] today=%s notify_date=%s bot_username=%s",
+        today,
+        notify_date,
+        getattr(settings, "NOTIFICATION_BOT_USERNAME", None),
+    )
     bot = User.objects.filter(username=settings.NOTIFICATION_BOT_USERNAME).first()
     if not bot:
+        logger.warning(
+            "[notify_upcoming_checkups] notification bot user '%s' not found; aborting",
+            getattr(settings, "NOTIFICATION_BOT_USERNAME", None),
+        )
         return
-    print("Checkup Running")
     assignments = AssetAssignment.objects.filter(
         yearly_checkup_date=notify_date,
         checkup_completed=False,
         return_date__isnull=True,
     )
+    logger.info(
+        "[notify_upcoming_checkups] matched %s assignment(s) for notify_date=%s",
+        assignments.count(),
+        notify_date,
+    )
     for assignment in assignments:
+        logger.info(
+            "[notify_upcoming_checkups] processing assignment id=%s asset=%s employee=%s checkup_date=%s",
+            assignment.pk,
+            getattr(assignment.asset_id, "asset_name", None),
+            getattr(assignment.assigned_to_employee_id, "pk", None),
+            assignment.yearly_checkup_date,
+        )
         asset = assignment.asset_id
         employee = assignment.assigned_to_employee_id
         shop = assignment.service_shop_name or "N/A"
@@ -237,6 +261,8 @@ def notify_overdue_checkups():
     without being marked as completed. Notifies the assigned employee and
     all users with asset.view_assetassignment permission (HR/Ops).
     """
+    logger.info("[notify_overdue_checkups] job started")
+
     from django.contrib.auth.models import User
 
     from asset.models import AssetAssignment
@@ -244,8 +270,17 @@ def notify_overdue_checkups():
 
     today = date.today()
     from django.conf import settings
+    logger.info(
+        "[notify_overdue_checkups] today=%s bot_username=%s",
+        today,
+        getattr(settings, "NOTIFICATION_BOT_USERNAME", None),
+    )
     bot = User.objects.filter(username=settings.NOTIFICATION_BOT_USERNAME).first()
     if not bot:
+        logger.warning(
+            "[notify_overdue_checkups] notification bot user '%s' not found; aborting",
+            getattr(settings, "NOTIFICATION_BOT_USERNAME", None),
+        )
         return
 
     # Only notify on the day after the checkup was due, to avoid
@@ -256,7 +291,19 @@ def notify_overdue_checkups():
         checkup_completed=False,
         return_date__isnull=True,
     )
+    logger.info(
+        "[notify_overdue_checkups] matched %s assignment(s) for yesterday=%s",
+        overdue_assignments.count(),
+        yesterday,
+    )
     for assignment in overdue_assignments:
+        logger.info(
+            "[notify_overdue_checkups] processing assignment id=%s asset=%s employee=%s checkup_date=%s",
+            assignment.pk,
+            getattr(assignment.asset_id, "asset_name", None),
+            getattr(assignment.assigned_to_employee_id, "pk", None),
+            assignment.yearly_checkup_date,
+        )
         asset = assignment.asset_id
         employee = assignment.assigned_to_employee_id
         shop = assignment.service_shop_name or "N/A"
@@ -371,9 +418,25 @@ if not any(
     cmd in sys.argv
     for cmd in ["makemigrations", "migrate", "compilemessages", "flush", "shell"]
 ):
-    scheduler = BackgroundScheduler()
-    scheduler.add_job(notify_expiring_assets, "interval", hours=4)
-    scheduler.add_job(notify_expiring_documents, "interval", hours=4)
-    scheduler.add_job(notify_upcoming_checkups, "interval", hours=4)
-    scheduler.add_job(notify_overdue_checkups, "interval", hours=4)
-    scheduler.start()
+    logger.info(
+        "[asset.scheduler] registering background jobs (argv=%s)", sys.argv
+    )
+    try:
+        scheduler = BackgroundScheduler()
+        scheduler.add_job(notify_expiring_assets, "interval", hours=4)
+        scheduler.add_job(notify_expiring_documents, "interval", hours=4)
+        scheduler.add_job(notify_upcoming_checkups, "interval", hours=4)
+        scheduler.add_job(notify_overdue_checkups, "interval", hours=4)
+        scheduler.start()
+        logger.info(
+            "[asset.scheduler] BackgroundScheduler started with %s job(s): %s",
+            len(scheduler.get_jobs()),
+            [j.func_ref or j.id for j in scheduler.get_jobs()],
+        )
+    except Exception:
+        logger.exception("[asset.scheduler] failed to start BackgroundScheduler")
+else:
+    logger.info(
+        "[asset.scheduler] skipping scheduler start due to management command (argv=%s)",
+        sys.argv,
+    )
