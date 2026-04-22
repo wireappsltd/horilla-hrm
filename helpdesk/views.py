@@ -1147,14 +1147,30 @@ def ticket_change_assignees(request, ticket_id):
                         )
                         ticket.save()
 
-                        # Update the email stored on the PR request
+                        # Update the email stored on the PR request, mirroring
+                        # the fallback chain used in PasswordResetRequestForm.save()
+                        # so we never persist a blank email when a company
+                        # email is not configured on the employee.
+                        new_email = ""
                         try:
-                            pr_request.user_id = (
+                            new_email = (
                                 new_employee.employee_work_info.company_email or ""
                             )
                         except Exception:
-                            pr_request.user_id = ""
-                        pr_request.save()
+                            new_email = ""
+                        if not new_email:
+                            try:
+                                new_email = new_employee.employee_user_id.email or ""
+                            except Exception:
+                                pass
+                        if not new_email:
+                            try:
+                                new_email = getattr(new_employee, "email", "") or ""
+                            except Exception:
+                                pass
+                        if new_email:
+                            pr_request.user_id = new_email
+                            pr_request.save()
 
                         # Audit comment
                         try:
