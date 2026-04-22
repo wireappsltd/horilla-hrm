@@ -45,6 +45,42 @@ class EmployeeListSerializer(serializers.ModelSerializer):
         ]
 
 
+class PMOEmployeeSerializer(serializers.ModelSerializer):
+    """
+    Serializer exposing a minimal employee payload for the PMO
+    (https://pmo-alpha.vercel.app) integration.
+
+    Fields: name, department, job title and email.
+    """
+
+    name = serializers.SerializerMethodField()
+    department = serializers.CharField(
+        source="employee_work_info.department_id.department",
+        read_only=True,
+        default=None,
+    )
+    job_title = serializers.CharField(
+        source="employee_work_info.job_position_id.job_position",
+        read_only=True,
+        default=None,
+    )
+    email = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Employee
+        fields = ["id", "name", "department", "job_title", "email"]
+
+    def get_name(self, obj):
+        return obj.get_full_name()
+
+    def get_email(self, obj):
+        # Prefer the work email if present, otherwise fall back to the personal email.
+        work_email = getattr(
+            getattr(obj, "employee_work_info", None), "email", None
+        )
+        return work_email or obj.email
+
+
 class EmployeeSerializer(serializers.ModelSerializer):
     department_name = serializers.CharField(
         source="employee_work_info.department_id.department", read_only=True

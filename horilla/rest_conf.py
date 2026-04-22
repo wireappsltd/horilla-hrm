@@ -19,11 +19,20 @@ REST_FRAMEWORK_SETTINGS = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
         "rest_framework_simplejwt.authentication.JWTAuthentication",
     ),
+    "DEFAULT_THROTTLE_CLASSES": [
+        "rest_framework.throttling.ScopedRateThrottle",
+    ],
+    "DEFAULT_THROTTLE_RATES": {
+        # Applied to views that opt in via `throttle_scope = "login"`.
+        # Protects POST /api/auth/login/ from brute-force attempts.
+        "login": "10/min",
+    },
     "PAGE_SIZE": 20,
 }
 
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(days=30),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=60),
 }
 SWAGGER_SETTINGS = {
     "SECURITY_DEFINITIONS": {

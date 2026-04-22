@@ -118,4 +118,16 @@ urlpatterns = [
         views.ReportingManagerCheck.as_view(),
         name="api-manager-check",
     ),
+    # PMO integration endpoint (https://pmo-alpha.vercel.app)
+    # Returns: name, department, job_title, email
+    path(
+        "pmo/employees/",
+        views.PMOEmployeeListAPIView.as_view(),
+        name="api-pmo-employees",
+    ),
+    path(
+        "pmo/employees/<int:pk>/",
+        views.PMOEmployeeListAPIView.as_view(),
+        name="api-pmo-employee-detail",
+    ),
 ]

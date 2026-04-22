@@ -25,7 +25,6 @@ from employee.models import (
 from employee.views import work_info_export, work_info_import
 from horilla.decorators import owner_can_enter
 from horilla_api.api_decorators.base.decorators import permission_required
-from horilla_api.api_methods.employee.methods import get_next_badge_id
 from horilla_documents.models import Document, DocumentRequest
 from notifications.signals import notify
 
@@ -33,7 +32,6 @@ from ...api_decorators.base.decorators import (
     manager_or_owner_permission_required,
     manager_permission_required,
 )
-from ...api_decorators.employee.decorators import or_condition
 from ...api_methods.base.methods import groupby_queryset, permission_based_queryset
 from ...api_serializers.employee.serializers import (
     ActiontypeSerializer,
@@ -46,6 +44,7 @@ from ...api_serializers.employee.serializers import (
     EmployeeSerializer,
     EmployeeTypeSerializer,
     EmployeeWorkInformationSerializer,
+    PMOEmployeeSerializer,
     PolicySerializer,
 )
 
@@ -198,6 +197,88 @@ class EmployeeListAPIView(APIView):
             employees_queryset = Employee.objects.all()
         page = paginator.paginate_queryset(employees_queryset, request)
         serializer = EmployeeListSerializer(page, many=True)
+        return paginator.get_paginated_response(serializer.data)
+
+
+class PMOEmployeeListAPIView(APIView):
+    """
+    PMO integration endpoint.
+
+    Exposes employee data required by https://pmo-alpha.vercel.app:
+        - name
+        - department
+        - job_title
+        - email
+
+    Usage:
+        GET /api/employee/pmo/employees/            -> paginated bulk list
+        GET /api/employee/pmo/employees/<pk>/       -> single employee
+
+    Query params (list mode):
+        - search:    filter by first name, last name or email (icontains).
+        - is_active: "true" (default) | "false" | "all".
+        - page / page_size: standard DRF pagination.
+
+    Authentication & Authorisation:
+        * Requires a valid JWT access token (``Authorization: Bearer ...``).
+        * Caller must have the ``employee.view_employee`` Django permission.
+          Superusers satisfy this automatically (``User.has_perm`` returns
+          True for them), so the Horilla admin account works out of the box.
+          For a dedicated service user, grant "Can view employee" via the
+          Django admin (directly or through a group).
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    class _Pagination(PageNumberPagination):
+        page_size = 50
+        page_size_query_param = "page_size"
+        max_page_size = 500
+
+    def _base_queryset(self):
+        return Employee.objects.select_related(
+            "employee_work_info__department_id",
+            "employee_work_info__job_position_id",
+        )
+
+    @permission_required("employee.view_employee")
+    def get(self, request, pk=None):
+        # Single-employee lookup
+        if pk is not None:
+            try:
+                employee = self._base_queryset().get(pk=pk)
+            except Employee.DoesNotExist:
+                return Response(
+                    {"error": "Employee does not exist"},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+            serializer = PMOEmployeeSerializer(employee)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+
+        # Bulk list
+        queryset = self._base_queryset()
+
+        is_active = (request.query_params.get("is_active") or "true").lower()
+        if is_active == "true":
+            queryset = queryset.filter(is_active=True)
+        elif is_active == "false":
+            queryset = queryset.filter(is_active=False)
+        # "all" -> no filter
+
+        search = request.query_params.get("search")
+        if search:
+            queryset = queryset.filter(
+                Q(employee_first_name__icontains=search)
+                | Q(employee_last_name__icontains=search)
+                | Q(email__icontains=search)
+                | Q(employee_work_info__email__icontains=search)
+            )
+
+        queryset = queryset.order_by("employee_first_name", "employee_last_name")
+
+        paginator = self._Pagination()
+        page = paginator.paginate_queryset(queryset, request)
+        serializer = PMOEmployeeSerializer(page, many=True)
         return paginator.get_paginated_response(serializer.data)
 
 
@@ -826,18 +907,22 @@ class DocumentBulkApproveRejectAPIView(APIView):
         ids = request.data.get("ids", None)
         status = request.data.get("status", None)
         status_code = 200
+        response = []
 
-        if ids:
-            documents = Document.objects.filter(id__in=ids)
-            response = []
-            for document in documents:
-                if not document.document:
-                    status_code = 400
-                    response.append({"id": document.id, "error": "No documents"})
-                    continue
-                response.append({"id": document.id, "status": "success"})
-                document.status = status
-                document.save()
+        if not ids:
+            return Response(
+                {"error": "No document ids provided"}, status=400
+            )
+
+        documents = Document.objects.filter(id__in=ids)
+        for document in documents:
+            if not document.document:
+                status_code = 400
+                response.append({"id": document.id, "error": "No documents"})
+                continue
+            response.append({"id": document.id, "status": "success"})
+            document.status = status
+            document.save()
         return Response(response, status=status_code)
 
 

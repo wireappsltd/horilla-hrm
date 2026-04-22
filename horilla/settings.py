@@ -31,6 +31,7 @@ env = environ.Env(
     ),
     ALLOWED_HOSTS=(list, ["*"]),
     CSRF_TRUSTED_ORIGINS=(list, ["http://localhost:8000"]),
+    CORS_ALLOWED_ORIGINS=(list, []),
 )
 
 env.read_env(os.path.join(BASE_DIR, ".env"), overwrite=True)
@@ -193,6 +194,14 @@ MESSAGE_TAGS = {
 }
 
 CSRF_TRUSTED_ORIGINS = env("CSRF_TRUSTED_ORIGINS")
+
+# Cross-origin requests (for browser-based integrations such as PMO).
+# Empty by default -> django-cors-headers blocks all cross-origin calls,
+# which is the safe default. Provide a comma-separated list in the env
+# (e.g. CORS_ALLOWED_ORIGINS=https://pmo-alpha.vercel.app) to opt in.
+# For server-to-server integrations this can be left empty.
+CORS_ALLOWED_ORIGINS = env("CORS_ALLOWED_ORIGINS")
+CORS_ALLOW_CREDENTIALS = False
 
 LOGIN_URL = "/login"
 
