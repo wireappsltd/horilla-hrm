@@ -874,6 +874,20 @@ def ticket_detail(request, ticket_id, **kwargs):
                     }
                 )
 
+            # Include ISO review (approve/reject) as a timeline entry so the
+            # reviewer's comment/feedback is visible when the ticket is clicked.
+            if (
+                password_reset_request.reviewed_at
+                and password_reset_request.iso_status in ("APPROVED", "REJECTED")
+            ):
+                activity_list.append(
+                    {
+                        "type": "iso_review",
+                        "pr": password_reset_request,
+                        "date": password_reset_request.reviewed_at,
+                    }
+                )
+
         sorted_activity_list = sorted(activity_list, key=itemgetter("date"))
 
         color = "success"

@@ -301,8 +301,7 @@
                     {% endfor %}
                 </div>
             </div>
-            {% if not password_reset_request %}
-            {% if perms.helpdesk.add_comment or request.user.employee_get == ticket.employee_id or request.user.employee_get in ticket.assigned_to.all %}
+            {% if perms.helpdesk.add_comment or request.user.employee_get == ticket.employee_id or request.user.employee_get in ticket.assigned_to.all or is_iso_officer %}
             <div class="oh-helpdesk__chatbox">
                 <form name="comment-form" action="{% url 'comment-create' ticket.id %}" method="POST"
                     enctype="multipart/form-data" class="oh-chat oh-chat__input-wrapper">
@@ -336,7 +335,6 @@
                     });
                 </script>
             </div>
-            {% endif %}
             {% endif %}
             <!-- end of comment box. -->
         </div>

@@ -300,6 +300,7 @@ class PasswordResetRequest(HorillaModel):
             "is_active",
             "modified_by",
             "created_by",
+            "user_id",
         ],
     )
 
