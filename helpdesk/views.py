@@ -1154,7 +1154,7 @@ def ticket_change_assignees(request, ticket_id):
                         new_email = ""
                         try:
                             new_email = (
-                                new_employee.employee_work_info.company_email or ""
+                                new_employee.employee_work_info.email or ""
                             )
                         except Exception:
                             new_email = ""
