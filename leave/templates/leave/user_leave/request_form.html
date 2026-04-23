@@ -53,7 +53,10 @@
                     </label>
                 </div>
 
-                {{ form.attachment|add_class:"form-control oh-input w-100" }}
+
+                <span style="display: inline-block;">
+                    {{ form.attachment|attr:"style:display:inline-block; width:auto; max-width:97%; padding:0.4rem 0.6rem; border:1px solid hsl(213, 22%, 84%); background-color:#fff;" }}
+                </span>
 
                 {% if form.attachment.errors %}
                     <div class="text-danger text-sm mt-1">
@@ -129,4 +132,60 @@
         textarea.addEventListener("input", updateCounter);
         updateCounter();
     });
+
+    // Preserve the leave-request attachment across validation-failure re-renders.
+    // HTMX replaces the form HTML on error, wiping the native file input. We cache
+    // the selected File in memory and re-apply it to the new input via DataTransfer.
+    // Matches any form containing #id_attachment so it covers Apply Leave, My Leave
+    // Request, and the admin Leave Request modals.
+    if (!window.__leaveRequestAttachmentHandlerBound) {
+        window.__leaveRequestAttachmentHandlerBound = true;
+
+        document.body.addEventListener("htmx:beforeRequest", function (event) {
+            const el = event.target;
+            if (!el || !el.closest) return;
+            const form = el.tagName === "FORM" ? el : el.closest("form");
+            if (!form) return;
+            const input = form.querySelector("#id_attachment")
+                || form.querySelector('input[type="file"][name="attachment"]');
+            if (input && input.files && input.files.length > 0) {
+                window.__leaveRequestAttachmentFile = input.files[0];
+            }
+        });
+
+        document.body.addEventListener("htmx:afterSwap", function (event) {
+            const target = event.target;
+            if (!target || !target.querySelector) return;
+            const newInput = target.querySelector("#id_attachment")
+                || target.querySelector('input[type="file"][name="attachment"]');
+            if (!newInput) return;
+
+            // Only restore when the swap is a validation-failure re-render. If
+            // there are no field errors, treat it as a fresh form and drop the
+            // cached file to avoid leaking it into a later session.
+            const hasErrors = target.querySelector(".errorlist, .text-danger") !== null;
+            const cachedFile = window.__leaveRequestAttachmentFile;
+            if (!hasErrors || !cachedFile) {
+                window.__leaveRequestAttachmentFile = null;
+                return;
+            }
+            if (newInput.files && newInput.files.length > 0) return;
+
+            try {
+                const dt = new DataTransfer();
+                dt.items.add(cachedFile);
+                newInput.files = dt.files;
+                newInput.dispatchEvent(new Event("change", { bubbles: true }));
+            } catch (err) {
+                // DataTransfer unsupported on this browser; user will need to re-upload.
+            }
+        });
+
+        // Clear the cache when the modal is dismissed so a later open starts clean.
+        document.body.addEventListener("click", function (event) {
+            if (event.target.closest && event.target.closest(".oh-modal__close")) {
+                window.__leaveRequestAttachmentFile = null;
+            }
+        });
+    }
 </script>
