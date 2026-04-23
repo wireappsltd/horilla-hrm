@@ -22,6 +22,29 @@
 </div>
 
 <script>
+    // Constrain the attachment input's click target to the native control.
+    // The shared horilla_form.html applies form-control/w-100 to every field,
+    // which stretches the file input across the row — browsers then treat the
+    // whole stretched box as the file-picker trigger. Strip those classes and
+    // apply an inline style so clicking row whitespace no longer opens the
+    // file dialog.
+    (function () {
+        const form = document.getElementById("leaveRequestCreateForm");
+        if (!form) return;
+        const input = form.querySelector("#id_attachment")
+            || form.querySelector('input[type="file"][name="attachment"]');
+        if (!input) return;
+        input.classList.remove("form-control", "w-100");
+        input.style.display = "inline-block";
+        input.style.width = "auto";
+        input.style.maxWidth = "100%";
+        input.style.padding = "0.4rem 0.6rem";
+        input.style.border = "1px solid hsl(213, 22%, 84%)";
+        input.style.backgroundColor = "#fff";
+    })();
+</script>
+
+<script>
     // Preserve the leave-request attachment across validation-failure re-renders.
     // HTMX replaces the form HTML on error, wiping the native file input. We cache
     // the selected File in memory and re-apply it to the new input via DataTransfer.
