@@ -53,7 +53,10 @@
                     </label>
                 </div>
 
-                {{ form.attachment|add_class:"form-control oh-input w-100" }}
+
+                <span style="display: inline-block;">
+                    {{ form.attachment|attr:"style:display:inline-block; width:auto; max-width:97%; padding:0.4rem 0.6rem; border:1px solid hsl(213, 22%, 84%); background-color:#fff;" }}
+                </span>
 
                 {% if form.attachment.errors %}
                     <div class="text-danger text-sm mt-1">
