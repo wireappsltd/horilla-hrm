@@ -483,8 +483,8 @@
                                 <span class="helpdesk__card-value">{{ password_reset_request.platform }}</span>
                             </li>
                             <li class="helpdesk__card-item">
-                                <span class="helpdesk__card-label">{% trans "User ID:" %}</span>
-                                <span class="helpdesk__card-value">{{ password_reset_request.user_id|default:ticket.employee_id }}</span>
+                                <span class="helpdesk__card-label">{% trans "User:" %}</span>
+                                <span class="helpdesk__card-value">{{ ticket.employee_id.get_full_name|default:password_reset_request.user_id }}</span>
                             </li>
                             {% if password_reset_request.reviewed_by %}
                             <li class="helpdesk__card-item">

@@ -314,6 +314,10 @@ class PasswordResetRequestForm(forms.ModelForm):
             ).distinct()
             if saved_forward.exists():
                 self.fields["forward_to"].initial = saved_forward
+                # Override ModelForm's auto-populated initial (which includes
+                # users that were removed from the ISO group) with the
+                # filtered queryset.
+                self.initial["forward_to"] = list(saved_forward.values_list("pk", flat=True))
             else:
                 # Fallback: map raised_on Employee IDs → User objects (for legacy data)
                 existing_ids = [
@@ -322,14 +326,15 @@ class PasswordResetRequestForm(forms.ModelForm):
                     if rid.strip()
                 ]
                 if existing_ids:
-                    self.fields["forward_to"].initial = iso_user_qs.filter(
-                        employee_get__id__in=existing_ids
-                    )
+                    fallback_qs = iso_user_qs.filter(employee_get__id__in=existing_ids)
+                    self.fields["forward_to"].initial = fallback_qs
+                    self.initial["forward_to"] = list(fallback_qs.values_list("pk", flat=True))
                 else:
                     self.fields["forward_to"].initial = iso_user_qs
+                    self.initial["forward_to"] = list(iso_user_qs.values_list("pk", flat=True))
         else:
             # New form: default to all ISO group members
-            self.initial["forward_to"] = iso_user_qs
+            self.initial["forward_to"] = list(iso_user_qs.values_list("pk", flat=True))
 
         # If editing, pre-populate priority and deadline from the linked ticket
         if self.instance and self.instance.pk and hasattr(self.instance, "ticket") and self.instance.ticket:
