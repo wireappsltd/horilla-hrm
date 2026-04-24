@@ -2387,6 +2387,22 @@ def payslip_super_detailed_export(request):
 
     start_date_from = request.GET.get("start_date_from")
     start_date_till = request.GET.get("start_date_till")
+    if start_date_from and start_date_till:
+        try:
+            _sdf = datetime.strptime(start_date_from, "%Y-%m-%d").date()
+            _sdt = datetime.strptime(start_date_till, "%Y-%m-%d").date()
+        except (TypeError, ValueError):
+            _sdf = _sdt = None
+        if _sdf and _sdt:
+            if _sdt < _sdf:
+                messages.error(request, _("End date must be after start date."))
+                return redirect(request.META.get("HTTP_REFERER", "/"))
+            # Enforce max 30-day inclusive range (not 31 days)
+            if (_sdt - _sdf).days + 1 > 30:
+                messages.error(
+                    request, _("Date range cannot exceed 30 days.")
+                )
+                return redirect(request.META.get("HTTP_REFERER", "/"))
     if start_date_from:
         payslips = payslips.filter(start_date__gte=start_date_from)
     if start_date_till:

@@ -596,7 +596,7 @@
         errorEl.style.display = "block";
         return;
       }
-      var diffDays = Math.round((end - start) / (1000 * 60 * 60 * 24));
+      var diffDays = Math.round((end - start) / (1000 * 60 * 60 * 24)) + 1;
       if (diffDays > 30) {
         e.preventDefault();
         errorEl.textContent = "{% trans 'Date range cannot exceed 30 days.' %}";
