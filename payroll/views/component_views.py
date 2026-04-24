@@ -2403,10 +2403,19 @@ def payslip_super_detailed_export(request):
                     request, _("Date range cannot exceed 30 days.")
                 )
                 return redirect(request.META.get("HTTP_REFERER", "/"))
+    # Strictly include only payslips whose entire period (start_date..end_date)
+    # falls within the selected date range. Records partially overlapping the
+    # boundaries must be excluded.
     if start_date_from:
-        payslips = payslips.filter(start_date__gte=start_date_from)
+        payslips = payslips.filter(
+            start_date__gte=start_date_from,
+            end_date__gte=start_date_from,
+        )
     if start_date_till:
-        payslips = payslips.filter(start_date__lte=start_date_till)
+        payslips = payslips.filter(
+            start_date__lte=start_date_till,
+            end_date__lte=start_date_till,
+        )
 
 
     all_allowance_titles = set()
