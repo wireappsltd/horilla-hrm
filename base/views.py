@@ -871,6 +871,48 @@ def _otp_lockout_cache_key(user):
     return f"otp_lockout:{user_id}"
 
 
+def _otp_attempts_cache_key(user):
+    """Return the cache key used to store the OTP attempt count for a user."""
+    user_id = getattr(user, "pk", None) or getattr(user, "id", None) or "anon"
+    return f"otp_attempts:{user_id}"
+
+
+def get_otp_attempts(user):
+    """Return the current number of failed OTP attempts for the given user."""
+    from django.core.cache import cache
+
+    if not getattr(user, "is_authenticated", False):
+        return 0
+    return int(cache.get(_otp_attempts_cache_key(user)) or 0)
+
+
+def increment_otp_attempts(user):
+    """
+    Increment and return the number of failed OTP attempts for the given
+    user. The counter is stored in the cache (keyed by user) so that it
+    cannot be bypassed by logging out and starting a new session.
+    """
+    from django.core.cache import cache
+
+    if not getattr(user, "is_authenticated", False):
+        return 0
+    key = _otp_attempts_cache_key(user)
+    attempts = int(cache.get(key) or 0) + 1
+    # Keep the counter alive at least as long as the lockout window so that
+    # repeated re-logins cannot reset the count.
+    cache.set(key, attempts, timeout=OTP_LOCKOUT_SECONDS)
+    return attempts
+
+
+def reset_otp_attempts(user):
+    """Clear the failed-OTP-attempt counter for the given user."""
+    from django.core.cache import cache
+
+    if not getattr(user, "is_authenticated", False):
+        return
+    cache.delete(_otp_attempts_cache_key(user))
+
+
 def get_otp_lockout_remaining(user):
     """
     Return the number of seconds remaining on the OTP lockout for the given
@@ -902,6 +944,9 @@ def set_otp_lockout(user):
         expires_at,
         timeout=OTP_LOCKOUT_SECONDS,
     )
+    # Also clear the failed-attempt counter so it starts fresh after the
+    # cooldown expires.
+    reset_otp_attempts(user)
 
 
 @never_cache
@@ -949,11 +994,14 @@ def two_factor_auth(request):
             request.session["otp_code_verified"] = True
             request.session["otp_attempts"] = 0
             request.session.save()
+            reset_otp_attempts(request.user)
             messages.success(request, _("OTP verified successfully."))
             return redirect("/")
 
-        # Invalid or expired OTP: count this as a failed attempt.
-        attempts = int(request.session.get("otp_attempts", 0)) + 1
+        # Invalid or expired OTP: count this as a failed attempt. The
+        # counter is tracked in the cache (keyed by user) so that it
+        # cannot be reset by logging out and starting a new session.
+        attempts = increment_otp_attempts(request.user)
         request.session["otp_attempts"] = attempts
         request.session.save()
 
@@ -1002,9 +1050,10 @@ def two_factor_auth(request):
         return redirect("/")
 
     if otp is None:
-        # New OTP is being generated; reset the failed-attempt counter.
-        request.session["otp_attempts"] = 0
-        request.session.save()
+        # Generate a fresh OTP. Note: the failed-attempt counter is
+        # intentionally NOT reset here — it is tracked per user in the
+        # cache so that requesting a new OTP cannot be used to bypass
+        # the attempt limit.
         send_otp(request)
     return render(request, "base/auth/two_factor_auth.html")
 
