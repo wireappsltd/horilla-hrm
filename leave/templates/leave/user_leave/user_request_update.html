@@ -143,6 +143,21 @@
         input.style.padding = "0.4rem 0.6rem";
         input.style.border = "1px solid hsl(213, 22%, 84%)";
         input.style.backgroundColor = "#fff";
+
+        // Truncate the "Currently: <filename>" link so long names don't
+        // overflow the modal. Preserve the full name as a hover tooltip.
+        const wrapper = input.parentElement;
+        if (wrapper) {
+            wrapper.querySelectorAll('a[href]').forEach(function (link) {
+                link.title = link.textContent.trim();
+                link.style.display = "inline-block";
+                link.style.maxWidth = "260px";
+                link.style.overflow = "hidden";
+                link.style.textOverflow = "ellipsis";
+                link.style.whiteSpace = "nowrap";
+                link.style.verticalAlign = "middle";
+            });
+        }
     })();
 </script>
 
