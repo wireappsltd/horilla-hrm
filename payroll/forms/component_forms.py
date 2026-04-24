@@ -928,7 +928,9 @@ class ReimbursementForm(ModelForm):
         self.fields.pop("attachment", None)
         self.fields["attachment"] = MultipleFileField(
             label="Attachments",
-            required=True,
+            # On edit, an attachment already exists on the instance,
+            # so do not force the user to re-upload one just to save changes.
+            required=not is_edit,
         )
         self.fields["attachment"].widget.attrs["accept"] = (
             ".jpg, .jpeg, .png, .pdf, .docx"
@@ -936,6 +938,19 @@ class ReimbursementForm(ModelForm):
 
         if is_edit:
             self.initial["attachment"] = None
+            # Keep the original type visible in the (hidden) form field even
+            # if the incoming POST data somehow carries a different value.
+            # This prevents the form from silently switching between
+            # Reimbursement / Leave Encashment / Bonus Encashment on re-render.
+            original_type = self.instance.type
+            self.initial["type"] = original_type
+            if hasattr(self.data, "_mutable"):
+                was_mutable = self.data._mutable
+                self.data._mutable = True
+                self.data["type"] = original_type
+                self.data._mutable = was_mutable
+            elif isinstance(self.data, dict):
+                self.data["type"] = original_type
 
         self.exclude_fields_by_type(exclude_fields)
 
@@ -1108,6 +1123,18 @@ class ReimbursementForm(ModelForm):
 
         if not self.instance.employee_id_id:
             self.instance.employee_id = self.employee
+
+        # Never allow the request type to change when editing an existing
+        # reimbursement; always preserve the originally persisted type so
+        # the form cannot silently switch to a different kind of request.
+        if not is_new:
+            original_type = (
+                self.instance.__class__.objects.filter(pk=self.instance.pk)
+                .values_list("type", flat=True)
+                .first()
+            )
+            if original_type:
+                self.instance.type = original_type
 
         if not attachments:
             temp_paths = self.data.get("temp_attachment_paths", "")
