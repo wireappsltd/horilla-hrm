@@ -1186,22 +1186,10 @@ def ticket_change_assignees(request, ticket_id):
                             pr_request.user_id = new_email
                             pr_request.save()
 
-                        # Audit comment
-                        try:
-                            reviewer_emp = request.user.employee_get
-                            old_name = _format_password_reset_user(old_employee)
-                            new_name = _format_password_reset_user(new_employee)
-                            Comment.objects.create(
-                                comment=(
-                                    f"<strong>Assignee Changed</strong><br>"
-                                    f"Changed from <strong>{old_name}</strong> "
-                                    f"to <strong>{new_name}</strong>."
-                                ),
-                                ticket=ticket,
-                                employee_id=reviewer_emp,
-                            )
-                        except Exception as exc:
-                            logger.error("Assignee change audit comment error: %s", exc)
+                        # Note: The owner/assignee change is already recorded
+                        # automatically by horilla_audit history on ticket.save(),
+                        # so we intentionally do not create an extra Comment here
+                        # to avoid duplicate audit log entries on the request view.
 
                 mail_thread = AddAssigneeThread(
                     request,
