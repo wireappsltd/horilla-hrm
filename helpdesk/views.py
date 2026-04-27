@@ -1416,7 +1416,7 @@ def comment_edit(request):
         comment.save()
         messages.success(request, _("The comment updated successfully."))
     else:
-        messages.error(request, _("The comment needs to be atleast 2 charactors."))
+        messages.error(request, _("The comment needs to be at least 2 characters."))
     response = {
         "errors": "no_error",
     }
