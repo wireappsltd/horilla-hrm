@@ -877,15 +877,6 @@ def _otp_attempts_cache_key(user):
     return f"otp_attempts:{user_id}"
 
 
-def get_otp_attempts(user):
-    """Return the current number of failed OTP attempts for the given user."""
-    from django.core.cache import cache
-
-    if not getattr(user, "is_authenticated", False):
-        return 0
-    return int(cache.get(_otp_attempts_cache_key(user)) or 0)
-
-
 def increment_otp_attempts(user):
     """
     Increment and return the number of failed OTP attempts for the given
