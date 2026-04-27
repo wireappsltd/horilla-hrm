@@ -246,7 +246,7 @@ class PasswordResetRequestForm(forms.ModelForm):
         if not selected_employee and self.instance and self.instance.pk and self.instance.user_id:
             try:
                 selected_employee = Employee.objects.get(
-                    employee_work_info__company_email=self.instance.user_id
+                    employee_work_info__email=self.instance.user_id
                 )
             except Exception:
                 selected_employee = None
@@ -373,13 +373,13 @@ class PasswordResetRequestForm(forms.ModelForm):
     def save(self, commit=True):
         is_new = self.instance.pk is None
         instance = super().save(commit=False)
-        # Derive user_id from the selected employee's company email,
+        # Derive user_id from the selected employee's work email,
         # falling back to the auth user's email if not available.
         employee = self.cleaned_data.get("employee")
         if employee:
             email = ""
             try:
-                email = employee.employee_work_info.company_email or ""
+                email = employee.employee_work_info.email or ""
             except Exception:
                 pass
             if not email:
