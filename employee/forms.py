@@ -515,12 +515,27 @@ class EmployeeWorkInformationForm(ModelForm):
                 "basic_salary",
                 _("Basic salary must be greater than zero.")
             )
+        if not date_joining and not self.has_error("date_joining"):
+            self.add_error(
+                "date_joining",
+                _("This field is required.")
+            )
+        if not probation_period_end and not self.has_error("probation_end_date"):
+            self.add_error(
+                "probation_end_date",
+                _("This field is required.")
+            )
         if date_joining and probation_period_end and probation_period_end < date_joining:
             self.add_error(
                 "probation_end_date",
                 _("Probation end date cannot be earlier than date of joining.")
             )
 
+        if not email and not self.has_error("email"):
+            self.add_error(
+                "email",
+                _("This field is required.")
+            )
         if email:
             try:
                 validate_email(email)
@@ -605,12 +620,27 @@ class EmployeeWorkInformationUpdateForm(ModelForm):
                 _("Basic salary must be greater than zero.")
             )
 
+        if not email and not self.has_error("email"):
+            self.add_error(
+                "email",
+                _("This field is required.")
+            )
         if email:
             try:
                 validate_email(email)
             except ValidationError:
                 self.add_error("email", _("Enter a valid email address."))
 
+        if not date_joining and not self.has_error("date_joining"):
+            self.add_error(
+                "date_joining",
+                _("This field is required.")
+            )
+        if not probation_period_end and not self.has_error("probation_end_date"):
+            self.add_error(
+                "probation_end_date",
+                _("This field is required.")
+            )
         if date_joining and probation_period_end and probation_period_end < date_joining:
             self.add_error(
                 "probation_end_date",
