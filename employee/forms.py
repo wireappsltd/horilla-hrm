@@ -432,6 +432,10 @@ class EmployeeWorkInformationForm(ModelForm):
         intern_employee_type_id = get_intern_employee_type_id()
         self.fields["email"].widget.attrs["autocomplete"] = "email"
 
+        for required_field in ("email", "date_joining", "probation_end_date"):
+            if required_field in self.fields:
+                self.fields[required_field].required = True
+
         self.fields["job_position_id"].widget.attrs.update(
             {
                 "onchange": "jobChange($(this))",
@@ -511,28 +515,10 @@ class EmployeeWorkInformationForm(ModelForm):
                 "basic_salary",
                 _("Basic salary must be greater than zero.")
             )
-        if not date_joining:
-            self.add_error(
-                "date_joining",
-                _("This field is required.")
-            )
-        if not probation_period_end:
+        if date_joining and probation_period_end and probation_period_end < date_joining:
             self.add_error(
                 "probation_end_date",
-                _("This field is required.")
-            )
-        if date_joining:
-            if probation_period_end and probation_period_end < date_joining:
-                self.add_error(
-                    "probation_end_date",
-                    _("Probation end date cannot be earlier than date of joining.")
-                )
-
-
-        if not email:
-            self.add_error(
-                "email",
-                _("This field is required.")
+                _("Probation end date cannot be earlier than date of joining.")
             )
 
         if email:
@@ -579,6 +565,10 @@ class EmployeeWorkInformationUpdateForm(ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
+        for required_field in ("email", "date_joining", "probation_end_date"):
+            if required_field in self.fields:
+                self.fields[required_field].required = True
+
         if "employee_type_id" in self.fields:
             self.fields["employee_type_id"].widget.attrs["data-intern-type-id"] = (
                 get_intern_employee_type_id()
@@ -615,33 +605,17 @@ class EmployeeWorkInformationUpdateForm(ModelForm):
                 _("Basic salary must be greater than zero.")
             )
 
-        if not email:
-            self.add_error(
-                "email",
-                _("This field is required.")
-            )
         if email:
             try:
                 validate_email(email)
             except ValidationError:
                 self.add_error("email", _("Enter a valid email address."))
 
-        if not date_joining:
-            self.add_error(
-                "date_joining",
-                _("This field is required.")
-            )
-        if not probation_period_end:
+        if date_joining and probation_period_end and probation_period_end < date_joining:
             self.add_error(
                 "probation_end_date",
-                _("This field is required.")
+                _("Probation end date cannot be earlier than date of joining.")
             )
-        if date_joining:
-            if probation_period_end and probation_period_end < date_joining:
-                self.add_error(
-                    "probation_end_date",
-                    _("Probation end date cannot be earlier than date of joining.")
-                )
 
 
         if work_phone:
