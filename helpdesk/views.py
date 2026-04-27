@@ -2217,6 +2217,12 @@ def password_reset_request_create(request):
             # forward_to is M2M to User – selected_forward_users are already
             # User objects (from the ModelMultipleChoiceField), so set directly.
             pr_request.forward_to.set(selected_forward_users)
+            # Fold the m2m_changed-triggered '~' history record into the '+'
+            # create record so the timeline only shows "Created the ticket"
+            # on first save (and not a spurious "changed Forward to from None
+            # to <ISO officers>" entry). Subsequent forward_to edits remain
+            # tracked normally.
+            PasswordResetRequestForm._consolidate_create_history(pr_request)
 
             notification_actor = getattr(request.user, "employee_get", selected_employee)
 

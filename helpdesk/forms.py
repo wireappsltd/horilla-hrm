@@ -371,6 +371,7 @@ class PasswordResetRequestForm(forms.ModelForm):
         return deadline
 
     def save(self, commit=True):
+        is_new = self.instance.pk is None
         instance = super().save(commit=False)
         # Derive user_id from the selected employee's company email,
         # falling back to the auth user's email if not available.
@@ -395,7 +396,61 @@ class PasswordResetRequestForm(forms.ModelForm):
         if commit:
             instance.save()
             instance.forward_to.set(self.cleaned_data.get("forward_to", []))
+            if is_new:
+                self._consolidate_create_history(instance)
         return instance
+
+    @staticmethod
+    def _consolidate_create_history(instance):
+        """
+        On initial creation, simple_history records a '+' (create) entry with
+        an empty ``forward_to`` snapshot, followed by one or more '~' entries
+        triggered by the m2m_changed signal when the default ISO recipients
+        are assigned. The diff between them produces a misleading
+        "changed Forward to from None to None" audit log entry, even though
+        the user did not intentionally change the field.
+
+        Consolidate the auto-generated entries into the create record so the
+        audit log shows only "Created the ticket" on first save, while still
+        capturing the actual initial ``forward_to`` membership for future
+        diffs.
+        """
+        try:
+            history_qs = instance.history.all().order_by(
+                "history_date", "history_id"
+            )
+            create_entry = history_qs.filter(history_type="+").first()
+            if not create_entry:
+                return
+            extra_entries = list(history_qs.exclude(pk=create_entry.pk))
+            if not extra_entries:
+                return
+            latest_entry = extra_entries[-1]
+            # Resolve the m2m history model attached to the historical record
+            # via simple_history's HistoryDescriptor.
+            try:
+                m2m_history_model = type(create_entry).forward_to.model
+            except Exception:
+                m2m_history_model = None
+            if m2m_history_model is not None:
+                # Replace the (empty) m2m snapshot on the create entry with
+                # the latest snapshot taken after ``forward_to.set(...)``.
+                # NOTE: simple_history's ``m2m_history_id`` is the m2m row's
+                # own PK; the FK pointing to the parent historical record is
+                # ``history`` (column ``history_id``).
+                m2m_history_model.objects.filter(
+                    history_id=create_entry.pk
+                ).delete()
+                m2m_history_model.objects.filter(
+                    history_id=latest_entry.pk
+                ).update(history_id=create_entry.pk)
+            # Drop the redundant '~' entries (their remaining m2m rows, if
+            # any, cascade-delete via FK).
+            for entry in extra_entries:
+                entry.delete()
+        except Exception:
+            # Audit-log consolidation must never block the save flow.
+            pass
 
 
 class ISOReviewForm(forms.Form):
