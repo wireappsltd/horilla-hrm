@@ -1044,8 +1044,12 @@ def validate_start_date(request):
         response["valid"] = False
 
     if end_datetime is not None:
-        if end_datetime > datetime.today().date():
-            error_message = '<ul class="errorlist"><li>The end date cannot be in the future.</li></ul>'
+        max_allowed = datetime.today().date() + timedelta(days=3)
+        if end_datetime > max_allowed:
+            error_message = (
+                '<ul class="errorlist"><li>The end date cannot be more than 3 '
+                "days in the future.</li></ul>"
+            )
             response["message"] = error_message
             response["valid"] = False
     return JsonResponse(response)
