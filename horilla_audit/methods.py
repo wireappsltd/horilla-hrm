@@ -76,47 +76,71 @@ def filter_history(histories, track_fields):
 def _format_m2m_values(rows, related_model):
     """
     Convert M2M through-table row dicts to a readable comma-separated string.
-    Each row is a dict like {'user_id': 5, 'passwordresetrequest_id': 3}.
-    We resolve the FK pointing to the related_model to get display names.
+    Each row is a dict like {'user_id': 5, 'passwordresetrequest_id': 3} or
+    {'user': 5, 'passwordresetrequest': 3} depending on how the values were
+    extracted from the through model. We resolve the FK pointing to the
+    related_model to get display names.
     """
     if not rows:
         return "None"
     names = []
     # Determine which key in the row dicts corresponds to the related model
-    # by matching the model name (e.g., User -> 'user_id')
+    # by matching the model name. simple_history's diff_against pulls rows via
+    # ``QuerySet.values(*field_names)`` using the through-model FK *field*
+    # names (e.g. ``user``), not the underlying ``<field>_id`` column names,
+    # so we must look up both forms.
     model_name = related_model.__name__.lower()
-    target_key = f"{model_name}_id"
+    candidate_keys = (model_name, f"{model_name}_id")
+
+    skip_keys = {"id", "m2m_history_id", "history", "history_id"}
 
     for row in rows:
-        pk_value = row.get(target_key)
+        pk_value = None
+        # Prefer keys that match the related model name
+        for key in candidate_keys:
+            if key in row and row[key] is not None:
+                pk_value = row[key]
+                break
         if pk_value is None:
-            # Fallback: try any key ending in _id that resolves to the related model
+            # Fallback: try any non-housekeeping key that resolves to the
+            # related model (handles arbitrary through-model field names).
             for key, value in row.items():
-                if key.endswith("_id") and value:
-                    try:
-                        obj = related_model.objects.get(pk=value)
-                        pk_value = value
-                        break
-                    except Exception:
-                        continue
-        if pk_value is not None:
+                if not value or key in skip_keys:
+                    continue
+                # Skip the source-model FK (e.g. ``passwordresetrequest`` /
+                # ``passwordresetrequest_id``) so we resolve the correct side
+                # of the M2M relationship.
+                stripped = key[:-3] if key.endswith("_id") else key
+                if stripped == model_name or stripped.endswith(model_name):
+                    pk_value = value
+                    break
+        if pk_value is None:
+            continue
+        # ``foreign_keys_are_objs`` mode in simple_history may already give us
+        # a model instance instead of a raw pk.
+        if isinstance(pk_value, related_model):
+            obj = pk_value
+        else:
             try:
                 obj = related_model.objects.get(pk=pk_value)
-                # Try employee display name
-                if hasattr(obj, "employee_get"):
-                    try:
-                        names.append(obj.employee_get.get_full_name())
-                        continue
-                    except Exception:
-                        pass
-                if hasattr(obj, "get_full_name"):
-                    name = obj.get_full_name()
-                    if name:
-                        names.append(name)
-                        continue
-                names.append(str(obj))
             except Exception:
                 names.append(str(pk_value))
+                continue
+        # Try employee display name first (for User -> Employee chain)
+        if hasattr(obj, "employee_get"):
+            try:
+                full_name = obj.employee_get.get_full_name()
+                if full_name:
+                    names.append(full_name)
+                    continue
+            except Exception:
+                pass
+        if hasattr(obj, "get_full_name"):
+            full_name = obj.get_full_name()
+            if full_name:
+                names.append(full_name)
+                continue
+        names.append(str(obj))
     return ", ".join(names) if names else "None"
 
 

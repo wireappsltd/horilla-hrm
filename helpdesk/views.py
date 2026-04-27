@@ -1186,22 +1186,10 @@ def ticket_change_assignees(request, ticket_id):
                             pr_request.user_id = new_email
                             pr_request.save()
 
-                        # Audit comment
-                        try:
-                            reviewer_emp = request.user.employee_get
-                            old_name = _format_password_reset_user(old_employee)
-                            new_name = _format_password_reset_user(new_employee)
-                            Comment.objects.create(
-                                comment=(
-                                    f"<strong>Assignee Changed</strong><br>"
-                                    f"Changed from <strong>{old_name}</strong> "
-                                    f"to <strong>{new_name}</strong>."
-                                ),
-                                ticket=ticket,
-                                employee_id=reviewer_emp,
-                            )
-                        except Exception as exc:
-                            logger.error("Assignee change audit comment error: %s", exc)
+                        # Note: The owner/assignee change is already recorded
+                        # automatically by horilla_audit history on ticket.save(),
+                        # so we intentionally do not create an extra Comment here
+                        # to avoid duplicate audit log entries on the request view.
 
                 mail_thread = AddAssigneeThread(
                     request,
@@ -1404,14 +1392,31 @@ def comment_create(request, ticket_id):
 def comment_edit(request):
     comment_id = request.POST.get("comment_id")
     new_comment = request.POST.get("new_comment")
-    if len(new_comment) > 1:
-        comment = Comment.objects.get(id=comment_id)
+    comment = Comment.objects.filter(id=comment_id).first()
+    if not comment:
+        return JsonResponse({"errors": "not_found"}, status=404)
+
+    employee = getattr(request.user, "employee_get", None)
+    is_dept_manager = False
+    try:
+        if comment.ticket_id:
+            is_dept_manager = is_department_manager(request, comment.ticket_id)
+    except Exception:
+        is_dept_manager = False
+
+    if not (
+        request.user.has_perm("helpdesk.change_comment")
+        or comment.employee_id == employee
+        or is_dept_manager
+    ):
+        return JsonResponse({"errors": "permission_denied"}, status=403)
+
+    if new_comment and len(new_comment) > 1:
         comment.comment = new_comment
         comment.save()
         messages.success(request, _("The comment updated successfully."))
-
     else:
-        messages.error(request, _("The comment needs to be atleast 2 charactors."))
+        messages.error(request, _("The comment needs to be at least 2 characters."))
     response = {
         "errors": "no_error",
     }
@@ -1419,12 +1424,31 @@ def comment_edit(request):
 
 
 @login_required
-@permission_required("helpdesk.delete_comment")
 def comment_delete(request, comment_id):
     comment = Comment.objects.filter(id=comment_id).first()
-    employee = comment.employee_id
+    if not comment:
+        messages.error(request, _("Comment not found."))
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    employee = getattr(request.user, "employee_get", None)
+    is_dept_manager = False
+    try:
+        if comment.ticket_id:
+            is_dept_manager = is_department_manager(request, comment.ticket_id)
+    except Exception:
+        is_dept_manager = False
+
+    if not (
+        request.user.has_perm("helpdesk.delete_comment")
+        or comment.employee_id == employee
+        or is_dept_manager
+    ):
+        messages.error(request, _("You do not have permission to delete this comment."))
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    employee_name = comment.employee_id
     comment.delete()
-    messages.success(request, _("{}'s comment has been deleted successfully.").format(employee))
+    messages.success(request, _("{}'s comment has been deleted successfully.").format(employee_name))
     return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
 
 
@@ -2229,6 +2253,12 @@ def password_reset_request_create(request):
             # forward_to is M2M to User – selected_forward_users are already
             # User objects (from the ModelMultipleChoiceField), so set directly.
             pr_request.forward_to.set(selected_forward_users)
+            # Fold the m2m_changed-triggered '~' history record into the '+'
+            # create record so the timeline only shows "Created the ticket"
+            # on first save (and not a spurious "changed Forward to from None
+            # to <ISO officers>" entry). Subsequent forward_to edits remain
+            # tracked normally.
+            PasswordResetRequestForm._consolidate_create_history(pr_request)
 
             notification_actor = getattr(request.user, "employee_get", selected_employee)
 
