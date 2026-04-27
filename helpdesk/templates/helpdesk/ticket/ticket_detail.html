@@ -222,14 +222,14 @@
                             </div>
                             {% else %}
                             <div class="d-flex justify-content-between align-items-center comment_container">
-                                <div>
-                                    <textarea class="bg-transparent border-0 w-100 comment_input"
-                                        data-comment-id="{{item.comment.id}}">{{item.comment.comment}}</textarea>
+                                <div class="comment_content">
                                     {{item.comment.comment|safe}}
+                                    <textarea class="comment_raw_html d-none" readonly>{{item.comment.comment}}</textarea>
                                 </div>
                                 <div class="oh-btn-group" style="border:none">
                                     {% if request.user.employee_get|is_department_manager:ticket or perms.helpdesk.change_comment or request.user.employee_get == item.comment.employee_id %}
-                                    <a class="oh-btn p-3 edit_comment" title="{% trans 'Edit' %}">
+                                    <a class="oh-btn p-3 edit_comment" title="{% trans 'Edit' %}"
+                                        data-comment-id="{{item.comment.id}}">
                                         <ion-icon name="pencil-outline"></ion-icon>
                                     </a>
                                     {% endif %}
@@ -734,6 +734,35 @@
 </div>
 <!-- end of create tag modal. -->
 
+<!-- start of edit comment modal. -->
+<div class="oh-modal" id="editCommentModal" role="dialog" aria-labelledby="editCommentModalLabel" aria-hidden="true">
+    <div class="oh-modal__dialog oh-modal__dialog--lg">
+        <div class="oh-modal__dialog-header">
+            <h2 class="oh-modal__dialog-title" id="editCommentModalLabel">{% trans "Edit Comment" %}</h2>
+            <button class="oh-modal__close" aria-label="Close">
+                <ion-icon name="close-outline"></ion-icon>
+            </button>
+        </div>
+        <div class="oh-modal__dialog-body">
+            <form id="editCommentForm" onsubmit="saveEditedComment(event)">
+                {% csrf_token %}
+                <input type="hidden" name="comment_id" id="editCommentId" value="" />
+                <textarea name="new_comment" id="editCommentTextarea" data-summernote></textarea>
+                <div class="d-flex justify-content-end mt-3" style="gap: 8px;">
+                    <button type="button" class="oh-btn oh-btn--secondary"
+                        onclick="$('#editCommentModal').removeClass('oh-modal--show');">
+                        {% trans "Cancel" %}
+                    </button>
+                    <button type="submit" class="oh-btn oh-btn--primary">
+                        {% trans "Save" %}
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<!-- end of edit comment modal. -->
+
 <div class="oh-modal" id="viewFileModal" role="dialog" aria-labelledby="viewFileModal" aria-hidden="true">
     <div class="oh-modal__dialog custom-dialog">
         <div class="oh-modal__dialog-header">
@@ -927,40 +956,56 @@
     }
 
     $(document).ready(function () {
-        $('.comment_container textarea').hide();
+        // Initialize summernote on the edit comment editor (hidden until modal opens)
+        try {
+            $('#editCommentTextarea').summernote(noteProperties());
+        } catch (e) { /* summernote may already be initialized via data-summernote */ }
+
         $(".edit_comment").on("click", function () {
-            let container = $(this).closest('.comment_container')
-            let text = $(container).find('p')
-            let input = $(container).find('textarea')
-            $(text).hide()
-            $(input).show()
-            $(input).focus()
-            var length = input.val().length;
-            input[0].setSelectionRange(length, length);
-        })
-        $(".comment_input").on("keydown", function (event) {
-            if (event.keyCode === 13 && !event.shiftKey) {
-                event.preventDefault();
-                $(this).blur();
-            }
+            var container = $(this).closest('.comment_container');
+            var commentId = $(this).data("comment-id");
+            // Read the raw HTML stored inside the hidden textarea so the
+            // editor receives properly formatted markup (browser auto-decodes
+            // the entity-encoded HTML inside textarea's value).
+            var rawHtml = container.find('.comment_raw_html').val() || '';
+            $('#editCommentId').val(commentId);
+            $('#editCommentTextarea').summernote('code', rawHtml);
+            $('#editCommentModal').addClass('oh-modal--show');
+            setTimeout(function () {
+                $('#editCommentTextarea').summernote('focus');
+            }, 150);
         });
-        $(".comment_input").on('focusout', function () {
-            let newComment = $(this).val()
-            let commentId = $(this).data("comment-id")
-            $.ajax({
-                type: "post",
-                url: '{% url "comment-edit" %}',
-                data: {
-                    csrfmiddlewaretoken: getCookie("csrftoken"),
-                    "new_comment": newComment,
-                    "comment_id": commentId,
-                },
-                success: function (response) {
-                    window.location.reload()
-                },
-            })
-        })
-    })
+    });
+
+    function saveEditedComment(event) {
+        event.preventDefault();
+        var commentId = $('#editCommentId').val();
+        var newComment = $('#editCommentTextarea').summernote('code');
+        // Strip tags to validate min length similar to backend check.
+        var plain = $('<div>').html(newComment).text().trim();
+        if (plain.length < 2) {
+            $("#ohMessages").append(`
+                <div class="oh-alert-container">
+                    <div class="oh-alert oh-alert--animated oh-alert--danger">
+                        {% trans "The comment needs to be atleast 2 characters." %}
+                    </div>
+                </div>`);
+            return;
+        }
+        $.ajax({
+            type: "post",
+            url: '{% url "comment-edit" %}',
+            data: {
+                csrfmiddlewaretoken: getCookie("csrftoken"),
+                "new_comment": newComment,
+                "comment_id": commentId,
+            },
+            success: function (response) {
+                $('#editCommentModal').removeClass('oh-modal--show');
+                window.location.reload();
+            },
+        });
+    }
 </script>
 
 <div id="passwordResetModalTarget"></div>
