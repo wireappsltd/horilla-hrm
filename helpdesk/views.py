@@ -1392,12 +1392,29 @@ def comment_create(request, ticket_id):
 def comment_edit(request):
     comment_id = request.POST.get("comment_id")
     new_comment = request.POST.get("new_comment")
-    if len(new_comment) > 1:
-        comment = Comment.objects.get(id=comment_id)
+    comment = Comment.objects.filter(id=comment_id).first()
+    if not comment:
+        return JsonResponse({"errors": "not_found"}, status=404)
+
+    employee = getattr(request.user, "employee_get", None)
+    is_dept_manager = False
+    try:
+        if comment.ticket_id:
+            is_dept_manager = is_department_manager(request, comment.ticket_id)
+    except Exception:
+        is_dept_manager = False
+
+    if not (
+        request.user.has_perm("helpdesk.change_comment")
+        or comment.employee_id == employee
+        or is_dept_manager
+    ):
+        return JsonResponse({"errors": "permission_denied"}, status=403)
+
+    if new_comment and len(new_comment) > 1:
         comment.comment = new_comment
         comment.save()
         messages.success(request, _("The comment updated successfully."))
-
     else:
         messages.error(request, _("The comment needs to be atleast 2 charactors."))
     response = {
@@ -1407,12 +1424,31 @@ def comment_edit(request):
 
 
 @login_required
-@permission_required("helpdesk.delete_comment")
 def comment_delete(request, comment_id):
     comment = Comment.objects.filter(id=comment_id).first()
-    employee = comment.employee_id
+    if not comment:
+        messages.error(request, _("Comment not found."))
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    employee = getattr(request.user, "employee_get", None)
+    is_dept_manager = False
+    try:
+        if comment.ticket_id:
+            is_dept_manager = is_department_manager(request, comment.ticket_id)
+    except Exception:
+        is_dept_manager = False
+
+    if not (
+        request.user.has_perm("helpdesk.delete_comment")
+        or comment.employee_id == employee
+        or is_dept_manager
+    ):
+        messages.error(request, _("You do not have permission to delete this comment."))
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    employee_name = comment.employee_id
     comment.delete()
-    messages.success(request, _("{}'s comment has been deleted successfully.").format(employee))
+    messages.success(request, _("{}'s comment has been deleted successfully.").format(employee_name))
     return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
 
 

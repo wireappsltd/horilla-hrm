@@ -166,9 +166,32 @@
                                 <span class="oh-helpdesk__bubble-timestamp">{{item.comment.date}}</span>
                             </div>
                             <div class="oh-helpdesk__bubble-body">
+                                {% if item.comment.is_auto_generated %}
                                 <span class="oh-helpdesk__comment">
                                     {{item.comment.comment|safe}}
                                 </span>
+                                {% else %}
+                                <div class="d-flex justify-content-between align-items-center comment_container">
+                                    <span class="oh-helpdesk__comment comment_content">
+                                        {{item.comment.comment|safe}}
+                                        <textarea class="comment_raw_html d-none" readonly>{{item.comment.comment}}</textarea>
+                                    </span>
+                                    <div class="oh-btn-group" style="border:none">
+                                        {% if request.user.employee_get|is_department_manager:ticket or perms.helpdesk.change_comment or request.user.employee_get == item.comment.employee_id %}
+                                        <a class="oh-btn p-3 edit_comment" title="{% trans 'Edit' %}"
+                                            data-comment-id="{{item.comment.id}}">
+                                            <ion-icon name="pencil-outline"></ion-icon>
+                                        </a>
+                                        {% endif %}
+                                        {% if perms.helpdesk.delete_comment or request.user.employee_get == item.comment.employee_id %}
+                                        <a href="{% url 'comment-delete' item.comment.id %}" type="button"
+                                            title="{% trans 'Delete' %}" class="oh-btn p-3">
+                                            <ion-icon name="trash-outline"></ion-icon>
+                                        </a>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                                {% endif %}
                                 <div class="oh-scrollable-container">
                                     <div class="oh-layout--grid-3 mt-2 mb-2 horizontal-scroll">
                                         {% if item.comment.comment_attachment.all %}
@@ -233,7 +256,7 @@
                                         <ion-icon name="pencil-outline"></ion-icon>
                                     </a>
                                     {% endif %}
-                                    {% if perms.helpdesk.delete_comment %}
+                                    {% if perms.helpdesk.delete_comment or request.user.employee_get == item.comment.employee_id %}
                                     <a href="{% url 'comment-delete' item.comment.id %}" type="button"
                                         title="{% trans 'Delete' %}" class="oh-btn p-3">
                                         <ion-icon name="trash-outline"></ion-icon>
