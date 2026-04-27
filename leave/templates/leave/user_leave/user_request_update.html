@@ -123,6 +123,44 @@
     </form>
 </div>
 
+<script>
+    // Constrain the attachment input's click target to the native control.
+    // The template applies form-control/oh-input/w-100 which stretches the
+    // file input across the row — browsers then treat the whole stretched
+    // box as the file-picker trigger. Strip those classes and apply an
+    // inline style so clicking row whitespace no longer opens the file
+    // dialog.
+    (function () {
+        const form = document.getElementById("userLeaveForm");
+        if (!form) return;
+        const input = form.querySelector("#id_attachment")
+            || form.querySelector('input[type="file"][name="attachment"]');
+        if (!input) return;
+        input.classList.remove("form-control", "oh-input", "w-100");
+        input.style.display = "inline-block";
+        input.style.width = "auto";
+        input.style.maxWidth = "100%";
+        input.style.padding = "0.4rem 0.6rem";
+        input.style.border = "1px solid hsl(213, 22%, 84%)";
+        input.style.backgroundColor = "#fff";
+
+        // Truncate the "Currently: <filename>" link so long names don't
+        // overflow the modal. Preserve the full name as a hover tooltip.
+        const wrapper = input.parentElement;
+        if (wrapper) {
+            wrapper.querySelectorAll('a[href]').forEach(function (link) {
+                link.title = link.textContent.trim();
+                link.style.display = "inline-block";
+                link.style.maxWidth = "260px";
+                link.style.overflow = "hidden";
+                link.style.textOverflow = "ellipsis";
+                link.style.whiteSpace = "nowrap";
+                link.style.verticalAlign = "middle";
+            });
+        }
+    })();
+</script>
+
 {#{% if "recruitment"|app_installed %}#}
 {#    <script>#}
 {#        $("#userLeaveForm [type=submit]").hide();#}
