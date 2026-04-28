@@ -413,7 +413,7 @@ def calculate_allowance(**kwargs):
             "allowance_id": allowance.id,
             "title": allowance.title,
             "is_taxable": allowance.is_taxable,
-            "amount": amount,
+            "amount": round(float(amount), 2),
             "include_in_lop":allowance.include_in_lop
         }
         serialized_allowances.append(serialized_allowance)
@@ -424,7 +424,7 @@ def calculate_allowance(**kwargs):
             "allowance_id": allowance.id,
             "title": allowance.title,
             "is_taxable": allowance.is_taxable,
-            "amount": amount,
+            "amount": round(float(amount), 2),
             "include_in_lop": allowance.include_in_lop
         }
         serialized_allowances.append(serialized_allowance)
@@ -487,7 +487,7 @@ def calculate_tax_deduction(*_args, **kwargs):
             "deduction_id": deduction.id,
             "title": deduction.title,
             "is_tax": deduction.is_tax,
-            "amount": amount,
+            "amount": round(float(amount), 2),
             "employer_contribution_rate": deduction.employer_rate,
         }
         serialized_deductions.append(serialized_deduction)
@@ -592,7 +592,7 @@ def calculate_pre_tax_deduction(*_args, **kwargs):
             "deduction_id": deduction.id,
             "title": deduction.title,
             "is_pretax": deduction.is_pretax,
-            "amount": amount,
+            "amount": round(float(amount), 2),
             "employer_contribution_rate": deduction.employer_rate,
         }
         serialized_deductions.append(serialized_deduction)
@@ -688,7 +688,7 @@ def calculate_post_tax_deduction(*_args, **kwargs):
             "deduction_id": deduction.id,
             "title": deduction.title,
             "is_pretax": deduction.is_pretax,
-            "amount": amount,
+            "amount": round(float(amount), 2),
             "employer_contribution_rate": deduction.employer_rate,
         }
         serialized_deductions.append(serialized_deduction)
@@ -727,6 +727,7 @@ def calculate_net_pay_deduction(net_pay, net_pay_deductions, **kwargs):
         deduction_amt.append(amount)
     net_deduction = 0
     for deduction, amount in zip(deductions, deduction_amt):
+        amount = round(float(amount), 2)
         serialized_deduction = {
             "deduction_id": deduction.id,
             "title": deduction.title,
