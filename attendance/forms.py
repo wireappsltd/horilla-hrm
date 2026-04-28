@@ -1688,14 +1688,8 @@ class BulkAttendanceRequestForm(BaseModelForm):
         date_list = get_date_list(employee_id, from_date, to_date)
         if from_date and to_date and from_date > to_date:
             raise ValidationError({"to_date": _("To date should be after from date")})
-        if to_date == today and attendance_clock_out > now:
-            raise ValidationError(
-                {
-                    "attendance_clock_out": (
-                        f"Check out time is in the future for the date {to_date}."
-                    )
-                }
-            )
+        # Future check-out times within today's date are allowed to support
+        # pre-scheduled / flexible attendance logging.
         if employee_id and not hasattr(employee_id, "employee_work_info"):
             raise ValidationError(_("Employee work info not found"))
         if len(date_list) <= 0:
