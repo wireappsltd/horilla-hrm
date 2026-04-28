@@ -1,4 +1,5 @@
 from django import template
+from django.conf import settings
 from django.template.defaultfilters import register
 
 from leave.models import LeaveGeneralSetting
@@ -12,3 +13,8 @@ def is_compensatory(user):
         return LeaveGeneralSetting.objects.first().compensatory_leave
     else:
         return False
+
+
+@register.simple_tag(name="settings_debug")
+def settings_debug():
+    return bool(settings.DEBUG)
