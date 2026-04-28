@@ -108,7 +108,138 @@
         </tbody>
     </table>
 <script>
+    /*
+     * The Reimbursement form is rendered server-side with only the fields
+     * that match the currently selected ``type`` (see
+     * ReimbursementForm.exclude_fields_by_type). The toggle below is only
+     * needed when the user actively switches the Type dropdown.
+     *
+     * We attach the toggle to the type select inside *this* form (not via
+     * the modal id) so it works regardless of which container the form
+     * is rendered into, and we run it on init defensively so any stale
+     * server output is corrected without flicker.
+     */
+    (function () {
+        var $form = $("form[hx-post*='create-reimbursement']").last();
+        if (!$form.length) {
+            return;
+        }
+        var $type = $form.find("[name=type]");
+        if ($type.length && typeof toggleReimbursmentType === "function") {
+            // Defensive initial sync; harmless if the server already
+            // excluded the right fields.
+            try { toggleReimbursmentType($type); } catch (e) { /* no-op */ }
+            // Re-bind change to guard against missing onchange wiring
+            // when the form is re-rendered via htmx.
+            $type.off("change.reimbToggle").on("change.reimbToggle", function () {
+                toggleReimbursmentType($(this));
+            });
+        }
+    })();
+
     toggleReimbursmentType($("#objectCreateModalTarget [name=type]").first());
     removeHighlight();
+
+    /*
+     * Client-side validation for reimbursement attachments.
+     * Mirrors the backend MultipleFileField validation
+     * (payroll/forms/component_forms.py) so users get an immediate
+     * error instead of a server-side 413 / generic upload failure.
+     */
+    (function () {
+        var ALLOWED_EXTENSIONS = ["pdf", "jpg", "jpeg", "png", "docx"];
+        var MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
+
+        function getAttachmentInput() {
+            return document.querySelector(
+                "#objectCreateModalTarget input[type='file'][name='attachment']"
+            );
+        }
+
+        function clearError(input) {
+            var existing = input.parentNode.querySelector(".attachment-client-error");
+            if (existing) {
+                existing.remove();
+            }
+        }
+
+        function showError(input, message) {
+            clearError(input);
+            var err = document.createElement("div");
+            err.className = "attachment-client-error oh-alert oh-alert--danger mt-1";
+            err.style.color = "#c0392b";
+            err.style.fontSize = "13px";
+            err.style.marginTop = "4px";
+            err.textContent = message;
+            input.parentNode.appendChild(err);
+
+            if (typeof Swal !== "undefined" && Swal && Swal.fire) {
+                Swal.fire({
+                    icon: "error",
+                    title: "Invalid attachment",
+                    text: message,
+                    confirmButtonText: "OK"
+                });
+            }
+        }
+
+        function validateFiles(input) {
+            if (!input || !input.files || input.files.length === 0) {
+                clearError(input);
+                return true;
+            }
+            var allowed = ALLOWED_EXTENSIONS.join(", ").toUpperCase();
+            for (var i = 0; i < input.files.length; i++) {
+                var file = input.files[i];
+                var name = file.name || "";
+                var dot = name.lastIndexOf(".");
+                var ext = dot >= 0 ? name.substring(dot + 1).toLowerCase() : "";
+                if (ALLOWED_EXTENSIONS.indexOf(ext) === -1) {
+                    showError(
+                        input,
+                        "Unsupported file type '" + (ext || name) +
+                        "'. Allowed types: " + allowed + "."
+                    );
+                    input.value = "";
+                    return false;
+                }
+                if (file.size > MAX_FILE_SIZE) {
+                    showError(
+                        input,
+                        "File '" + name + "' exceeds the maximum allowed size of 5 MB."
+                    );
+                    input.value = "";
+                    return false;
+                }
+            }
+            clearError(input);
+            return true;
+        }
+
+        var input = getAttachmentInput();
+        if (input) {
+            // Hint the browser to filter selectable files.
+            input.setAttribute(
+                "accept",
+                ".jpg,.jpeg,.png,.pdf,.docx"
+            );
+            input.addEventListener("change", function () {
+                validateFiles(input);
+            });
+        }
+
+        // Block the htmx submission if validation fails.
+        var form = document.querySelector(
+            "#objectCreateModalTarget form[hx-post*='create-reimbursement']"
+        );
+        if (form) {
+            form.addEventListener("htmx:beforeRequest", function (evt) {
+                var fileInput = getAttachmentInput();
+                if (fileInput && !validateFiles(fileInput)) {
+                    evt.preventDefault();
+                }
+            });
+        }
+    })();
 </script>
 </div>

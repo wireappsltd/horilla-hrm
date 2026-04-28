@@ -1,5 +1,3 @@
-from datetime import date, timedelta
-
 from django.apps import apps
 from django.http import JsonResponse
 from django.shortcuts import render
@@ -29,54 +27,16 @@ if apps.is_installed("payroll"):
 
         filter_form = PayslipFilter(request.GET, payslips)
 
-        generated_by = request.user.get_full_name() or request.user.username
-
         return render(
             request,
             "report/payroll_report.html",
-            {"company": company, "f": filter_form, "generated_by": generated_by},
+            {"company": company, "f": filter_form},
         )
 
     @login_required
     @permission_required(perm="payroll.view_payslip")
     def payroll_pivot(request):
         model_type = request.GET.get("model", "payslip")
-
-        # Parse date parameters once
-        start_date_from = parse_date(request.GET.get("start_date_from", ""))
-        start_date_to = parse_date(request.GET.get("start_date_till", ""))
-        end_date_from = parse_date(request.GET.get("end_date_from", ""))
-        end_date_to = parse_date(request.GET.get("end_date_till", ""))
-
-        has_date_filter = any(
-            [start_date_from, start_date_to, end_date_from, end_date_to]
-        )
-
-        # Default to current month if no date filters provided
-        if not has_date_filter:
-            today = date.today()
-            start_date_from = today.replace(day=1)
-            if today.month == 12:
-                start_date_to = date(today.year + 1, 1, 1) - timedelta(days=1)
-            else:
-                start_date_to = date(
-                    today.year, today.month + 1, 1
-                ) - timedelta(days=1)
-
-        # Validate max 1 month (31 days) range
-        all_dates = [
-            d
-            for d in [start_date_from, start_date_to, end_date_from, end_date_to]
-            if d
-        ]
-        if len(all_dates) >= 2:
-            min_date = min(all_dates)
-            max_date = max(all_dates)
-            if (max_date - min_date).days > 31:
-                return JsonResponse(
-                    {"error": "Date range cannot exceed 1 month (31 days)."},
-                    status=400,
-                )
 
         if model_type == "payslip":
             qs = Payslip.objects.all()
@@ -88,10 +48,15 @@ if apps.is_installed("payroll"):
             if group_name := request.GET.get("group_name"):
                 qs = qs.filter(group_name=group_name)
 
+            start_date_from = parse_date(request.GET.get("start_date_from", ""))
+            start_date_to = parse_date(request.GET.get("start_date_till", ""))
             if start_date_from:
                 qs = qs.filter(start_date__gte=start_date_from)
             if start_date_to:
                 qs = qs.filter(start_date__lte=start_date_to)
+
+            end_date_from = parse_date(request.GET.get("end_date_from", ""))
+            end_date_to = parse_date(request.GET.get("end_date_till", ""))
             if end_date_from:
                 qs = qs.filter(end_date__gte=end_date_from)
             if end_date_to:
@@ -313,13 +278,6 @@ if apps.is_installed("payroll"):
 
             payslip_filter = PayslipFilter(request.GET, queryset=payslips)
             filtered_qs = payslip_filter.qs  # This uses all custom filters you defined
-
-            # Apply default date filters if no date params were provided
-            if not has_date_filter:
-                if start_date_from:
-                    filtered_qs = filtered_qs.filter(start_date__gte=start_date_from)
-                if start_date_to:
-                    filtered_qs = filtered_qs.filter(start_date__lte=start_date_to)
 
             data = list(
                 filtered_qs.values(

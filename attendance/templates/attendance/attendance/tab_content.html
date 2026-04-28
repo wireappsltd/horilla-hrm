@@ -157,7 +157,7 @@
                                 <div data-cell-index="11" class="oh-sticky-table__td">
                                     {{ attendance.attendance_worked_hour }}
                                 </div>
-                                <div data-cell-index="12" class="oh-sticky-table__td">{{ attendance.hours_pending }}</div>
+{#                                <div data-cell-index="12" class="oh-sticky-table__td">{{ attendance.hours_pending }}</div>#}
                                 <div data-cell-index="13" class="oh-sticky-table__td">
                                     {{attendance.attendance_overtime}}
                                 </div>
@@ -621,7 +621,7 @@
                             <div data-cell-index="51" class="oh-sticky-table__td">
                                 {{attendance.attendance_worked_hour}}
                             </div>
-                            <div data-cell-index="52" class="oh-sticky-table__td">{{attendance.hours_pending}}</div>
+{#                            <div data-cell-index="52" class="oh-sticky-table__td">{{attendance.hours_pending}}</div>#}
                             <div data-cell-index="53" class="oh-sticky-table__td">
                                 {{attendance.attendance_overtime}}
                             </div>
@@ -822,6 +822,5 @@
     if (!localStorageValidatedCells) {
         $("#fieldContainerTable").find("[type=checkbox]").prop("checked", true)
     }
-    $("[type=checkbox]").change()
 
 </script>

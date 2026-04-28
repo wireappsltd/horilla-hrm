@@ -73,6 +73,77 @@ def filter_history(histories, track_fields):
     return histories
 
 
+def _format_m2m_values(rows, related_model):
+    """
+    Convert M2M through-table row dicts to a readable comma-separated string.
+    Each row is a dict like {'user_id': 5, 'passwordresetrequest_id': 3} or
+    {'user': 5, 'passwordresetrequest': 3} depending on how the values were
+    extracted from the through model. We resolve the FK pointing to the
+    related_model to get display names.
+    """
+    if not rows:
+        return "None"
+    names = []
+    # Determine which key in the row dicts corresponds to the related model
+    # by matching the model name. simple_history's diff_against pulls rows via
+    # ``QuerySet.values(*field_names)`` using the through-model FK *field*
+    # names (e.g. ``user``), not the underlying ``<field>_id`` column names,
+    # so we must look up both forms.
+    model_name = related_model.__name__.lower()
+    candidate_keys = (model_name, f"{model_name}_id")
+
+    skip_keys = {"id", "m2m_history_id", "history", "history_id"}
+
+    for row in rows:
+        pk_value = None
+        # Prefer keys that match the related model name
+        for key in candidate_keys:
+            if key in row and row[key] is not None:
+                pk_value = row[key]
+                break
+        if pk_value is None:
+            # Fallback: try any non-housekeeping key that resolves to the
+            # related model (handles arbitrary through-model field names).
+            for key, value in row.items():
+                if not value or key in skip_keys:
+                    continue
+                # Skip the source-model FK (e.g. ``passwordresetrequest`` /
+                # ``passwordresetrequest_id``) so we resolve the correct side
+                # of the M2M relationship.
+                stripped = key[:-3] if key.endswith("_id") else key
+                if stripped == model_name or stripped.endswith(model_name):
+                    pk_value = value
+                    break
+        if pk_value is None:
+            continue
+        # ``foreign_keys_are_objs`` mode in simple_history may already give us
+        # a model instance instead of a raw pk.
+        if isinstance(pk_value, related_model):
+            obj = pk_value
+        else:
+            try:
+                obj = related_model.objects.get(pk=pk_value)
+            except Exception:
+                names.append(str(pk_value))
+                continue
+        # Try employee display name first (for User -> Employee chain)
+        if hasattr(obj, "employee_get"):
+            try:
+                full_name = obj.employee_get.get_full_name()
+                if full_name:
+                    names.append(full_name)
+                    continue
+            except Exception:
+                pass
+        if hasattr(obj, "get_full_name"):
+            full_name = obj.get_full_name()
+            if full_name:
+                names.append(full_name)
+                continue
+        names.append(str(obj))
+    return ", ".join(names) if names else "None"
+
+
 def get_diff(instance):
     """
     This method is used to find the differences in the history
@@ -94,19 +165,28 @@ def get_diff(instance):
             new = change.new
             field = instance._meta.get_field(change.field)
             is_fk = False
-            if (
+            if isinstance(field, models.ManyToManyField):
+                # M2M changes: old/new are lists of through-table dicts
+                # Convert to readable display names
+                related_model = field.related_model
+                old = _format_m2m_values(old, related_model)
+                new = _format_m2m_values(new, related_model)
+            elif (
                 isinstance(field, models.fields.CharField)
                 and field.choices
                 and old
                 and new
             ):
                 choices = dict(field.choices)
-                old = choices[old]
-                new = choices[new]
-            if isinstance(field, models.ForeignKey):
+                old = choices.get(old, old)
+                new = choices.get(new, new)
+            elif isinstance(field, models.ForeignKey):
                 is_fk = True
                 # old = getattr(pair[0], change.field)
                 # new = getattr(pair[1], change.field)
+            # Skip changes where both old and new are empty/None
+            if not old and not new:
+                continue
             diffs.append(
                 {
                     "field": get_field_label(class_name, change.field),

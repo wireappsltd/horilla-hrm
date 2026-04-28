@@ -163,6 +163,9 @@ class AttendanceUpdateForm(BaseModelForm):
                 )
             kwargs["initial"] = initial
         super().__init__(*args, **kwargs)
+        max_date = (datetime.date.today() + datetime.timedelta(days=3)).strftime(
+            "%Y-%m-%d"
+        )
         self.fields["employee_id"].widget.attrs.update({"id": str(uuid.uuid4())})
 
         for field in [
@@ -207,13 +210,17 @@ class AttendanceUpdateForm(BaseModelForm):
         # )
         self.fields["attendance_clock_in_date"].widget.attrs.update({
             "style": "pointer-events:none;",
+            "max": max_date,
         })
         self.fields["attendance_worked_hour"].widget.attrs.update({
             "style": "pointer-events:none;",
         })
         self.fields["attendance_clock_out_date"].widget.attrs.update({
             "style": "pointer-events:none;",
+            "max": max_date,
         })
+
+        self.fields["attendance_date"].widget.attrs.update({"max": max_date})
 
         self.fields["attendance_date"].widget.attrs.update({
             "hx-get": reverse("check-compensation"),
@@ -259,7 +266,7 @@ class AttendanceUpdateForm(BaseModelForm):
         is_future_date = block_future_attendance(attendance_date)
         if is_future_date:
             raise ValidationError(
-                _("Attendance cannot be marked for future dates")
+                _("Attendance cannot be marked more than 3 days in the future")
             )
 
         if check_in_time and check_out_time:
@@ -399,17 +406,24 @@ class AttendanceForm(BaseModelForm):
         kwargs["initial"] = initial
 
         super().__init__(*args, **kwargs)
+        max_date = (datetime.date.today() + datetime.timedelta(days=3)).strftime(
+            "%Y-%m-%d"
+        )
         reload_queryset(self.fields)
         self.fields["employee_id"].widget.attrs.update({"id": str(uuid.uuid4())})
         self.fields["attendance_clock_in_date"].widget.attrs.update({
             "style": "pointer-events:none;",
+            "max": max_date,
         })
         self.fields["attendance_worked_hour"].widget.attrs.update({
             "style": "pointer-events:none;",
         })
         self.fields["attendance_clock_out_date"].widget.attrs.update({
             "style": "pointer-events:none;",
+            "max": max_date,
         })
+
+        self.fields["attendance_date"].widget.attrs.update({"max": max_date})
 
         self.fields["attendance_date"].widget.attrs.update({
             "hx-get": reverse("check-compensation"),
@@ -565,7 +579,7 @@ class AttendanceForm(BaseModelForm):
         is_future_date = block_future_attendance(attendance_date)
         if is_future_date:
             raise ValidationError(
-                _("Attendance cannot be marked for future dates")
+                _("Attendance cannot be marked more than 3 days in the future")
             )
 
         if check_in_time and check_out_time:
@@ -942,7 +956,7 @@ class AttendanceRequestForm(BaseModelForm):
         is_future_date = block_future_attendance(attendance_date)
         if is_future_date:
             raise ValidationError(
-                _("Attendance cannot be marked for future dates")
+                _("Attendance cannot be marked more than 3 days in the future")
             )
 
         if check_in_time and check_out_time:
@@ -1674,14 +1688,8 @@ class BulkAttendanceRequestForm(BaseModelForm):
         date_list = get_date_list(employee_id, from_date, to_date)
         if from_date and to_date and from_date > to_date:
             raise ValidationError({"to_date": _("To date should be after from date")})
-        if to_date == today and attendance_clock_out > now:
-            raise ValidationError(
-                {
-                    "attendance_clock_out": (
-                        f"Check out time is in the future for the date {to_date}."
-                    )
-                }
-            )
+        # Future check-out times within today's date are allowed to support
+        # pre-scheduled / flexible attendance logging.
         if employee_id and not hasattr(employee_id, "employee_work_info"):
             raise ValidationError(_("Employee work info not found"))
         if len(date_list) <= 0:

@@ -1862,3 +1862,24 @@ def asset_request_tab(request, emp_id):
         "requests_ids": requests_ids,
     }
     return render(request, "tabs/asset_request_tab.html", context=context)
+
+
+# TODO: Remove this view before production — temporary QA testing endpoint
+@login_required
+@permission_required(perm="asset.view_assetassignment")
+def trigger_checkup_notifications(request):
+    """
+    Temporary view to manually trigger checkup notification schedulers for QA testing.
+    """
+    from asset.scheduler import notify_overdue_checkups, notify_upcoming_checkups
+
+    notification_type = request.GET.get("type", "upcoming")
+
+    if notification_type == "overdue":
+        notify_overdue_checkups()
+        messages.success(request, _("Overdue checkup notifications triggered."))
+    else:
+        notify_upcoming_checkups()
+        messages.success(request, _("Upcoming checkup notifications triggered."))
+
+    return redirect("asset-request-allocation-view")

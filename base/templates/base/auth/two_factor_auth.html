@@ -47,8 +47,12 @@
                     id="ohAuthCard"
                 >
                     <div class="oh-onboarding-card__header">
-                        <span class="oh-onboarding-card__company-name"
-                            >{{white_label_company_name}} HRMS</span
+                        <a
+                            href="{% url 'logout' %}"
+                            class="oh-onboarding-card__company-name"
+                            title="{% trans 'Back to login' %}"
+                            style="text-decoration: none; color: inherit; cursor: pointer;"
+                            >{{white_label_company_name}} HRMS</a
                         >
                     </div>
                     <h1

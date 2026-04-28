@@ -254,34 +254,6 @@
 
 <script>
     $(function () {
-        // Set default date range to current month
-        const today = new Date();
-        const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
-        const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-        const formatDate = (d) => d.toISOString().split('T')[0];
-        $('input[name="start_date_from"]').val(formatDate(firstDay));
-        $('input[name="start_date_till"]').val(formatDate(lastDay));
-
-        // Date range validation (max 1 month / 31 days)
-        function validateDateRange() {
-            const dateFields = ['start_date_from', 'start_date_till', 'end_date_from', 'end_date_till'];
-            const dates = [];
-            dateFields.forEach(field => {
-                document.querySelectorAll(`input[name="${field}"]`).forEach(input => {
-                    if (input.value) dates.push(new Date(input.value));
-                });
-            });
-            if (dates.length >= 2) {
-                const minDate = new Date(Math.min(...dates));
-                const maxDate = new Date(Math.max(...dates));
-                if ((maxDate - minDate) / (1000 * 60 * 60 * 24) > 31) {
-                    alert("Date range cannot exceed 1 month (31 days).");
-                    return false;
-                }
-            }
-            return true;
-        }
-
         // Function to load pivot data dynamically
         function loadPivotData(model) {
             let url = `payroll-pivot?model=${model}`;
@@ -350,8 +322,6 @@
                 });
 
                 window.loadFilteredPivotData =function loadFilteredPivotData() {
-                    if (!validateDateRange()) return;
-
                     const selectedModel = $("#model-select").val();
                     const formData = $("#filterForm").serialize();
 
@@ -390,10 +360,6 @@
 
                             }
                         });
-                    }).fail(function(jqXHR) {
-                        if (jqXHR.responseJSON && jqXHR.responseJSON.error) {
-                            alert(jqXHR.responseJSON.error);
-                        }
                     });
                 }
 
@@ -481,7 +447,19 @@
                         currentRow += 2; // Leave a blank row
                     }
 
-                    currentRow += 2; // Leave some rows before the table
+                    // Add timestamp
+                    const timestamp = new Date().toLocaleDateString('en-GB') + ' ' +
+                        new Date().toLocaleTimeString('en-US', {
+                            hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true
+                        });
+
+                    const downloadCell = worksheet.getCell(currentRow, baseCol);
+                    worksheet.mergeCells(currentRow, baseCol, currentRow, baseCol + 3);
+                    downloadCell.value = `Generated on: ${timestamp}`;
+                    downloadCell.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+                    downloadCell.font = { size: 10, italic: true, color: { argb: 'FF666666' }, bold: true };
+
+                    currentRow += 3; // Leave some rows before the table
 
                     // ------------------------
                     // Render pivot table
@@ -489,13 +467,8 @@
                     const cellMap = {};
                     const allRows = Array.from(table.rows);
                     const lastRowIndex = allRows.length - 1;
-                    let maxColUsed = baseCol;
-                    const columnSums = {};
-                    const columnHasNumeric = {};
 
                     allRows.forEach((row, rowIndex) => {
-                        // Skip pivot table's built-in totals row (we add our own)
-                        if (rowIndex === lastRowIndex) return;
 
                         let colIndex = baseCol;
 
@@ -512,26 +485,16 @@
                             const excelCell = worksheet.getCell(currentRow + rowIndex, colIndex);
                             excelCell.value = cellValue;
 
-                            // Track numeric values for total row (skip header rows)
-                            if (rowIndex > 0) {
-                                const numVal = parseFloat(cellValue.replace(/,/g, ''));
-                                if (!isNaN(numVal) && cellValue.trim() !== '') {
-                                    columnSums[colIndex] = (columnSums[colIndex] || 0) + numVal;
-                                    columnHasNumeric[colIndex] = true;
-                                }
-                            }
-
-                            // Track max column used
-                            const endCol = colIndex + colspan - 1;
-                            if (endCol > maxColUsed) maxColUsed = endCol;
-
                             const isHeader = rowIndex === 0;
+                            const isLastRow = rowIndex === lastRowIndex;
 
                             excelCell.font = {
-                                bold: isHeader,
+                                bold: isHeader || isLastRow,
                                 size: isHeader ? 12 : 11,
                                 color: {
-                                    argb: isHeader ? 'FFFFFFFF' : 'FF000000'
+                                    argb: isHeader ? 'FFFFFFFF' :
+                                        isLastRow ? 'FF000000' :
+                                        'FF000000'
                                 }
                             };
 
@@ -539,7 +502,9 @@
                                 type: 'pattern',
                                 pattern: 'solid',
                                 fgColor: {
-                                    argb: isHeader ? 'FF545454' : 'FFF5F5F5'
+                                    argb: isHeader ? 'FF545454' :
+                                        isLastRow ? 'FFFFE599' :  // light yellow
+                                        'FFF5F5F5'
                                 }
                             };
 
@@ -573,53 +538,9 @@
                         });
                     });
 
-                    // ----------------------------
-                    // Add computed TOTAL row
-                    // ----------------------------
-                    const totalRowNum = currentRow + lastRowIndex;
-                    let firstTotalColSet = false;
-                    for (let c = baseCol; c <= maxColUsed; c++) {
-                        const totalCell = worksheet.getCell(totalRowNum, c);
-                        if (!firstTotalColSet) {
-                            totalCell.value = "TOTAL";
-                            firstTotalColSet = true;
-                        } else if (columnHasNumeric[c]) {
-                            totalCell.value = Math.round((columnSums[c] || 0) * 100) / 100;
-                        } else {
-                            totalCell.value = "";
-                        }
-                        totalCell.font = { bold: true, size: 11, color: { argb: 'FF000000' } };
-                        totalCell.fill = {
-                            type: 'pattern',
-                            pattern: 'solid',
-                            fgColor: { argb: 'FFFFE599' }
-                        };
-                        totalCell.border = {
-                            top: { style: 'double' },
-                            bottom: { style: 'double' },
-                            left: { style: 'thin' },
-                            right: { style: 'thin' }
-                        };
-                        totalCell.alignment = { horizontal: "center", vertical: "middle" };
-                    }
+                    worksheet.getRow(currentRow + lastRowIndex).height = 25; // adjust height for Total
 
-                    // -------------------------------------------
-                    // Add Generated info at bottom-left
-                    // -------------------------------------------
-                    const infoRowNum = totalRowNum + 2;
-                    const timestamp = new Date().toLocaleDateString('en-GB') + ' ' +
-                        new Date().toLocaleTimeString('en-US', {
-                            hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true
-                        });
-                    const generatedBy = "{{ generated_by|escapejs }}";
-                    const infoCell = worksheet.getCell(infoRowNum, baseCol);
-                    worksheet.mergeCells(infoRowNum, baseCol, infoRowNum, baseCol + 5);
-                    infoCell.value = `Generated on: ${timestamp} | Generated by: ${generatedBy}`;
-                    infoCell.alignment = { horizontal: 'left', vertical: 'middle' };
-                    infoCell.font = { size: 10, italic: true, color: { argb: 'FF666666' }, bold: true };
-
-                    worksheet.getRow(totalRowNum).height = 25; // Total row height
-                    worksheet.getRow(currentRow).height = 30; // Heading row height
+                    worksheet.getRow(currentRow).height = 30; // adjust height for Heading
 
                     // Auto-adjust column widths
                     worksheet.columns.forEach(column => {
@@ -641,10 +562,6 @@
                     link.href = URL.createObjectURL(blob);
                     link.download = filename;
                     link.click();
-                }
-            }).fail(function(jqXHR) {
-                if (jqXHR.responseJSON && jqXHR.responseJSON.error) {
-                    alert(jqXHR.responseJSON.error);
                 }
             });
         }

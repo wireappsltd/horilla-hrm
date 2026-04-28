@@ -151,6 +151,7 @@
                   >
                 </li>
               {% endif %}
+              {%comment%}
               {% if perms.payroll.add_payslip and payslips %}
                 <li class="oh-dropdown__item">
                   <a
@@ -164,12 +165,13 @@
                   >
                 </li>
               {% endif %}
+              {%endcomment%}
                  {% if perms.payroll.add_payslip and payslips %}
                <li class="oh-dropdown__item">
   <a
-    href="{% url 'payslip-super-detailed-export' %}"
     class="oh-dropdown__link"
-    download
+    onclick="document.getElementById('payrollDetailedReportModal').style.display='flex';"
+    style="cursor:pointer;"
   >
     {% trans "Payroll Detailed report" %}
   </a>
@@ -542,4 +544,71 @@
   </div>
 </div>
 <script src="{% static 'payroll/action.js' %}"></script>
+
+<!-- Payroll Detailed Report Date Range Modal -->
+<div class="oh-modal" id="payrollDetailedReportModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:9999; justify-content:center; align-items:center;">
+  <div class="oh-modal__dialog" style="max-width:500px; background:#fff; border-radius:8px; padding:24px; width:90%;">
+    <div class="oh-modal__dialog-header" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+      <h2 class="oh-modal__dialog-title" style="margin:0;">{% trans "Payroll Detailed Report" %}</h2>
+      <button class="oh-modal__close" onclick="document.getElementById('payrollDetailedReportModal').style.display='none';" style="border:none; background:none; font-size:1.5rem; cursor:pointer;">
+        <ion-icon name="close-outline"></ion-icon>
+      </button>
+    </div>
+    <div class="oh-modal__dialog-body">
+      <form id="payrollDetailedReportForm" method="get" action="{% url 'payslip-super-detailed-export' %}">
+        <div style="display:grid; grid-template-columns:120px 1fr; align-items:center; row-gap:16px; column-gap:12px;">
+          <label class="oh-label" for="reportStartDate" style="margin:0;">{% trans "Start Date" %}</label>
+          <input type="date" class="oh-input" id="reportStartDate" name="start_date_from" required style="width:100%;" />
+          <label class="oh-label" for="reportEndDate" style="margin:0;">{% trans "End Date" %}</label>
+          <input type="date" class="oh-input" id="reportEndDate" name="start_date_till" required style="width:100%;" />
+        </div>
+        <p id="reportDateError" class="text-danger" style="display:none; margin-top:12px;"></p>
+        <div class="d-flex justify-content-end mt-3" style="gap:8px;">
+          <button type="button" class="oh-btn oh-btn--light" onclick="document.getElementById('payrollDetailedReportModal').style.display='none';">{% trans "Cancel" %}</button>
+          <button type="submit" class="oh-btn oh-btn--secondary">{% trans "Download" %}</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+  (function () {
+    var form = document.getElementById("payrollDetailedReportForm");
+    var startInput = document.getElementById("reportStartDate");
+    var endInput = document.getElementById("reportEndDate");
+    var errorEl = document.getElementById("reportDateError");
+
+    form.addEventListener("submit", function (e) {
+      errorEl.style.display = "none";
+      var start = new Date(startInput.value);
+      var end = new Date(endInput.value);
+
+      if (isNaN(start) || isNaN(end)) {
+        e.preventDefault();
+        errorEl.textContent = "{% trans 'Please select both start and end dates.' %}";
+        errorEl.style.display = "block";
+        return;
+      }
+      if (end < start) {
+        e.preventDefault();
+        errorEl.textContent = "{% trans 'End date must be after start date.' %}";
+        errorEl.style.display = "block";
+        return;
+      }
+      var diffDays = Math.round((end - start) / (1000 * 60 * 60 * 24)) + 1;
+      if (diffDays > 30) {
+        e.preventDefault();
+        errorEl.textContent = "{% trans 'Date range cannot exceed 30 days.' %}";
+        errorEl.style.display = "block";
+        return;
+      }
+      // Allow form to submit (GET request downloads the file)
+      setTimeout(function () {
+        document.getElementById("payrollDetailedReportModal").style.display = "none";
+      }, 500);
+    });
+  })();
+</script>
+
 {% endblock content %}

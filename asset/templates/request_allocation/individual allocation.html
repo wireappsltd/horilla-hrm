@@ -111,6 +111,35 @@
 			</div>
 		</div>
 
+		<div class="oh-timeoff-modal__stats-container mt-3">
+			<div class="oh-timeoff-modal__stat">
+				<span class="oh-timeoff-modal__stat-title"
+					>{% trans "Yearly Check-up Date" %}
+				</span>
+				<span class="oh-timeoff-modal__stat-count dateformat_changer"
+					>{{asset_allocation.yearly_checkup_date|default:"-"}}</span
+				>
+			</div>
+			<div class="oh-timeoff-modal__stat">
+				<span class="oh-timeoff-modal__stat-title"
+					>{% trans "Service Shop" %}
+				</span>
+				<span class="oh-timeoff-modal__stat-count"
+					>{{asset_allocation.service_shop_name|default:"-"}}</span
+				>
+			</div>
+		</div>
+		<div class="oh-timeoff-modal__stats-container mt-3">
+			<div class="oh-timeoff-modal__stat">
+				<span class="oh-timeoff-modal__stat-title"
+					>{% trans "Check-up Completed" %}
+				</span>
+				<span class="oh-timeoff-modal__stat-count"
+					>{% if asset_allocation.checkup_completed %}{% trans "Yes" %}{% else %}{% trans "No" %}{% endif %}</span
+				>
+			</div>
+		</div>
+
 		<div class="oh-timeoff-modal__stats mt-3 w-100">
 			<div class="oh-timeoff-modal__stat">
 				<span class="oh-timeoff-modal__stat-title"

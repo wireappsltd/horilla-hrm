@@ -246,6 +246,21 @@
 							<ion-icon name="add-outline" role="img" class="md hydrated" aria-label="add outline"></ion-icon>
 						</a>
 					{% endif %}
+					{# TODO: Remove before production — temporary QA testing buttons #}
+					<a class="oh-btn oh-btn--info-outline ml-2" role="button"
+						onclick="event.stopPropagation()"
+						href="{% url 'trigger-checkup-notifications' %}?type=upcoming"
+						title="Test: Trigger upcoming checkup notifications">
+						<ion-icon name="calendar-outline" class="mr-1"></ion-icon>
+						Test Upcoming
+					</a>
+					<a class="oh-btn oh-btn--warning-outline ml-1" role="button"
+						onclick="event.stopPropagation()"
+						href="{% url 'trigger-checkup-notifications' %}?type=overdue"
+						title="Test: Trigger overdue checkup notifications">
+						<ion-icon name="alert-circle-outline" class="mr-1"></ion-icon>
+						Test Overdue
+					</a>
 				</li>
 				{% endif %}
 			</ul>
