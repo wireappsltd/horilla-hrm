@@ -172,6 +172,15 @@
             err.style.marginTop = "4px";
             err.textContent = message;
             input.parentNode.appendChild(err);
+
+            if (typeof Swal !== "undefined" && Swal && Swal.fire) {
+                Swal.fire({
+                    icon: "error",
+                    title: "Invalid attachment",
+                    text: message,
+                    confirmButtonText: "OK"
+                });
+            }
         }
 
         function validateFiles(input) {
