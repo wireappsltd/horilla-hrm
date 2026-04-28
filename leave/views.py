@@ -5500,3 +5500,277 @@ def monthly_leave_report_pdf(request):
 
     resp["Content-Disposition"] = 'attachment; filename="monthly_leave_report.pdf"'
     return resp
+
+
+# --- Dev-only manual triggers for the leave_reset scheduler ----------------
+# These mirror leave.scheduler.leave_reset() but bypass the date checks so
+# QA can verify carryforward reset and carryforward-expire behavior without
+# waiting for the real reset/expire dates. Guarded by settings.DEBUG and a
+# superuser check so they cannot be hit in production.
+
+def _require_dev_superuser(request):
+    from django.conf import settings
+    print(
+        "[QA-LEAVE] dev-trigger hit path=%s method=%s user=%s authed=%s super=%s DEBUG=%s"
+        % (request.path, request.method, request.user,
+           request.user.is_authenticated,
+           getattr(request.user, "is_superuser", False), settings.DEBUG),
+        flush=True,
+    )
+    if not settings.DEBUG:
+        return JsonResponse(
+            {"ok": False, "reason": "Not available — DEBUG is False on the server."},
+            status=404,
+        )
+    if not request.user.is_authenticated:
+        return JsonResponse(
+            {"ok": False, "reason": "Not logged in."}, status=401
+        )
+    if not request.user.is_superuser:
+        return JsonResponse(
+            {
+                "ok": False,
+                "reason": (
+                    "User '%s' is not a superuser. Run `python manage.py "
+                    "createsuperuser` or promote this user via "
+                    "`python manage.py shell` -> "
+                    "User.objects.filter(username='%s').update(is_superuser=True, is_staff=True)`."
+                ) % (request.user.username, request.user.username),
+            },
+            status=403,
+        )
+    return None
+
+
+def _qa_log(msg):
+    """Print to runserver stdout AND emit via logger so output is visible
+    regardless of LOGGING config."""
+    print("[QA-LEAVE] " + msg, flush=True)
+    logger.info("[QA-LEAVE] %s", msg)
+
+
+@login_required
+@require_http_methods(["POST"])
+def force_carryforward_reset(request):
+    """
+    Simulate the reset day passing: roll over unused available_days into
+    carryforward_days (capped at carryforward_max), refill available_days
+    from leave_type.total_days, and bump reset_date — for EVERY AvailableLeave
+    whose leave type has any carryforward enabled, regardless of reset flag
+    or current reset_date. Lets QA verify that carryforward_days does not
+    compound across resets.
+    """
+    deny = _require_dev_superuser(request)
+    if deny is not None:
+        return deny
+
+    from datetime import datetime as _dt
+
+    today_date = _dt.now().date()
+    _qa_log("=== force_carryforward_reset START user=%s today=%s ===" % (request.user, today_date))
+    cf_types = LeaveType.objects.exclude(carryforward_type="no carryforward")
+    type_count = cf_types.count()
+    _qa_log("CF-enabled leave types: %d" % type_count)
+    affected = 0
+    errors = []
+    for leave_type in cf_types:
+        rows = list(leave_type.employee_available_leave.all())
+        _qa_log(
+            "leave_type id=%s name=%r cf_type=%s cf_max=%s total_days=%s rows=%d"
+            % (leave_type.id, leave_type.name, leave_type.carryforward_type,
+               leave_type.carryforward_max, leave_type.total_days, len(rows))
+        )
+        for available_leave in rows:
+            before_avail = available_leave.available_days
+            before_cf = available_leave.carryforward_days
+            before_reset = available_leave.reset_date
+            try:
+                available_leave.update_carryforward()
+            except Exception as exc:
+                msg = ("update_carryforward FAILED al_id=%s emp=%s lt=%s: %r"
+                       % (available_leave.id, available_leave.employee_id,
+                          leave_type.name, exc))
+                _qa_log(msg)
+                errors.append(msg)
+                continue
+            try:
+                available_leave.reset_date = available_leave.set_reset_date(
+                    assigned_date=today_date, available_leave=available_leave
+                )
+            except Exception as exc:
+                _qa_log(
+                    "set_reset_date skipped al_id=%s lt=%s: %r"
+                    % (available_leave.id, leave_type.name, exc)
+                )
+            try:
+                available_leave.save()
+            except Exception as exc:
+                msg = ("save FAILED al_id=%s emp=%s lt=%s: %r"
+                       % (available_leave.id, available_leave.employee_id,
+                          leave_type.name, exc))
+                _qa_log(msg)
+                errors.append(msg)
+                continue
+            _qa_log(
+                "  row al_id=%s emp=%s | avail %s -> %s | cf %s -> %s | reset_date %s -> %s"
+                % (available_leave.id, available_leave.employee_id,
+                   before_avail, available_leave.available_days,
+                   before_cf, available_leave.carryforward_days,
+                   before_reset, available_leave.reset_date)
+            )
+            affected += 1
+
+    _qa_log("=== force_carryforward_reset END affected=%d errors=%d ===" % (affected, len(errors)))
+
+    if type_count == 0:
+        return JsonResponse(
+            {
+                "ok": False,
+                "reason": (
+                    "No leave types have carryforward enabled. Set "
+                    "Carryforward Type to 'Carry Forward' or 'Carry Forward "
+                    "with Expire' on at least one leave type."
+                ),
+                "types": 0,
+                "rows": 0,
+            }
+        )
+    if affected == 0:
+        return JsonResponse(
+            {
+                "ok": False,
+                "reason": (
+                    ("%d leave type(s) with carryforward, but 0 rows updated. "
+                     "Errors: %s. Check the runserver console for [QA-LEAVE] logs.")
+                    % (type_count, "; ".join(errors) if errors else "no AvailableLeave rows exist — assign the leave type to an employee first")
+                ),
+                "types": type_count,
+                "rows": 0,
+                "errors": errors,
+            }
+        )
+    return JsonResponse(
+        {
+            "ok": True,
+            "reason": (
+                "Leave Reset rolled over %d row(s) across %d leave type(s)%s. "
+                "See runserver console [QA-LEAVE] for per-row before/after."
+                % (affected, type_count, (" with %d error(s)" % len(errors)) if errors else "")
+            ),
+            "types": type_count,
+            "rows": affected,
+            "errors": errors,
+        }
+    )
+
+
+@login_required
+@require_http_methods(["POST"])
+def force_carryforward_expire(request):
+    """
+    Simulate the carryforward expiry passing: zero carryforward_days on every
+    employee for every leave type that has any carryforward, and bump the
+    carryforward_expire_date forward (when applicable). Lets QA verify that
+    expired carryforward really disappears from leave statistics.
+    """
+    deny = _require_dev_superuser(request)
+    if deny is not None:
+        return deny
+
+    from datetime import datetime as _dt
+
+    today_date = _dt.now().date()
+    _qa_log("=== force_carryforward_expire START user=%s today=%s ===" % (request.user, today_date))
+    cf_types = LeaveType.objects.exclude(carryforward_type="no carryforward")
+    type_count = cf_types.count()
+    _qa_log("CF-enabled leave types: %d" % type_count)
+    affected_rows = 0
+    affected_types = 0
+    errors = []
+    for leave_type in cf_types:
+        rows = list(leave_type.employee_available_leave.all())
+        nonzero = sum(1 for r in rows if r.carryforward_days)
+        _qa_log(
+            "leave_type id=%s name=%r cf_type=%s cf_expire_date=%s rows=%d rows_with_cf=%d"
+            % (leave_type.id, leave_type.name, leave_type.carryforward_type,
+               leave_type.carryforward_expire_date, len(rows), nonzero)
+        )
+        for available_leave in rows:
+            if available_leave.carryforward_days:
+                before_cf = available_leave.carryforward_days
+                try:
+                    available_leave.carryforward_days = 0
+                    available_leave.save()
+                except Exception as exc:
+                    msg = ("save FAILED al_id=%s emp=%s lt=%s: %r"
+                           % (available_leave.id, available_leave.employee_id,
+                              leave_type.name, exc))
+                    _qa_log(msg)
+                    errors.append(msg)
+                    continue
+                _qa_log(
+                    "  row al_id=%s emp=%s | cf %s -> 0"
+                    % (available_leave.id, available_leave.employee_id, before_cf)
+                )
+                affected_rows += 1
+        if leave_type.carryforward_type == "carryforward expire":
+            before_expire = leave_type.carryforward_expire_date
+            try:
+                leave_type.carryforward_expire_date = leave_type.set_expired_date(
+                    today_date
+                )
+                leave_type.save()
+                _qa_log(
+                    "  leave_type cf_expire_date %s -> %s"
+                    % (before_expire, leave_type.carryforward_expire_date)
+                )
+            except Exception as exc:
+                msg = ("set_expired_date/save FAILED lt=%s: %r" % (leave_type.name, exc))
+                _qa_log(msg)
+                errors.append(msg)
+        affected_types += 1
+
+    _qa_log(
+        "=== force_carryforward_expire END affected_rows=%d types=%d errors=%d ==="
+        % (affected_rows, affected_types, len(errors))
+    )
+
+    if type_count == 0:
+        return JsonResponse(
+            {
+                "ok": False,
+                "reason": "No leave types have carryforward enabled — nothing to expire.",
+                "types": 0,
+                "rows": 0,
+            }
+        )
+    if affected_rows == 0:
+        return JsonResponse(
+            {
+                "ok": False,
+                "reason": (
+                    ("%d leave type(s) with carryforward, but no AvailableLeave "
+                     "rows currently have carryforward_days > 0 to clear. "
+                     "Click 'Leave Reset' first to generate some, then come back. "
+                     "Errors: %s")
+                    % (type_count, "; ".join(errors) if errors else "none")
+                ),
+                "types": type_count,
+                "rows": 0,
+                "errors": errors,
+            }
+        )
+    return JsonResponse(
+        {
+            "ok": True,
+            "reason": (
+                "Carryforward Expiry cleared %d row(s) across %d leave type(s)%s. "
+                "See runserver console [QA-LEAVE] for per-row before/after."
+                % (affected_rows, affected_types,
+                   (" with %d error(s)" % len(errors)) if errors else "")
+            ),
+            "types": affected_types,
+            "rows": affected_rows,
+            "errors": errors,
+        }
+    )
