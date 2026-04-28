@@ -1021,7 +1021,15 @@ class ReimbursementForm(ModelForm):
 
         if is_edit:
             exclude_fields += ["employee_id"]
-            self.fields["type"].widget = forms.HiddenInput()
+            # Keep the Request Type field visible on edit so admins and
+            # employees can verify what kind of request they are editing,
+            # but mark it read-only so the type cannot be changed once
+            # the request has been created (changing the type would
+            # invalidate the related fields like leave_type_id /
+            # cfd_to_encash / attachment etc.).
+            self.fields["type"].disabled = True
+            self.fields["type"].widget.attrs["disabled"] = "disabled"
+            self.fields["type"].widget.attrs.pop("onchange", None)
 
     def as_p(self):
         """
