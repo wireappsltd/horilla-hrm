@@ -450,10 +450,13 @@ class AvailableLeave(HorillaModel):
 
     def update_carryforward(self):
         if self.leave_type_id.carryforward_type != "no carryforward":
-            if self.leave_type_id.carryforward_max >= self.total_leave_days:
-                self.carryforward_days = self.total_leave_days
-            else:
-                self.carryforward_days = self.leave_type_id.carryforward_max
+            # Only the unused portion of the current period (available_days)
+            # rolls over. Previously-carried-forward days do NOT compound —
+            # otherwise carryforward_days grows by total_days every reset
+            # whenever carryforward_max is unset (defaults to math.inf).
+            unused_current_period = max(self.available_days, 0)
+            carryforward_max = self.leave_type_id.carryforward_max
+            self.carryforward_days = min(carryforward_max, unused_current_period)
         self.available_days = self.leave_type_id.total_days
 
     # Setting the reset date for carryforward leaves
@@ -564,8 +567,14 @@ class AvailableLeave(HorillaModel):
                 assigned_date=self.assigned_date, available_leave=self
             )
 
-        # Logic for expired_date
-        if self.leave_type_id.carryforward_type == "carryforward expire":
+        # Logic for expired_date — only initialize, never overwrite. Once the
+        # scheduler advances expired_date forward (set_expired_date), a
+        # subsequent save must not snap it back to the leave_type's current
+        # carryforward_expire_date.
+        if (
+            self.expired_date is None
+            and self.leave_type_id.carryforward_type == "carryforward expire"
+        ):
             expiry_date = self.assigned_date
             if self.leave_type_id.carryforward_expire_date:
                 expiry_date = self.leave_type_id.carryforward_expire_date

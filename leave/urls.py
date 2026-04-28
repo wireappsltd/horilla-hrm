@@ -371,6 +371,17 @@ urlpatterns = [
             "template": "leave/restrict/restrict_form.html",
         },
     ),
+    # Dev-only manual triggers (gated to DEBUG + superuser at the view layer).
+    path(
+        "dev/force-carryforward-reset",
+        views.force_carryforward_reset,
+        name="dev-force-carryforward-reset",
+    ),
+    path(
+        "dev/force-carryforward-expire",
+        views.force_carryforward_expire,
+        name="dev-force-carryforward-expire",
+    ),
 ]
 
 if apps.is_installed("recruitment"):
