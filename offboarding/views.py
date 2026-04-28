@@ -454,6 +454,12 @@ def add_employee(request):
                         instance.employee_id, instance.last_working_date, instance.notice_period_ends
                     )
 
+            if stage.type == "archived":
+                Contract.objects.filter(
+                    employee_id=instance.employee_id,
+                    contract_status="termination_in_progress",
+                ).update(contract_status="terminated")
+
             messages.success(request, _("Employee saved"))
             if not instance_id:
                 notify.send(
@@ -541,7 +547,6 @@ def change_stage(request):
         employee.save()
 
     notice_period_end_date = request.GET.get("notice_period_ends")
-    print("Notice period ends:", notice_period_end_date)
 
     if stage.type == "fnf":
         real_employee_ids = employees.values_list("employee_id__id", flat=True)
@@ -575,6 +580,10 @@ def change_stage(request):
             id__in=employee_ids,
             is_active=True,
         ).update(is_active=False)
+        Contract.objects.filter(
+            employee_id__in=employee_ids,
+            contract_status="termination_in_progress",
+        ).update(contract_status="terminated")
 
     from django.db.models import Q
     tasks_for_stage = OffboardingTask.objects.filter(

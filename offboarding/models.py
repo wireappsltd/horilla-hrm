@@ -307,17 +307,25 @@ class EmployeeTask(HorillaModel):
     def save(self, *args, **kwargs):
         super().save(*args, **kwargs)
         request = getattr(_thread_locals, "request", None)
-        notify.send(
-            request.user.employee_get,
-            recipient=self.employee_id.employee_id.employee_user_id,
-            verb=f'Offboarding task "{self.task_id.title}" has been assigned',
-            verb_ar=f"",
-            verb_de=f"",
-            verb_es=f"",
-            verb_fr=f"",
-            redirect="offboarding/offboarding-pipeline",
-            icon="information",
-        )
+        if request is None:
+            return
+        recipient = self.employee_id.employee_id.employee_user_id
+        if not recipient:
+            return
+        try:
+            notify.send(
+                request.user.employee_get,
+                recipient=recipient,
+                verb=f'Offboarding task "{self.task_id.title}" has been assigned',
+                verb_ar=f"",
+                verb_de=f"",
+                verb_es=f"",
+                verb_fr=f"",
+                redirect="offboarding/offboarding-pipeline",
+                icon="information",
+            )
+        except Exception:
+            pass
 
 
 class ExitReason(HorillaModel):

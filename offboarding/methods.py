@@ -109,12 +109,13 @@ def assign_task_to_stage_employees(sender, instance, created, **kwargs):
         if instance.is_fine:
             return
 
-        from django.db.models import Q
-        # If stage_id is null, it typically applies to all stages
+        # Use entire() to bypass the shared class-attribute company_filter, which
+        # can be overwritten by a concurrent request and return 0 employees.
+        # The stage_id filter already scopes to the correct offboarding's employees.
         if instance.stage_id:
-            employees = OffboardingEmployee.objects.filter(stage_id=instance.stage_id)
+            employees = OffboardingEmployee.objects.entire().filter(stage_id=instance.stage_id)
         else:
-            employees = OffboardingEmployee.objects.all()
+            employees = OffboardingEmployee.objects.entire().filter(employee_id__is_active=True)
 
         # Prepare EmployeeTask instances for bulk creation to avoid
         # issuing one query (and one save/notification) per employee.

@@ -912,7 +912,7 @@ class AttendanceRequestForm(BaseModelForm):
         Render the form fields as HTML table rows with Bootstrap styling.
         """
         _ = args, kwargs  # Explicitly mark as used for pylint
-        context = {"form": self}
+        context = {"form": self, "hide_save_button": True}
         table_html = render_to_string("attendance_form.html", context)
         return table_html
 

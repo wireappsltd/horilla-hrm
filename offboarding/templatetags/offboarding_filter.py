@@ -141,14 +141,10 @@ def is_stage_manager(employee, stage: OffboardingStage):
     """
     This method is used to check if an employee is a stage manager
     """
-    current_stage = OffboardingStage.objects.filter(title=stage)
-    for stag in current_stage:
+    for stag in OffboardingStage.objects.filter(title=stage):
         if employee in stag.managers.all():
-            is_manager = True
-        else:
-            is_manager = False
-
-    return is_manager
+            return True
+    return False
 
 
 @register.filter("is_task_manager")
@@ -156,14 +152,10 @@ def is_task_manager(employee, task: OffboardingTask):
     """
     This method is used to check if an employee is a stage manager
     """
-    current_task = OffboardingTask.objects.filter(title=task)
-    for tas in current_task:
+    for tas in OffboardingTask.objects.filter(title=task):
         if employee in tas.managers.all():
-            is_manager = True
-        else:
-            is_manager = False
-
-    return is_manager
+            return True
+    return False
 
 
 @register.filter("completed_tasks")
@@ -227,7 +219,5 @@ def is_manager_for_any_task(employee, tasks):
     """
     for task in tasks:
         if employee in task.managers.all():
-            is_manager = True
-        else:
-            is_manager = False
-    return is_manager
+            return True
+    return False

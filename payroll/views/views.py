@@ -584,8 +584,8 @@ def view_payslip_pdf(request, payslip_id):
             start_date = datetime.strptime(start_date_str, "%Y-%m-%d").date()
             end_date = datetime.strptime(end_date_str, "%Y-%m-%d").date()
 
-            month_start_name = start_date.strftime("%B %d, %Y")
-            month_end_name = end_date.strftime("%B %d, %Y")
+            month_start_name = start_date.strftime("%d %B %Y")
+            month_end_name = end_date.strftime("%d %B %Y")
 
             # Formatted date for each format
             for format_name, format_string in HORILLA_DATE_FORMATS.items():
@@ -1559,8 +1559,8 @@ def payslip_pdf(request, id):
             # Prepare context for the template
             data.update(
                 {
-                    "month_start_name": start_date.strftime("%B %d, %Y"),
-                    "month_end_name": end_date.strftime("%B %d, %Y"),
+                    "month_start_name": start_date.strftime("%d %B %Y"),
+                    "month_end_name": end_date.strftime("%d %B %Y"),
                     "formatted_start_date": formatted_start_date,
                     "formatted_end_date": formatted_end_date,
                     "employee": payslip.employee_id,
