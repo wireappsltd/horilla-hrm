@@ -473,6 +473,7 @@ class Attendance(HorillaModel):
             "batch_attendance_id": (
                 self.batch_attendance_id.id if self.batch_attendance_id else ""
             ),
+            "is_get_compensation_leave": self.is_get_compensation_leave,
             # Add other fields you want to store
         }
         return serialized_data

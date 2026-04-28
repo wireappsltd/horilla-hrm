@@ -50,7 +50,13 @@
 
         <script>
             (function () {
-                var checkbox = document.getElementById("{{ form.is_get_compensation_leave.id_for_label }}");
+                var checkbox = document.querySelector("input[name='is_get_compensation_leave']");
+
+                function syncAllCheckboxes(isLeave) {
+                    document.querySelectorAll("input[name='is_get_compensation_leave']").forEach(function (cb) {
+                        cb.checked = isLeave;
+                    });
+                }
 
                 function applySelection(selectedCard) {
                     document.querySelectorAll("#compensation-option-cards .compensation-option-card").forEach(function (card) {
@@ -64,7 +70,7 @@
 
                 window.selectCompensationOption = function (card) {
                     var isLeave = card.getAttribute("data-value") === "true";
-                    if (checkbox) checkbox.checked = isLeave;
+                    syncAllCheckboxes(isLeave);
                     applySelection(card);
                 };
 
