@@ -128,29 +128,16 @@
 
     // ==================== Reimbursement request ====================
 
-    function toggleReimbursmentType(element) {
-        if (element.val() == 'reimbursement') {
-          $('#reimbursementModalBody [name=attachment]').parent().show()
-          $('#reimbursementModalBody [name=attachment]').attr("required",true)
+    // NOTE: The canonical implementation of toggleReimbursmentType lives
+    // in static/index/index.js and operates on #objectCreateModalTarget,
+    // covering all three types (reimbursement / leave_encashment /
+    // bonus_encashment). A duplicate definition used to live here that
+    // targeted #reimbursementModalBody and lacked the bonus_encashment
+    // branch — when both files were loaded, the last one parsed would
+    // shadow the global, causing the Reimbursement create form to
+    // intermittently render with the wrong fields visible. The duplicate
+    // has been removed; do NOT redefine toggleReimbursmentType here.
 
-            $('#reimbursementModalBody [name=leave_type_id]').parent().hide().attr("required",false)
-            $('#reimbursementModalBody [name=cfd_to_encash]').parent().hide().attr("required",false)
-            $('#reimbursementModalBody [name=ad_to_encash]').parent().hide().attr("required",false)
-            $('#reimbursementModalBody [name=amount]').parent().show().attr("required",true)
-            $('#reimbursementModalBody #availableTable').hide().attr("required",false)
-
-        } else if(element.val() == 'leave_encashment') {
-          $('#reimbursementModalBody [name=attachment]').parent().hide()
-          $('#reimbursementModalBody [name=attachment]').attr("required",false)
-            $('#reimbursementModalBody [name=leave_type_id]').parent().show().attr("required",true)
-            $('#reimbursementModalBody [name=cfd_to_encash]').parent().show().attr("required",true)
-            $('#reimbursementModalBody [name=ad_to_encash]').parent().show().attr("required",true)
-            $('#reimbursementModalBody [name=amount]').parent().hide().attr("required",false)
-            $('#reimbursementModalBody #availableTable').show().attr("required",true)
-
-
-        }
-    }
     function getAssignedLeave(employeeId) {
         $.ajax({
             type: "get",

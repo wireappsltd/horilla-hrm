@@ -1044,8 +1044,12 @@ def validate_start_date(request):
         response["valid"] = False
 
     if end_datetime is not None:
-        if end_datetime > datetime.today().date():
-            error_message = '<ul class="errorlist"><li>The end date cannot be in the future.</li></ul>'
+        max_allowed = datetime.today().date() + timedelta(days=3)
+        if end_datetime > max_allowed:
+            error_message = (
+                '<ul class="errorlist"><li>The end date cannot be more than 3 '
+                "days in the future.</li></ul>"
+            )
             response["message"] = error_message
             response["valid"] = False
     return JsonResponse(response)
@@ -1685,10 +1689,39 @@ def create_reimbursement(request):
         uploaded_files = request.FILES.getlist("attachment")
         post_data = request.POST.copy()
 
-        if uploaded_files:
+        # Validate each uploaded file (type + size) BEFORE persisting
+        # anything to disk. This avoids writing disallowed / oversized
+        # files into the temp storage even when the form fails to bind
+        # them (e.g. extra files beyond the model field).
+        attachment_errors = []
+        allowed_extensions = forms.MultipleFileField.ALLOWED_EXTENSIONS
+        max_file_size = forms.MultipleFileField.MAX_FILE_SIZE
+        valid_uploads = []
+        for f in uploaded_files:
+            name = getattr(f, "name", "") or ""
+            ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+            if ext not in allowed_extensions:
+                allowed = ", ".join(
+                    sorted(e.upper() for e in allowed_extensions)
+                )
+                attachment_errors.append(
+                    f"Unsupported file type '{ext or name}'. "
+                    f"Allowed types: {allowed}."
+                )
+                continue
+            size = getattr(f, "size", 0) or 0
+            if size > max_file_size:
+                attachment_errors.append(
+                    f"File '{name}' exceeds the maximum allowed size of "
+                    f"{int(max_file_size / (1024 * 1024))} MB."
+                )
+                continue
+            valid_uploads.append(f)
+
+        if valid_uploads and not attachment_errors:
             paths = []
             names = []
-            for f in uploaded_files:
+            for f in valid_uploads:
                 f.seek(0)
                 path = default_storage.save(f"temp/reimbursements/{f.name}", f)
                 paths.append(path)
@@ -1697,7 +1730,10 @@ def create_reimbursement(request):
             post_data["temp_attachment_names"] = ",".join(names)
 
         form = forms.ReimbursementForm(post_data, request.FILES, instance=instance)
-        if form.is_valid():
+        if attachment_errors:
+            for msg in attachment_errors:
+                form.add_error("attachment", msg)
+        if not attachment_errors and form.is_valid():
             form.save()
             for path in post_data.get("temp_attachment_paths", "").split(","):
                 path = path.strip()

@@ -975,32 +975,42 @@ class ReimbursementForm(ModelForm):
         self.fields["employee_id"].empty_label = None
 
     def exclude_fields_by_type(self, exclude_fields):
-        """Determine which fields to exclude based on type."""
-        type = (
-            self.data.get("type")
-            if self.data
-            else self.instance.type if self.instance else None
-        )
-        is_edit = self.instance and self.instance.pk
-        has_data = bool(self.data)
+        """Determine which fields to exclude based on type.
 
-        if type == "reimbursement" and is_edit:
+        The form must render the correct set of fields server-side so that
+        the user never sees an inconsistent / wrong form (e.g. Leave
+        Encashment fields appearing on a Reimbursement request) when the
+        client-side toggle script is delayed by htmx swap timing,
+        select2 initialization, or a slow connection.
+
+        Resolution order for the active type:
+            1. POST data ``type`` (form re-render after submit)
+            2. Existing instance ``type`` (edit)
+            3. Model default ``"reimbursement"`` (fresh create)
+        """
+        type = None
+        if self.data:
+            type = self.data.get("type")
+        if not type and self.instance is not None:
+            # ``self.instance.type`` falls back to the model's default
+            # ("reimbursement") on a brand new instance, which is exactly
+            # what we want for a fresh GET.
+            type = getattr(self.instance, "type", None)
+        if not type:
+            type = "reimbursement"
+
+        is_edit = self.instance and self.instance.pk
+
+        if type == "reimbursement":
             exclude_fields += [
                 "leave_type_id",
                 "cfd_to_encash",
                 "ad_to_encash",
                 "bonus_to_encash",
             ]
-        elif type == "reimbursement" and has_data:  # NEW: handle POST re-render
-            exclude_fields += [
-                "leave_type_id",
-                "cfd_to_encash",
-                "ad_to_encash",
-                "bonus_to_encash",
-            ]
-        elif type == "leave_encashment" and (is_edit or has_data):
+        elif type == "leave_encashment":
             exclude_fields += ["attachment", "amount", "bonus_to_encash"]
-        elif type == "bonus_encashment" and (is_edit or has_data):
+        elif type == "bonus_encashment":
             exclude_fields += [
                 "attachment",
                 "amount",
