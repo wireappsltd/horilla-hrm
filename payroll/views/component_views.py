@@ -1733,6 +1733,7 @@ def create_reimbursement(request):
         if attachment_errors:
             for msg in attachment_errors:
                 form.add_error("attachment", msg)
+                messages.error(request, msg)
         if not attachment_errors and form.is_valid():
             form.save()
             for path in post_data.get("temp_attachment_paths", "").split(","):
