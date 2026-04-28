@@ -629,19 +629,6 @@ class Attendance(HorillaModel):
                 }
             )
 
-        # On today's date, the check-out time itself must not be in the future.
-        # On future dates (within the 3-day window) any time is acceptable, so the
-        # legacy "future time" check is intentionally only applied to today.
-        if (
-            self.attendance_clock_out_date
-            and self.attendance_clock_out_date == today
-            and out_time
-            and out_time > now.time()
-        ):
-            raise ValidationError(
-                {"attendance_clock_out": "Check-out time cannot be in the future"}
-            )
-
 
 class AttendanceRequestFile(HorillaModel):
     file = models.FileField(upload_to="attendance/request_files")
