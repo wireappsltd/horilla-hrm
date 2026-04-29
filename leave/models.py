@@ -418,6 +418,11 @@ class AvailableLeave(HorillaModel):
     reset_date = models.DateField(
         blank=True, null=True, verbose_name=_("Leave Reset Date")
     )
+    last_reset_date = models.DateField(
+        blank=True,
+        null=True,
+        verbose_name=_("Last Leave Reset Date"),
+    )
     expired_date = models.DateField(
         blank=True, null=True, verbose_name=_("CarryForward Expired Date")
     )
@@ -518,20 +523,32 @@ class AvailableLeave(HorillaModel):
 
         return reset_date
 
+    def current_period_start(self):
+        # The window the live stats describe: from the last reset (or, before
+        # any reset, the original assigned_date) onward. Without this filter,
+        # leave_taken() keeps summing pre-reset approvals into the new period,
+        # so total_leaves() ends up = available + carryforward + ALL-time
+        # approved instead of the period's allocation.
+        return self.last_reset_date or self.assigned_date
+
     def leave_taken(self):
+        period_start = self.current_period_start()
         leave_taken = LeaveRequest.objects.filter(
             leave_type_id=self.leave_type_id,
             employee_id=self.employee_id,
             status="approved",
+            start_date__gte=period_start,
         ).aggregate(total_sum=Sum("requested_days"))
 
         return leave_taken["total_sum"] if leave_taken["total_sum"] else 0
 
     def pending_leaves(self):
+        period_start = self.current_period_start()
         pending_leaves = LeaveRequest.objects.filter(
             leave_type_id=self.leave_type_id,
             employee_id=self.employee_id,
             status="requested",
+            start_date__gte=period_start,
         ).aggregate(total_days=Sum('requested_days'))['total_days']
         return pending_leaves if pending_leaves else 0
 
@@ -580,11 +597,18 @@ class AvailableLeave(HorillaModel):
                 expiry_date = self.leave_type_id.carryforward_expire_date
             self.expired_date = expiry_date
 
-        # Compute total_leave_days and ensure carryforward_days >= 0
-        self.total_leave_days = round(
-            max(self.available_days + self.carryforward_days, 0), 3
-        )
+        # total_leave_days reflects the period's allocation (constant within
+        # a period): every approval shifts days from available_days into
+        # leave_taken, so we must add leave_taken back to keep the field
+        # stable. Without this, the "Total Leave Days" column shrinks every
+        # time a leave is approved. leave_taken() is filtered to the current
+        # period via last_reset_date, so a fresh reset zeroes it and the
+        # field equals the new period's allocation.
         self.carryforward_days = round(max(self.carryforward_days, 0), 3)
+        period_taken = self.leave_taken() if self.pk else 0
+        self.total_leave_days = round(
+            max(self.available_days + self.carryforward_days + period_taken, 0), 3
+        )
 
     def save(self, *args, **kwargs):
         self.pre_save_processing()
