@@ -263,11 +263,6 @@ class AttendanceUpdateForm(BaseModelForm):
                     _("Attendance cannot be marked before your joining date.")
                 )
 
-        is_future_date = block_future_attendance(attendance_date)
-        if is_future_date:
-            raise ValidationError(
-                _("Attendance cannot be marked more than 3 days in the future")
-            )
 
         if check_in_time and check_out_time:
             if check_out_time < check_in_time:
@@ -576,11 +571,6 @@ class AttendanceForm(BaseModelForm):
                     _("Attendance cannot be marked before your joining date.")
                 )
 
-        is_future_date = block_future_attendance(attendance_date)
-        if is_future_date:
-            raise ValidationError(
-                _("Attendance cannot be marked more than 3 days in the future")
-            )
 
         if check_in_time and check_out_time:
             if check_out_time < check_in_time:
@@ -959,11 +949,6 @@ class AttendanceRequestForm(BaseModelForm):
                     _("Attendance cannot be marked before your joining date.")
                 )
 
-        is_future_date = block_future_attendance(attendance_date)
-        if is_future_date:
-            raise ValidationError(
-                _("Attendance cannot be marked more than 3 days in the future")
-            )
 
         if check_in_time and check_out_time:
             if check_out_time < check_in_time:
