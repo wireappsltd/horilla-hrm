@@ -5602,6 +5602,7 @@ def force_carryforward_reset(request):
                     "set_reset_date skipped al_id=%s lt=%s: %r"
                     % (available_leave.id, leave_type.name, exc)
                 )
+            available_leave.last_reset_date = today_date
             try:
                 available_leave.save()
             except Exception as exc:
