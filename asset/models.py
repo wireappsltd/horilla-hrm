@@ -275,6 +275,22 @@ class AssetAssignment(HorillaModel):
         default=False,
         verbose_name=_("Check-up Completed"),
     )
+    checkup_description = models.TextField(
+        null=True,
+        blank=True,
+        verbose_name=_("Check-up Description"),
+    )
+    checkup_image = models.ImageField(
+        upload_to="asset/checkup_images/",
+        null=True,
+        blank=True,
+        verbose_name=_("Check-up Image"),
+    )
+    last_overdue_notification_date = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name=_("Last Overdue Notification Date"),
+    )
     objects = HorillaCompanyManager(
         "assigned_to_employee_id__employee_work_info__company_id"
     )
@@ -300,6 +316,21 @@ class AssetAssignment(HorillaModel):
 
     def __str__(self):
         return f"{self.assigned_to_employee_id} --- {self.asset_id} --- {self.return_status}"
+
+    @property
+    def yearly_checkup_status(self):
+        """Returns one of: "Complete", "Overdue", "N/A"."""
+        from django.utils import timezone
+
+        if self.checkup_completed:
+            return "Complete"
+        if (
+            self.yearly_checkup_date
+            and self.return_date is None
+            and self.yearly_checkup_date <= timezone.localdate()
+        ):
+            return "Overdue"
+        return "N/A"
 
 
 class AssetRequest(HorillaModel):
