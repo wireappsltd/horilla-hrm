@@ -205,7 +205,7 @@ def payroll_calculation(employee, start_date, end_date):
     payee_tax_base_amount = gross_pay - loss_of_pay_amount - total_lop_allowance_deductions
 
     print("Payee Tax Base Amount", payee_tax_base_amount)
-    payee_tax = calculate_payee_tax_deduction(payee_tax_base_amount)
+    payee_tax = round(float(calculate_payee_tax_deduction(payee_tax_base_amount)), 2)
 
     gross_pay_deductions = updated_gross_pay_data["deductions"]
 
@@ -213,10 +213,10 @@ def payroll_calculation(employee, start_date, end_date):
     taxable_gross_pay = calculate_taxable_gross_pay(**kwargs)
     # print("This is taxable gross pay",taxable_gross_pay)
     tax_deductions = calculate_tax_deduction(**kwargs)
-    federal_tax = calculate_taxable_amount(**kwargs)
+    federal_tax = round(float(calculate_taxable_amount(**kwargs)), 2)
     post_tax_deductions["post_tax_deductions"].append({
         "title": "EPF (Employee 8%)",
-        "amount": employee_epf_amount,
+        "amount": round(float(employee_epf_amount), 2),
     })
     post_tax_deductions["post_tax_deductions"].append({
         "title": "PAYE Tax",

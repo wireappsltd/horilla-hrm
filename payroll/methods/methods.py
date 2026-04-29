@@ -595,7 +595,7 @@ def compute_salary_on_30_day_wage(employee, wage, start_date, end_date, *args, *
             holiday_allowances.append({
                 "title": "Mercantile Holiday Allowance",
                 "code": "mercantile_holiday",
-                "amount": salary_per_day * 2,
+                "amount": round(float(salary_per_day * 2), 2),
                 "is_taxable": False,
                 "include_in_lop": False,
             })
@@ -605,7 +605,7 @@ def compute_salary_on_30_day_wage(employee, wage, start_date, end_date, *args, *
             holiday_allowances.append({
                 "title": "Mercantile Holiday Half Day Allowance",
                 "code": "mercantile_holiday_half_day",
-                "amount": salary_per_day * 1,
+                "amount": round(float(salary_per_day * 1), 2),
                 "is_taxable": False,
                 "include_in_lop": False,
             })
@@ -619,7 +619,7 @@ def compute_salary_on_30_day_wage(employee, wage, start_date, end_date, *args, *
             holiday_allowances.append({
                 "title": "Poya Holiday Allowance",
                 "code": "poya_holiday",
-                "amount": salary_per_day * 1.5,
+                "amount": round(float(salary_per_day * 1.5), 2),
                 "is_taxable": False,
                 "include_in_lop": False,
             })
@@ -629,7 +629,7 @@ def compute_salary_on_30_day_wage(employee, wage, start_date, end_date, *args, *
             holiday_allowances.append({
                 "title": "Poya Holiday Half Day Allowance",
                 "code": "poya_holiday_half_day",
-                "amount": salary_per_day * 0.75,
+                "amount": round(float(salary_per_day * 0.75), 2),
                 "is_taxable": False,
                 "include_in_lop": False,
             })
@@ -663,9 +663,9 @@ def compute_salary_on_30_day_wage(employee, wage, start_date, end_date, *args, *
     loss_of_pay = salary_per_day * loss_of_pay_dates
 
 
-    employee_epf_amount = (wage - loss_of_pay) / 100 * 8
-    employer_epf_amount = (wage - loss_of_pay) / 100 * 12
-    employer_etf_amount = (wage - loss_of_pay) / 100 * 3
+    employee_epf_amount = round(float((wage - loss_of_pay) / 100 * 8), 2)
+    employer_epf_amount = round(float((wage - loss_of_pay) / 100 * 12), 2)
+    employer_etf_amount = round(float((wage - loss_of_pay) / 100 * 3), 2)
 
     logger.info(f"""
     --- Debug Info ---
