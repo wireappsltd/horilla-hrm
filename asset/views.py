@@ -14,7 +14,7 @@ from django.contrib import messages
 from django.core.files.base import ContentFile
 from django.core.files.storage import FileSystemStorage
 from django.core.paginator import Paginator
-from django.db.models import ProtectedError
+from django.db.models import ProtectedError, Q
 from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -40,6 +40,7 @@ from asset.forms import (
     AssetReportForm,
     AssetRequestForm,
     AssetReturnForm,
+    YearlyCheckupForm,
 )
 from asset.models import (
     Asset,
@@ -1883,3 +1884,129 @@ def trigger_checkup_notifications(request):
         messages.success(request, _("Upcoming checkup notifications triggered."))
 
     return redirect("asset-request-allocation-view")
+
+
+@login_required
+@hx_request_required
+def asset_yearly_checkup_submit(request, asset_allocation_id):
+    """
+    Submit a yearly check-up for an asset allocation.
+
+    All authenticated users can submit a check-up. On success the assignment is
+    marked Complete and a notification is sent to Admin (superusers) and the
+    ISO group immediately.
+    """
+    asset_allocation = get_object_or_404(AssetAssignment, id=asset_allocation_id)
+
+    if asset_allocation.checkup_completed:
+        messages.info(request, _("This check-up is already marked as complete."))
+        if request.META.get("HTTP_HX_REQUEST") == "true":
+            return HttpResponse(
+                "<script>location.reload();</script>"
+            )
+        return redirect("asset-request-allocation-view")
+
+    initial = {"yearly_checkup_date": date.today()}
+    form = YearlyCheckupForm(instance=asset_allocation, initial=initial)
+
+    if request.method == "POST":
+        form = YearlyCheckupForm(
+            request.POST, request.FILES, instance=asset_allocation
+        )
+        if form.is_valid():
+            assignment = form.save(commit=False)
+            assignment.checkup_completed = True
+            assignment.save()
+            send_checkup_completion_notification(request, assignment)
+            messages.success(
+                request, _("Yearly check-up submitted successfully.")
+            )
+            response = render(
+                request,
+                "request_allocation/yearly_checkup_form.html",
+                {
+                    "yearly_checkup_form": YearlyCheckupForm(initial=initial),
+                    "asset_allocation": assignment,
+                },
+            )
+            return HttpResponse(
+                response.content.decode("utf-8")
+                + "<script>location.reload();</script>"
+            )
+
+    context = {
+        "yearly_checkup_form": form,
+        "asset_allocation": asset_allocation,
+    }
+    return render(
+        request, "request_allocation/yearly_checkup_form.html", context
+    )
+
+
+def send_checkup_completion_notification(request, assignment):
+    """
+    Notify Admin (superusers) and ISO group users that a yearly check-up has
+    been marked complete for an asset assignment.
+    """
+    from django.contrib.auth.models import Group, User
+
+    asset = assignment.asset_id
+    employee = assignment.assigned_to_employee_id
+    checkup_date = (
+        assignment.yearly_checkup_date.strftime("%Y-%m-%d")
+        if assignment.yearly_checkup_date
+        else "-"
+    )
+
+    submitted_by = (
+        request.user.employee_get
+        if hasattr(request.user, "employee_get")
+        else request.user
+    )
+
+    message = (
+        f"Yearly check-up for asset '{asset.asset_name}' "
+        f"({asset.asset_tracking_id}) assigned to {employee.get_full_name()} "
+        f"has been marked Complete on {checkup_date}."
+    )
+    message_ar = (
+        f"تم وضع علامة على الفحص السنوي للأصل '{asset.asset_name}' "
+        f"({asset.asset_tracking_id}) المخصص للموظف {employee.get_full_name()} "
+        f"كمكتمل بتاريخ {checkup_date}."
+    )
+    message_de = (
+        f"Die jährliche Überprüfung für Asset '{asset.asset_name}' "
+        f"({asset.asset_tracking_id}), zugewiesen an {employee.get_full_name()}, "
+        f"wurde am {checkup_date} als abgeschlossen markiert."
+    )
+    message_es = (
+        f"La revisión anual del activo '{asset.asset_name}' "
+        f"({asset.asset_tracking_id}) asignado a {employee.get_full_name()} "
+        f"se marcó como completada el {checkup_date}."
+    )
+    message_fr = (
+        f"Le contrôle annuel de l'actif '{asset.asset_name}' "
+        f"({asset.asset_tracking_id}) attribué à {employee.get_full_name()} "
+        f"a été marqué comme terminé le {checkup_date}."
+    )
+
+    iso_group_name = "ISO"
+    recipient_user_qs = User.objects.filter(is_active=True).filter(
+        Q(is_superuser=True) | Q(groups__name=iso_group_name)
+    ).distinct()
+
+    if not recipient_user_qs.exists():
+        return
+
+    notify.send(
+        submitted_by,
+        recipient=recipient_user_qs,
+        verb=message,
+        verb_ar=message_ar,
+        verb_de=message_de,
+        verb_es=message_es,
+        verb_fr=message_fr,
+        redirect=reverse("asset-request-allocation-view"),
+        label="System",
+        icon="checkmark-circle",
+    )
