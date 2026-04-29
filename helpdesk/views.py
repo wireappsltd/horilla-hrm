@@ -838,6 +838,35 @@ def ticket_detail(request, ticket_id, **kwargs):
         activity_list = []
         comments = ticket.comment.all()
         trackings = ticket.tracking()
+
+        # Determine if this ticket has an ISO-reviewed Password Reset request
+        # so we can suppress redundant audit log entries that duplicate the
+        # dedicated ISO review activity entry / approval comment.
+        _pr_for_audit = getattr(ticket, "password_reset_request", None)
+        _has_iso_review = bool(
+            _pr_for_audit
+            and _pr_for_audit.reviewed_at
+            and _pr_for_audit.iso_status in ("APPROVED", "REJECTED")
+        )
+
+        # Status values driven by ISO review (auto-set in iso_review_password_reset)
+        _iso_driven_ticket_statuses = {"resolved", "canceled"}
+
+        if _has_iso_review:
+            for h in trackings:
+                changes = h.get("changes") or []
+                # Drop ticket.status change rows that were caused by ISO review –
+                # this information is already conveyed by the ISO Review entry
+                # and the approval/rejection comment.
+                changes = [
+                    c for c in changes
+                    if not (
+                        c.get("field_name") == "status"
+                        and str(c.get("new", "")).lower() in _iso_driven_ticket_statuses
+                    )
+                ]
+                h["changes"] = changes
+
         # Filter out history entries that have no visible changes
         trackings = [
             h for h in trackings
@@ -860,6 +889,20 @@ def ticket_detail(request, ticket_id, **kwargs):
         password_reset_request = getattr(ticket, "password_reset_request", None)
         if password_reset_request:
             pr_trackings = password_reset_request.tracking()
+            _iso_review_fields = {
+                "iso_status",
+                "iso_feedback",
+                "reviewed_by",
+                "reviewed_at",
+            }
+            if _has_iso_review:
+                for h in pr_trackings:
+                    changes = h.get("changes") or []
+                    changes = [
+                        c for c in changes
+                        if c.get("field_name") not in _iso_review_fields
+                    ]
+                    h["changes"] = changes
             # Filter out history entries that have no visible changes
             pr_trackings = [
                 h for h in pr_trackings
