@@ -228,6 +228,7 @@ class AssetAllocationFilter(CustomFilterSet):
 
         model = AssetAssignment
         fields = "__all__"
+        exclude = ["checkup_image"]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -359,6 +360,7 @@ class AssetHistoryFilter(CustomFilterSet):
 
         model = AssetAssignment
         fields = "__all__"
+        exclude = ["checkup_image"]
 
 
 class AssetHistoryReGroup:
