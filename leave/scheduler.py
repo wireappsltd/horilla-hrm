@@ -28,6 +28,10 @@ def leave_reset():
                     assigned_date=today_date, available_leave=available_leave
                 )
                 available_leave.reset_date = new_reset_date
+                # Mark the start of the new period so leave_taken/pending_leaves
+                # exclude pre-reset approvals. Without this, total_leaves keeps
+                # adding pre-reset approved days into the new period's stats.
+                available_leave.last_reset_date = today_date
                 available_leave.save()
             if expired_date and expired_date <= today_date:
                 new_expired_date = available_leave.set_expired_date(
