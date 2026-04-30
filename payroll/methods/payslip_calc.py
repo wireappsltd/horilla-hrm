@@ -14,6 +14,7 @@ from django.apps import apps
 from horilla.methods import get_horilla_model_class
 from payroll.methods.deductions import update_compensation_deduction
 from payroll.methods.limits import compute_limit
+from payroll.methods.methods import truncate_2dp
 from payroll.models import models
 from payroll.models.models import (
     Allowance,
@@ -413,7 +414,7 @@ def calculate_allowance(**kwargs):
             "allowance_id": allowance.id,
             "title": allowance.title,
             "is_taxable": allowance.is_taxable,
-            "amount": round(float(amount), 2),
+            "amount": truncate_2dp(amount),
             "include_in_lop":allowance.include_in_lop
         }
         serialized_allowances.append(serialized_allowance)
@@ -424,7 +425,7 @@ def calculate_allowance(**kwargs):
             "allowance_id": allowance.id,
             "title": allowance.title,
             "is_taxable": allowance.is_taxable,
-            "amount": round(float(amount), 2),
+            "amount": truncate_2dp(amount),
             "include_in_lop": allowance.include_in_lop
         }
         serialized_allowances.append(serialized_allowance)
@@ -487,7 +488,7 @@ def calculate_tax_deduction(*_args, **kwargs):
             "deduction_id": deduction.id,
             "title": deduction.title,
             "is_tax": deduction.is_tax,
-            "amount": round(float(amount), 2),
+            "amount": truncate_2dp(amount),
             "employer_contribution_rate": deduction.employer_rate,
         }
         serialized_deductions.append(serialized_deduction)
@@ -592,7 +593,7 @@ def calculate_pre_tax_deduction(*_args, **kwargs):
             "deduction_id": deduction.id,
             "title": deduction.title,
             "is_pretax": deduction.is_pretax,
-            "amount": round(float(amount), 2),
+            "amount": truncate_2dp(amount),
             "employer_contribution_rate": deduction.employer_rate,
         }
         serialized_deductions.append(serialized_deduction)
@@ -688,7 +689,7 @@ def calculate_post_tax_deduction(*_args, **kwargs):
             "deduction_id": deduction.id,
             "title": deduction.title,
             "is_pretax": deduction.is_pretax,
-            "amount": round(float(amount), 2),
+            "amount": truncate_2dp(amount),
             "employer_contribution_rate": deduction.employer_rate,
         }
         serialized_deductions.append(serialized_deduction)
@@ -727,7 +728,7 @@ def calculate_net_pay_deduction(net_pay, net_pay_deductions, **kwargs):
         deduction_amt.append(amount)
     net_deduction = 0
     for deduction, amount in zip(deductions, deduction_amt):
-        amount = round(float(amount), 2)
+        amount = truncate_2dp(amount)
         serialized_deduction = {
             "deduction_id": deduction.id,
             "title": deduction.title,
@@ -978,7 +979,7 @@ def calculate_based_on_overtime(*_args, **kwargs):
     amount_per_hour = component.amount_per_one_hr
     amount_per_second = amount_per_hour / (60 * 60)
     amount = overtime * amount_per_second
-    amount = round(amount, 2)
+    amount = truncate_2dp(amount)
 
     amount = compute_limit(component, amount, day_dict)
 
