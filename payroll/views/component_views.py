@@ -64,6 +64,7 @@ from payroll.methods.methods import (
     compute_salary_on_period,
     paginator_qry,
     save_payslip,
+    truncate_2dp,
 )
 from payroll.methods.payslip_calc import (
     calculate_allowance,
@@ -186,8 +187,8 @@ def payroll_calculation(employee, start_date, end_date):
     if unpaid_days > 0:
         for allowance in allowances["allowances"]:
             if allowance.get("include_in_lop", True):
-                allowance_deduction_amount = round(
-                    (allowance["amount"] / 30) * unpaid_days, 2
+                allowance_deduction_amount = truncate_2dp(
+                    (allowance["amount"] / 30) * unpaid_days
                 )
 
                 if allowance_deduction_amount > 0:
@@ -205,7 +206,7 @@ def payroll_calculation(employee, start_date, end_date):
     payee_tax_base_amount = gross_pay - loss_of_pay_amount - total_lop_allowance_deductions
 
     print("Payee Tax Base Amount", payee_tax_base_amount)
-    payee_tax = round(float(calculate_payee_tax_deduction(payee_tax_base_amount)), 2)
+    payee_tax = truncate_2dp(calculate_payee_tax_deduction(payee_tax_base_amount))
 
     gross_pay_deductions = updated_gross_pay_data["deductions"]
 
@@ -213,10 +214,10 @@ def payroll_calculation(employee, start_date, end_date):
     taxable_gross_pay = calculate_taxable_gross_pay(**kwargs)
     # print("This is taxable gross pay",taxable_gross_pay)
     tax_deductions = calculate_tax_deduction(**kwargs)
-    federal_tax = round(float(calculate_taxable_amount(**kwargs)), 2)
+    federal_tax = truncate_2dp(calculate_taxable_amount(**kwargs))
     post_tax_deductions["post_tax_deductions"].append({
         "title": "EPF (Employee 8%)",
-        "amount": round(float(employee_epf_amount), 2),
+        "amount": truncate_2dp(employee_epf_amount),
     })
     post_tax_deductions["post_tax_deductions"].append({
         "title": "PAYE Tax",
