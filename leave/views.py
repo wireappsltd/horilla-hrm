@@ -3955,7 +3955,13 @@ def employee_available_leave_count(request):
 
     if available_leave:
         leave_type = available_leave.leave_type_id
-        total_leave_days = available_leave.total_leave_days
+        # Leave balance shown in the request card = available + carryforward
+        # (pending is subtracted below). The total_leave_days field now stores
+        # the period allocation (incl. leave_taken), so it is no longer the
+        # right base for "what's left to request".
+        total_leave_days = (
+            available_leave.available_days + available_leave.carryforward_days
+        )
 
         if leave_type:
             require_attachment = leave_type.require_attachment == "yes"
@@ -5602,6 +5608,7 @@ def force_carryforward_reset(request):
                     "set_reset_date skipped al_id=%s lt=%s: %r"
                     % (available_leave.id, leave_type.name, exc)
                 )
+            available_leave.last_reset_date = today_date
             try:
                 available_leave.save()
             except Exception as exc:
