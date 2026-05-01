@@ -193,7 +193,7 @@
 {% endif %}
 {% if employee_leaves or user_leaves %}
 <div class="oh-sticky-table-request">
-  {% if employee.leaverequest_set.all %}
+  {% if current_year_leave_requests %}
   <div class="oh-sticky-table">
     <div class="oh-sticky-table__table oh-table--sortable">
       <div class="oh-sticky-table__thead">
@@ -209,7 +209,7 @@
         </div>
       </div>
       <div class="oh-sticky-table__tbody">
-        {% for leave_request in employee.leaverequest_set.all %}
+        {% for leave_request in current_year_leave_requests %}
         <div
           class="oh-sticky-table__tr"
           data-toggle="oh-modal-toggle"
