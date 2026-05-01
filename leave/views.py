@@ -5706,6 +5706,10 @@ def force_carryforward_expire(request):
             if available_leave.carryforward_days:
                 before_cf = available_leave.carryforward_days
                 try:
+                    # Mirror scheduler behavior: capture CF into the
+                    # expired stat before zeroing so the value remains
+                    # visible after the wipe.
+                    available_leave.expired_carryforward_days = before_cf
                     available_leave.carryforward_days = 0
                     available_leave.save()
                 except Exception as exc:
@@ -5716,8 +5720,9 @@ def force_carryforward_expire(request):
                     errors.append(msg)
                     continue
                 _qa_log(
-                    "  row al_id=%s emp=%s | cf %s -> 0"
-                    % (available_leave.id, available_leave.employee_id, before_cf)
+                    "  row al_id=%s emp=%s | cf %s -> 0 (expired_cf=%s)"
+                    % (available_leave.id, available_leave.employee_id,
+                       before_cf, available_leave.expired_carryforward_days)
                 )
                 affected_rows += 1
         if leave_type.carryforward_type == "carryforward expire":
