@@ -9,6 +9,8 @@
                 <div class="oh-sticky-table__th">{% trans "Leave Type" %}</div>
                 <div class="oh-sticky-table__th">{% trans "Available Days" %}</div>
                 <div class="oh-sticky-table__th">{% trans "Carryforward Days" %}</div>
+                <div class="oh-sticky-table__th">{% trans "Used Carryforward" %}</div>
+                <div class="oh-sticky-table__th">{% trans "Expired Carryforward" %}</div>
                 <div class="oh-sticky-table__th">{% trans "Total Leave Days" %}</div>
                 <div class="oh-sticky-table__th">{% trans "Assigned Date" %}</div>
                 <div class="oh-sticky-table__th">{% trans "Actions" %}</div>
@@ -31,6 +33,8 @@
                 <div class="oh-sticky-table__td">{{available_leave.leave_type_id}}</div>
                 <div class="oh-sticky-table__td">{{available_leave.available_days}}</div>
                 <div class="oh-sticky-table__td">{{available_leave.carryforward_days}}</div>
+                <div class="oh-sticky-table__td">{{available_leave.used_carryforward_days}}</div>
+                <div class="oh-sticky-table__td">{{available_leave.expired_carryforward_days}}</div>
                 <div class="oh-sticky-table__td">{{available_leave.total_leave_days}}</div>
                 <div class="oh-sticky-table__td">{{available_leave.assigned_date}}</div>
                 <div class="oh-sticky-table__td">
