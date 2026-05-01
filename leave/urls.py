@@ -382,6 +382,11 @@ urlpatterns = [
         views.force_carryforward_expire,
         name="dev-force-carryforward-expire",
     ),
+    path(
+        "dev/recalculate-leave-balances",
+        views.recalculate_leave_balances,
+        name="dev-recalculate-leave-balances",
+    ),
 ]
 
 if apps.is_installed("recruitment"):
