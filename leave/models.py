@@ -411,6 +411,9 @@ class AvailableLeave(HorillaModel):
     carryforward_days = models.FloatField(
         default=0, verbose_name=_("Carryforward Days")
     )
+    expired_carryforward_days = models.FloatField(
+        default=0, verbose_name=_("Expired Carryforward Days")
+    )
     total_leave_days = models.FloatField(default=0, verbose_name=_("Total Leave Days"))
     assigned_date = models.DateField(
         default=timezone.now, verbose_name=_("Assigned Date")
@@ -463,6 +466,9 @@ class AvailableLeave(HorillaModel):
             carryforward_max = self.leave_type_id.carryforward_max
             self.carryforward_days = min(carryforward_max, unused_current_period)
         self.available_days = self.leave_type_id.total_days
+        # expired_carryforward_days is a per-period stat; clear it so the
+        # next period starts at 0 and only reflects CF expired in that period.
+        self.expired_carryforward_days = 0
 
     # Setting the reset date for carryforward leaves
 
@@ -542,6 +548,16 @@ class AvailableLeave(HorillaModel):
 
         return leave_taken["total_sum"] if leave_taken["total_sum"] else 0
 
+    def used_carryforward_days(self):
+        period_start = self.current_period_start()
+        used = LeaveRequest.objects.filter(
+            leave_type_id=self.leave_type_id,
+            employee_id=self.employee_id,
+            status="approved",
+            start_date__gte=period_start,
+        ).aggregate(total=Sum("approved_carryforward_days"))
+        return used["total"] if used["total"] else 0
+
     def pending_leaves(self):
         period_start = self.current_period_start()
         pending_leaves = LeaveRequest.objects.filter(
@@ -570,6 +586,10 @@ class AvailableLeave(HorillaModel):
         else:
             expired_date = assigned_date + relativedelta(years=period)
 
+        # Capture the CF balance that is about to be wiped so it remains
+        # visible as a per-period stat. Without this, once carryforward_days
+        # is zeroed there is no record of how many CF days expired unused.
+        available_leave.expired_carryforward_days = available_leave.carryforward_days
         available_leave.carryforward_days = 0
         available_leave.available_days = available_leave.leave_type_id.total_days
         return expired_date
