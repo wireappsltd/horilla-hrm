@@ -5786,3 +5786,218 @@ def force_carryforward_expire(request):
             "errors": errors,
         }
     )
+
+
+@login_required
+@require_http_methods(["POST"])
+def recalculate_leave_balances(request):
+    """
+    Repair tool: rebuild every AvailableLeave row's `available_days` and
+    `carryforward_days` from the authoritative LeaveRequest history. Use
+    this when balances have drifted from request data due to buggy
+    scheduler runs.
+
+    Assumes annual reset on Jan 1 (per project policy).
+
+    Per row, with current_year = today.year:
+      current_period:  [Jan 1 of current_year, today]
+      prior_period:    [Jan 1 of (current_year-1), Dec 31 of (current_year-1)]
+
+      consumed_avail_now = Σ approved_available_days in current_period
+      consumed_cf_now    = Σ approved_carryforward_days in current_period
+      prior_used_normal  = Σ approved_available_days in prior_period
+
+      expected_available = max(0, total_days - consumed_avail_now)
+
+      starting_cf = min(carryforward_max, max(0, total_days - prior_used_normal))
+                    (= 0 if no CF on this leave type, or if employee was
+                     assigned this year so there is no prior period yet)
+      expected_cf = max(0, starting_cf - consumed_cf_now)
+                    (forced to 0 if leave_type uses 'carryforward expire'
+                     and carryforward_expire_date <= today)
+
+    Both fields are overwritten when they differ. Logs every row's
+    before/after via [QA-LEAVE] for audit.
+    """
+    import math
+    from datetime import date as _date
+
+    from django.db.models import Sum
+
+    from leave.models import AvailableLeave, LeaveRequest
+
+    deny = _require_dev_superuser(request)
+    if deny is not None:
+        return deny
+
+    today = _date.today()
+    current_year = today.year
+    current_period_start = _date(current_year, 1, 1)
+    prior_period_start = _date(current_year - 1, 1, 1)
+    prior_period_end = _date(current_year - 1, 12, 31)
+
+    _qa_log(
+        "=== recalculate_leave_balances START user=%s today=%s "
+        "current_period=[%s..%s] prior_period=[%s..%s] ==="
+        % (
+            request.user,
+            today,
+            current_period_start,
+            today,
+            prior_period_start,
+            prior_period_end,
+        )
+    )
+    rows = AvailableLeave.objects.select_related("leave_type_id", "employee_id").all()
+    total = rows.count()
+    _qa_log("inspecting %d AvailableLeave row(s)" % total)
+
+    avail_fixed = 0
+    cf_fixed = 0
+    errors = []
+
+    for available_leave in rows:
+        leave_type = available_leave.leave_type_id
+        if leave_type is None:
+            _qa_log("  SKIP al_id=%s — no leave_type assigned" % available_leave.id)
+            continue
+
+        # Current period — clamp to assigned_date to avoid summing
+        # pre-assignment leaves (shouldn't exist, but be defensive).
+        eff_period_start = max(current_period_start, available_leave.assigned_date)
+
+        current_agg = LeaveRequest.objects.filter(
+            employee_id=available_leave.employee_id,
+            leave_type_id=leave_type,
+            status="approved",
+            start_date__gte=eff_period_start,
+            start_date__lte=today,
+        ).aggregate(
+            sum_avail=Sum("approved_available_days"),
+            sum_cf=Sum("approved_carryforward_days"),
+        )
+        consumed_avail = current_agg["sum_avail"] or 0
+        consumed_cf = current_agg["sum_cf"] or 0
+
+        # Prior period — only meaningful if employee was assigned before
+        # this year. Otherwise there's nothing to roll forward.
+        if available_leave.assigned_date < current_period_start:
+            prior_agg = LeaveRequest.objects.filter(
+                employee_id=available_leave.employee_id,
+                leave_type_id=leave_type,
+                status="approved",
+                start_date__gte=prior_period_start,
+                start_date__lte=prior_period_end,
+            ).aggregate(sum_avail=Sum("approved_available_days"))
+            prior_used_normal = prior_agg["sum_avail"] or 0
+            prior_unused_normal = max(0, (leave_type.total_days or 0) - prior_used_normal)
+        else:
+            prior_used_normal = 0
+            prior_unused_normal = 0
+
+        # Starting CF = unused-from-prior, capped at carryforward_max.
+        # carryforward_max is None for unbounded — treat as +inf.
+        if leave_type.carryforward_type == "no carryforward":
+            starting_cf = 0
+        else:
+            cf_max = leave_type.carryforward_max
+            cap = cf_max if cf_max is not None else math.inf
+            starting_cf = min(cap, prior_unused_normal)
+
+        # If CF has already expired this period, the live balance must be 0
+        # regardless of consumption math.
+        cf_already_expired = (
+            leave_type.carryforward_type == "carryforward expire"
+            and leave_type.carryforward_expire_date is not None
+            and leave_type.carryforward_expire_date <= today
+        )
+
+        expected_available = max(0, (leave_type.total_days or 0) - consumed_avail)
+        if cf_already_expired:
+            expected_cf = 0
+        else:
+            expected_cf = max(0, starting_cf - consumed_cf)
+
+        before_avail = available_leave.available_days
+        before_cf = available_leave.carryforward_days
+        avail_changed = round(before_avail, 6) != round(expected_available, 6)
+        cf_changed = round(before_cf, 6) != round(expected_cf, 6)
+
+        if not avail_changed and not cf_changed:
+            continue
+
+        update_fields = []
+        if avail_changed:
+            available_leave.available_days = expected_available
+            update_fields.append("available_days")
+        if cf_changed:
+            available_leave.carryforward_days = expected_cf
+            update_fields.append("carryforward_days")
+
+        try:
+            available_leave.save(update_fields=update_fields)
+        except Exception as exc:
+            msg = (
+                "save FAILED al_id=%s emp=%s lt=%r: %r"
+                % (
+                    available_leave.id,
+                    available_leave.employee_id,
+                    leave_type.name,
+                    exc,
+                )
+            )
+            _qa_log(msg)
+            errors.append(msg)
+            continue
+
+        _qa_log(
+            "  FIX al_id=%s emp=%s lt=%r | avail %s -> %s | cf %s -> %s "
+            "(consumed_avail=%s consumed_cf=%s prior_used_normal=%s "
+            "starting_cf=%s cf_expired=%s)"
+            % (
+                available_leave.id,
+                available_leave.employee_id,
+                leave_type.name,
+                before_avail,
+                expected_available,
+                before_cf,
+                expected_cf,
+                consumed_avail,
+                consumed_cf,
+                prior_used_normal,
+                starting_cf,
+                cf_already_expired,
+            )
+        )
+        if avail_changed:
+            avail_fixed += 1
+        if cf_changed:
+            cf_fixed += 1
+
+    _qa_log(
+        "=== recalculate_leave_balances END inspected=%d avail_fixed=%d "
+        "cf_fixed=%d errors=%d ==="
+        % (total, avail_fixed, cf_fixed, len(errors))
+    )
+
+    return JsonResponse(
+        {
+            "ok": True,
+            "reason": (
+                "Recalculation complete: inspected %d row(s), corrected "
+                "available_days on %d row(s), corrected carryforward_days "
+                "on %d row(s)%s. See runserver console [QA-LEAVE] for "
+                "per-row detail."
+                % (
+                    total,
+                    avail_fixed,
+                    cf_fixed,
+                    (" — %d error(s)" % len(errors)) if errors else "",
+                )
+            ),
+            "inspected": total,
+            "avail_fixed": avail_fixed,
+            "cf_fixed": cf_fixed,
+            "errors": errors,
+        }
+    )

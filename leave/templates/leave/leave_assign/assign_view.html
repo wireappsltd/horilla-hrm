@@ -178,6 +178,12 @@
                         title="{% trans 'Zeros carryforward_days on every employee for every CF-enabled leave type' %}">
                     {% trans "Carryforward Expiry" %}
                 </button>
+                <button type="button" id="qaRecalcBalancesBtn"
+                        class="oh-btn oh-btn--secondary oh-btn--shadow ml-1"
+                        data-url="{% url 'dev-recalculate-leave-balances' %}"
+                        title="{% trans 'Recompute available_days from approved leave request data for the current period; flags suspicious carryforward_days but does not overwrite CF.' %}">
+                    {% trans "Recalculate Balances" %}
+                </button>
             </div>
         {% endif %}
     </div>
@@ -271,9 +277,11 @@
 
     var resetBtn = document.getElementById('qaLeaveResetBtn');
     var expireBtn = document.getElementById('qaCfExpireBtn');
-    console.log('[QA-LEAVE] script init — resetBtn=', !!resetBtn, 'expireBtn=', !!expireBtn, 'csrf len=', (csrfToken || '').length);
+    var recalcBtn = document.getElementById('qaRecalcBalancesBtn');
+    console.log('[QA-LEAVE] script init — resetBtn=', !!resetBtn, 'expireBtn=', !!expireBtn, 'recalcBtn=', !!recalcBtn, 'csrf len=', (csrfToken || '').length);
     if (resetBtn) resetBtn.addEventListener('click', function () { trigger(resetBtn); });
     if (expireBtn) expireBtn.addEventListener('click', function () { trigger(expireBtn); });
+    if (recalcBtn) recalcBtn.addEventListener('click', function () { trigger(recalcBtn); });
 })();
 </script>
 {% endif %}
