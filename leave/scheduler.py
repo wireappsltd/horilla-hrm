@@ -50,7 +50,9 @@ def leave_reset():
             # into expired_carryforward_days first so the expired total
             # remains visible as a stat after the wipe.
             for available_leave in leave_type.employee_available_leave.all():
-                if available_leave.carryforward_days:
+                # `> 0` rather than truthy: a corrupted negative balance
+                # would otherwise be captured as a negative expired stat.
+                if available_leave.carryforward_days > 0:
                     available_leave.expired_carryforward_days = (
                         available_leave.carryforward_days
                     )
