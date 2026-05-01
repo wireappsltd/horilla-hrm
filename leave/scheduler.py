@@ -46,9 +46,14 @@ def leave_reset():
         ):
             # Zero out CF days on every employee's AvailableLeave for this
             # leave type — bumping the expire date alone leaves stale CF
-            # showing in leave statistics indefinitely.
+            # showing in leave statistics indefinitely. Capture the value
+            # into expired_carryforward_days first so the expired total
+            # remains visible as a stat after the wipe.
             for available_leave in leave_type.employee_available_leave.all():
                 if available_leave.carryforward_days:
+                    available_leave.expired_carryforward_days = (
+                        available_leave.carryforward_days
+                    )
                     available_leave.carryforward_days = 0
                     available_leave.save()
             leave_type.carryforward_expire_date = leave_type.set_expired_date(
