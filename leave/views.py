@@ -5791,15 +5791,13 @@ def force_carryforward_expire(request):
                 before_cf = available_leave.carryforward_days
                 before_expired_date = available_leave.expired_date
                 try:
-                    # Mirror scheduler behavior: capture CF into the
-                    # expired stat before zeroing so the value remains
-                    # visible after the wipe.
-                    available_leave.expired_carryforward_days = before_cf
-                    available_leave.carryforward_days = 0
-                    # Bump the per-employee expired_date forward so the
-                    # scheduler's per-row expiry path doesn't re-trigger
-                    # on the next 20s tick (which would otherwise call
-                    # set_expired_date again).
+                    # AvailableLeave.set_expired_date itself captures CF
+                    # into expired_carryforward_days and zeros CF. Invoking
+                    # it after a manual capture+zero would overwrite the
+                    # captured stat back to 0 (max(0, 0)), so call it FIRST
+                    # for "carryforward expire" types and only fall back to
+                    # a manual capture+zero when it doesn't apply or fails.
+                    applied_via_model = False
                     if leave_type.carryforward_type == "carryforward expire":
                         try:
                             available_leave.expired_date = (
@@ -5808,11 +5806,15 @@ def force_carryforward_expire(request):
                                     assigned_date=today_date,
                                 )
                             )
+                            applied_via_model = True
                         except Exception as exc:
                             _qa_log(
                                 "  set_expired_date skipped al_id=%s lt=%s: %r"
                                 % (available_leave.id, leave_type.name, exc)
                             )
+                    if not applied_via_model:
+                        available_leave.expired_carryforward_days = before_cf
+                        available_leave.carryforward_days = 0
                     available_leave.save()
                 except Exception as exc:
                     msg = ("save FAILED al_id=%s emp=%s lt=%s: %r"
@@ -6037,13 +6039,18 @@ def recalculate_leave_balances(request):
 
         # If CF has already expired DURING the current period, the live
         # balance must be 0 regardless of consumption math.
-        # Two expiry signals both fire within the year:
+        # Three expiry signals can fire within the year:
         #   - LeaveType.carryforward_expire_date (per-leave-type sweep)
         #   - AvailableLeave.expired_date         (per-employee sweep)
-        # Either one falling between [current_period_start, today] means
-        # this row's CF has expired this year. A stale expire date from a
-        # prior year does NOT count — the scheduler should have bumped it
-        # forward, but if it didn't, we must not retroactively wipe CF.
+        #   - AvailableLeave.expired_carryforward_days > 0
+        #     (trailing stat — update_carryforward zeroes this at every
+        #     period reset, so any positive value means expiry already
+        #     captured CF this period. Needed because both expire dates
+        #     get bumped forward AFTER expiry runs, making the date-based
+        #     checks return False even though expiry did happen.)
+        # A stale expire date from a prior year does NOT count — the
+        # scheduler should have bumped it forward, but if it didn't, we
+        # must not retroactively wipe CF.
         type_expired_this_period = (
             leave_type.carryforward_expire_date is not None
             and current_period_start
@@ -6056,9 +6063,16 @@ def recalculate_leave_balances(request):
             <= available_leave.expired_date
             <= today
         )
+        stat_indicates_expired_this_period = (
+            (available_leave.expired_carryforward_days or 0) > 0
+        )
         cf_already_expired = (
             leave_type.carryforward_type == "carryforward expire"
-            and (type_expired_this_period or row_expired_this_period)
+            and (
+                type_expired_this_period
+                or row_expired_this_period
+                or stat_indicates_expired_this_period
+            )
         )
 
         # Split consumed_total into CF and regular allocation. CF drains
@@ -6073,12 +6087,32 @@ def recalculate_leave_balances(request):
         unused_cf_at_expiry = max(0, starting_cf - consumed_cf)
         if cf_already_expired:
             expected_cf = 0
-            expected_expired_cf = unused_cf_at_expiry
+            if stat_indicates_expired_this_period and not (
+                type_expired_this_period or row_expired_this_period
+            ):
+                # Expiry detected only via the trailing stat — the stored
+                # value IS the snapshot captured at expiry time. Preserve
+                # it rather than overwriting with our reconstruction,
+                # which can disagree if request data has shifted since.
+                expected_expired_cf = available_leave.expired_carryforward_days
+            elif (available_leave.carryforward_days or 0) > 0:
+                # Date-based detection AND there's still a live value in
+                # carryforward_days. That live value is the post-drain
+                # unused CF (frozen at approval time) — move it into
+                # expired_carryforward_days so it survives the
+                # expected_cf=0 wipe. Falling through to
+                # unused_cf_at_expiry here would silently lose CF
+                # whenever prior-year request data is incomplete (new
+                # hires, imports) and the reconstruction undershoots.
+                expected_expired_cf = available_leave.carryforward_days
+            else:
+                expected_expired_cf = unused_cf_at_expiry
         else:
             expected_cf = unused_cf_at_expiry
-            # CF hasn't expired yet this period — nothing has expired, so
-            # the expired stat should be 0. If CF was wiped earlier in the
-            # period by a buggy run, this resets the stat correctly.
+            # No signal of expiry this period — and the stat-based signal
+            # ruled out a stored value > 0 above, so the stored value is
+            # already 0 (or this leave type is non-expiring CF, in which
+            # case zeroing a leftover stat is the right cleanup).
             expected_expired_cf = 0
 
         before_avail = available_leave.available_days
