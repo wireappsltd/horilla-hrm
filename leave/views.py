@@ -4010,12 +4010,23 @@ def employee_available_leave_count(request):
 
     if available_leave:
         leave_type = available_leave.leave_type_id
-        # Leave balance shown in the request card = available + carryforward
-        # (pending is subtracted below). The total_leave_days field now stores
-        # the period allocation (incl. leave_taken), so it is no longer the
-        # right base for "what's left to request".
+        # Mirror AvailableLeave.balance_leaves so this card matches the
+        # number on the leave statistics tab. Using cached available_days
+        # / carryforward_days here drifted from the year-scoped balance
+        # whenever the cache was stale (pre-recalc state, prior-year
+        # approvals, scheduler hiccups). Computing from totals + live CF
+        # + year-scoped request data keeps both views in sync regardless
+        # of cache state.
+        #
+        # gross_available = total_days + cf + used_cf_year - taken_year
+        #                 = balance_leaves() + pending_leaves()
+        # The pending subtraction below leaves balance_leaves() — same
+        # number as the stats tab.
         total_leave_days = (
-            available_leave.available_days + available_leave.carryforward_days
+            (leave_type.total_days or 0)
+            + available_leave.carryforward_days
+            + available_leave.used_carryforward_days()
+            - available_leave.leave_taken()
         )
 
         if leave_type:
@@ -4031,20 +4042,18 @@ def employee_available_leave_count(request):
                 total_leave_days = 0
             elif (
                 leave_type.carryforward_type in ["carryforward", "carryforward expire"]
+                and leave_type.carryforward_max is not None
                 and leave_type.carryforward_max < total_leave_days
             ):
                 total_leave_days = leave_type.carryforward_max
 
             total_leave_days += forcasted_days
 
-        if available_leave.employee_id_id:
-            pending_requests_days = available_leave.employee_id.leaverequest_set.filter(
-                status="requested",
-                leave_type_id=leave_type_id,
-            ).aggregate(total_days=Sum('requested_days'))['total_days']
-            pending_requests_days = (
-                pending_requests_days if pending_requests_days is not None else 0
-            )
+        # Year-scoped pending matches AvailableLeave.pending_leaves(), so
+        # the gross→net subtraction below leaves balance_leaves() exactly.
+        # The previous filter (status + leave_type, no year) inflated the
+        # subtraction with stale prior-year requests when any existed.
+        pending_requests_days = available_leave.pending_leaves()
 
     available_days_for_request = total_leave_days - pending_requests_days
 
