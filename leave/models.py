@@ -272,35 +272,48 @@ class LeaveType(HorillaModel):
                 else int(day)
             )
 
-        if self.reset_based == "yearly":
-            month, day = int(self.reset_month), get_reset_day(
-                int(self.reset_month), self.reset_day
-            )
-            reset_date = datetime(
-                today.year + (datetime(today.year, month, day).date() < today),
-                month,
-                day,
-            ).date()
-
-        elif self.reset_based == "monthly":
-            month = today.month
-            reset_date = datetime(
-                today.year, month, get_reset_day(month, self.reset_day)
-            ).date()
-            if reset_date < today:
-                month = (month % 12) + 1
-                year = today.year + (month == 1)
+        # Reset config can legitimately be partially populated (e.g. reset=True
+        # toggled before reset_day/reset_month are filled in). Returning None
+        # for incomplete config matches the "no next reset" branch below — the
+        # caller in employee_available_leave_count guards on None already.
+        try:
+            if self.reset_based == "yearly":
+                if self.reset_month is None or self.reset_day is None:
+                    return None
+                month, day = int(self.reset_month), get_reset_day(
+                    int(self.reset_month), self.reset_day
+                )
                 reset_date = datetime(
-                    year, month, get_reset_day(month, self.reset_day)
+                    today.year + (datetime(today.year, month, day).date() < today),
+                    month,
+                    day,
                 ).date()
 
-        elif self.reset_based == "weekly":
-            target_weekday = WEEK_DAYS[self.reset_day]
-            days_until_reset = (target_weekday - today.weekday()) % 7 or 7
-            reset_date = today + timedelta(days=days_until_reset)
+            elif self.reset_based == "monthly":
+                if self.reset_day is None:
+                    return None
+                month = today.month
+                reset_date = datetime(
+                    today.year, month, get_reset_day(month, self.reset_day)
+                ).date()
+                if reset_date < today:
+                    month = (month % 12) + 1
+                    year = today.year + (month == 1)
+                    reset_date = datetime(
+                        year, month, get_reset_day(month, self.reset_day)
+                    ).date()
 
-        else:
-            reset_date = None
+            elif self.reset_based == "weekly":
+                if self.reset_day is None or self.reset_day not in WEEK_DAYS:
+                    return None
+                target_weekday = WEEK_DAYS[self.reset_day]
+                days_until_reset = (target_weekday - today.weekday()) % 7 or 7
+                reset_date = today + timedelta(days=days_until_reset)
+
+            else:
+                reset_date = None
+        except (TypeError, ValueError, KeyError):
+            return None
 
         return reset_date
 
