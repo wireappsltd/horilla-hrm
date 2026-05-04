@@ -31,6 +31,11 @@ env = environ.Env(
     ),
     ALLOWED_HOSTS=(list, ["*"]),
     CSRF_TRUSTED_ORIGINS=(list, ["http://localhost:8000"]),
+    PMO_API_KEY=(str, ""),
+    PMO_CORS_ALLOWED_ORIGINS=(
+        list,
+        ["https://pmo-alpha.vercel.app"],
+    ),
 )
 
 env.read_env(os.path.join(BASE_DIR, ".env"), overwrite=True)
@@ -193,6 +198,37 @@ MESSAGE_TAGS = {
 }
 
 CSRF_TRUSTED_ORIGINS = env("CSRF_TRUSTED_ORIGINS")
+
+# ---------------------------------------------------------------------------
+# PMO (Project Management Office) integration
+# ---------------------------------------------------------------------------
+# Static API key used by the external PMO tool (hosted on Vercel) to fetch
+# the Horilla employee directory for its "create user" autocomplete dropdown.
+# Set `PMO_API_KEY` in the environment to a long random string and configure
+# the same value as a secret in the Vercel project.
+PMO_API_KEY = env("PMO_API_KEY")
+
+# Allow browser requests from the Vercel-hosted PMO frontend. Additional
+# origins (e.g. preview deployments) can be appended via the
+# `PMO_CORS_ALLOWED_ORIGINS` env var (comma-separated list).
+CORS_ALLOWED_ORIGINS = list(
+    {origin.rstrip("/") for origin in env("PMO_CORS_ALLOWED_ORIGINS") if origin}
+)
+CORS_ALLOW_HEADERS = (
+    "accept",
+    "accept-encoding",
+    "authorization",
+    "content-type",
+    "dnt",
+    "origin",
+    "user-agent",
+    "x-csrftoken",
+    "x-requested-with",
+    "x-api-key",
+)
+# Only expose the PMO endpoints to cross-origin callers; everything else
+# remains same-origin only.
+CORS_URLS_REGEX = r"^/api/pmo/.*$"
 
 LOGIN_URL = "/login"
 
