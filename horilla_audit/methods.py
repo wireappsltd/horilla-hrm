@@ -73,6 +73,117 @@ def filter_history(histories, track_fields):
     return histories
 
 
+def _format_m2m_values(rows, related_model):
+    """
+    Convert M2M through-table row dicts to a readable comma-separated string.
+    Each row is a dict like {'user_id': 5, 'passwordresetrequest_id': 3} or
+    {'user': 5, 'passwordresetrequest': 3} depending on how the values were
+    extracted from the through model. We resolve the FK pointing to the
+    related_model to get display names.
+
+    Returns an empty string when ``rows`` is empty/None so callers can use a
+    truthiness check to detect "no rows" without conflating it with the
+    literal string "None" (which would be truthy and prevent skipping
+    entries where both old and new are empty).
+    """
+    if not rows:
+        return ""
+    names = []
+    # Determine which key in the row dicts corresponds to the related model
+    # by matching the model name. simple_history's diff_against pulls rows via
+    # ``QuerySet.values(*field_names)`` using the through-model FK *field*
+    # names (e.g. ``user``), not the underlying ``<field>_id`` column names,
+    # so we must look up both forms.
+    model_name = related_model.__name__.lower()
+    candidate_keys = (model_name, f"{model_name}_id")
+
+    skip_keys = {"id", "m2m_history_id", "history", "history_id"}
+
+    for row in rows:
+        pk_value = None
+        # Prefer keys that match the related model name
+        for key in candidate_keys:
+            if key in row and row[key] is not None:
+                pk_value = row[key]
+                break
+        if pk_value is None:
+            # Fallback: try any non-housekeeping key that resolves to the
+            # related model (handles arbitrary through-model field names).
+            for key, value in row.items():
+                if not value or key in skip_keys:
+                    continue
+                # Skip the source-model FK (e.g. ``passwordresetrequest`` /
+                # ``passwordresetrequest_id``) so we resolve the correct side
+                # of the M2M relationship.
+                stripped = key[:-3] if key.endswith("_id") else key
+                if stripped == model_name or stripped.endswith(model_name):
+                    pk_value = value
+                    break
+        if pk_value is None:
+            continue
+        # ``foreign_keys_are_objs`` mode in simple_history may already give us
+        # a model instance instead of a raw pk.
+        if isinstance(pk_value, related_model):
+            obj = pk_value
+        else:
+            try:
+                obj = related_model.objects.get(pk=pk_value)
+            except Exception:
+                names.append(str(pk_value))
+                continue
+        # Try employee display name first (for User -> Employee chain)
+        if hasattr(obj, "employee_get"):
+            try:
+                full_name = obj.employee_get.get_full_name()
+                if full_name:
+                    names.append(full_name)
+                    continue
+            except Exception:
+                pass
+        if hasattr(obj, "get_full_name"):
+            full_name = obj.get_full_name()
+            if full_name:
+                names.append(full_name)
+                continue
+        names.append(str(obj))
+    return ", ".join(names) if names else ""
+
+
+def _normalize_m2m_pks(rows, related_model):
+    """
+    Extract the set of related-model PKs from a list of through-table row
+    dicts. Used to detect when an M2M change reported by ``diff_against``
+    has identical "before" and "after" sides at the relationship level
+    (which can happen for edge cases such as duplicate historical rows).
+    """
+    if not rows:
+        return frozenset()
+    model_name = related_model.__name__.lower()
+    candidate_keys = (model_name, f"{model_name}_id")
+    skip_keys = {"id", "m2m_history_id", "history", "history_id"}
+    pks = set()
+    for row in rows:
+        pk_value = None
+        for key in candidate_keys:
+            if key in row and row[key] is not None:
+                pk_value = row[key]
+                break
+        if pk_value is None:
+            for key, value in row.items():
+                if not value or key in skip_keys:
+                    continue
+                stripped = key[:-3] if key.endswith("_id") else key
+                if stripped == model_name or stripped.endswith(model_name):
+                    pk_value = value
+                    break
+        if pk_value is None:
+            continue
+        if isinstance(pk_value, related_model):
+            pk_value = pk_value.pk
+        pks.add(pk_value)
+    return frozenset(pks)
+
+
 def get_diff(instance):
     """
     This method is used to find the differences in the history
@@ -86,6 +197,11 @@ def get_diff(instance):
     delta_changes = []
     create_history = history.filter(history_type="+").first()
     for pair in pairs:
+        suppress_initial_m2m = (
+            create_history is not None
+            and pair[1].pk == create_history.pk
+            and pair[1].history_type == "+"
+        )
         delta = pair[0].diff_against(pair[1])
         diffs = []
         class_name = pair[0].instance.__class__
@@ -94,19 +210,43 @@ def get_diff(instance):
             new = change.new
             field = instance._meta.get_field(change.field)
             is_fk = False
-            if (
+            if isinstance(field, models.ManyToManyField):
+                # M2M changes: old/new are lists of through-table dicts
+                # Convert to readable display names. Skip the change entry
+                # entirely when the underlying relationship sets are
+                # identical (e.g. simple_history reported a diff because of
+                # row PK ordering / DO_NOTHING-orphaned through rows) – this
+                # prevents misleading "<field> from None to None" entries.
+                related_model = field.related_model
+                old_pks = _normalize_m2m_pks(old, related_model)
+                new_pks = _normalize_m2m_pks(new, related_model)
+                if old_pks == new_pks:
+                    continue
+                if suppress_initial_m2m and not old_pks:
+                    continue
+                old_display = _format_m2m_values(old, related_model)
+                new_display = _format_m2m_values(new, related_model)
+                # Render empty side as the literal "None" for readability,
+                # but only when the *other* side has values (otherwise both
+                # would say "None" and the entry is meaningless).
+                old = old_display or "None"
+                new = new_display or "None"
+            elif (
                 isinstance(field, models.fields.CharField)
                 and field.choices
                 and old
                 and new
             ):
                 choices = dict(field.choices)
-                old = choices[old]
-                new = choices[new]
-            if isinstance(field, models.ForeignKey):
+                old = choices.get(old, old)
+                new = choices.get(new, new)
+            elif isinstance(field, models.ForeignKey):
                 is_fk = True
                 # old = getattr(pair[0], change.field)
                 # new = getattr(pair[1], change.field)
+            # Skip changes where both old and new are empty/None
+            if not old and not new:
+                continue
             diffs.append(
                 {
                     "field": get_field_label(class_name, change.field),

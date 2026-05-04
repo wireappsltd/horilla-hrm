@@ -552,7 +552,6 @@ def view_payslip_pdf(request, payslip_id):
         payslip = Payslip.objects.get(id=payslip_id)
         company = Company.objects.filter(hq=True).first()
         today = date.today()
-        process_date_25 = today.replace(day=25)
         if (
             request.user.has_perm("payroll.view_payslip")
             or payslip.employee_id.employee_user_id == request.user
@@ -585,8 +584,8 @@ def view_payslip_pdf(request, payslip_id):
             start_date = datetime.strptime(start_date_str, "%Y-%m-%d").date()
             end_date = datetime.strptime(end_date_str, "%Y-%m-%d").date()
 
-            month_start_name = start_date.strftime("%B %d, %Y")
-            month_end_name = end_date.strftime("%B %d, %Y")
+            month_start_name = start_date.strftime("%d %B %Y")
+            month_end_name = end_date.strftime("%d %B %Y")
 
             # Formatted date for each format
             for format_name, format_string in HORILLA_DATE_FORMATS.items():
@@ -608,7 +607,7 @@ def view_payslip_pdf(request, payslip_id):
             data["instance"] = payslip
             data["currency"] = PayrollSettings.objects.first().currency_symbol
             data["all_deductions"] = []
-            data["process_date_25"] = process_date_25
+            data["process_date"] = payslip.created_at
             for deduction_list in [
                 data["basic_pay_deductions"],
                 data["gross_pay_deductions"],
@@ -1560,8 +1559,8 @@ def payslip_pdf(request, id):
             # Prepare context for the template
             data.update(
                 {
-                    "month_start_name": start_date.strftime("%B %d, %Y"),
-                    "month_end_name": end_date.strftime("%B %d, %Y"),
+                    "month_start_name": start_date.strftime("%d %B %Y"),
+                    "month_end_name": end_date.strftime("%d %B %Y"),
                     "formatted_start_date": formatted_start_date,
                     "formatted_end_date": formatted_end_date,
                     "employee": payslip.employee_id,
@@ -1573,6 +1572,7 @@ def payslip_pdf(request, id):
                     "host": request.get_host(),
                     "protocol": "https" if request.is_secure() else "http",
                     "company": company,
+                    "process_date": payslip.created_at,
                 }
             )
 

@@ -813,6 +813,9 @@ def ticket_filter(request):
 @login_required
 def ticket_detail(request, ticket_id, **kwargs):
     ticket = Ticket.objects.get(id=ticket_id)
+    # Allow ISO officers to view password reset tickets
+    is_iso = _is_iso_officer(request.user)
+    has_pr = hasattr(ticket, "password_reset_request")
     # Check if the user is a forward_to recipient for a password reset request
     pr = getattr(ticket, "password_reset_request", None)
     is_forward_to_user = (
@@ -824,6 +827,7 @@ def ticket_detail(request, ticket_id, **kwargs):
         or is_department_manager(request, ticket)
         or request.user.employee_get == ticket.employee_id
         or request.user.employee_get in ticket.assigned_to.all()
+        or (has_pr and is_iso)
         or is_forward_to_user
     ):
         today = datetime.now().date()
@@ -834,6 +838,40 @@ def ticket_detail(request, ticket_id, **kwargs):
         activity_list = []
         comments = ticket.comment.all()
         trackings = ticket.tracking()
+
+        # Determine if this ticket has an ISO-reviewed Password Reset request
+        # so we can suppress redundant audit log entries that duplicate the
+        # dedicated ISO review activity entry / approval comment.
+        _pr_for_audit = getattr(ticket, "password_reset_request", None)
+        _has_iso_review = bool(
+            _pr_for_audit
+            and _pr_for_audit.reviewed_at
+            and _pr_for_audit.iso_status in ("APPROVED", "REJECTED")
+        )
+
+        # Status values driven by ISO review (auto-set in iso_review_password_reset)
+        _iso_driven_ticket_statuses = {"resolved", "canceled"}
+
+        if _has_iso_review:
+            for h in trackings:
+                changes = h.get("changes") or []
+                # Drop ticket.status change rows that were caused by ISO review –
+                # this information is already conveyed by the ISO Review entry
+                # and the approval/rejection comment.
+                changes = [
+                    c for c in changes
+                    if not (
+                        c.get("field_name") == "status"
+                        and str(c.get("new", "")).lower() in _iso_driven_ticket_statuses
+                    )
+                ]
+                h["changes"] = changes
+
+        # Filter out history entries that have no visible changes
+        trackings = [
+            h for h in trackings
+            if h.get("type", "").endswith("created") or h.get("changes")
+        ]
         for comment in comments:
             activity_list.append(
                 {"type": "comment", "comment": comment, "date": comment.date}
@@ -851,12 +889,45 @@ def ticket_detail(request, ticket_id, **kwargs):
         password_reset_request = getattr(ticket, "password_reset_request", None)
         if password_reset_request:
             pr_trackings = password_reset_request.tracking()
+            _iso_review_fields = {
+                "iso_status",
+                "iso_feedback",
+                "reviewed_by",
+                "reviewed_at",
+            }
+            if _has_iso_review:
+                for h in pr_trackings:
+                    changes = h.get("changes") or []
+                    changes = [
+                        c for c in changes
+                        if c.get("field_name") not in _iso_review_fields
+                    ]
+                    h["changes"] = changes
+            # Filter out history entries that have no visible changes
+            pr_trackings = [
+                h for h in pr_trackings
+                if h.get("changes")  # exclude "created" entry (already shown by ticket history)
+            ]
             for history in pr_trackings:
                 activity_list.append(
                     {
                         "type": "history",
                         "history": history,
                         "date": history["pair"][0].history_date,
+                    }
+                )
+
+            # Include ISO review (approve/reject) as a timeline entry so the
+            # reviewer's comment/feedback is visible when the ticket is clicked.
+            if (
+                password_reset_request.reviewed_at
+                and password_reset_request.iso_status in ("APPROVED", "REJECTED")
+            ):
+                activity_list.append(
+                    {
+                        "type": "iso_review",
+                        "pr": password_reset_request,
+                        "date": password_reset_request.reviewed_at,
                     }
                 )
 
@@ -1112,6 +1183,56 @@ def ticket_change_assignees(request, ticket_id):
 
                 form.save()
 
+                # For password reset tickets, sync the new assignee to
+                # ticket.employee_id and PasswordResetRequest.user_id so
+                # the old assignee loses access and the dashboard reflects
+                # the change.
+                if pr_request and selected_assignees.count() == 1:
+                    new_employee = selected_assignees.first()
+                    old_employee = ticket.employee_id
+
+                    if new_employee != old_employee:
+                        ticket.employee_id = new_employee
+                        request_type_display = pr_request.get_request_type_display()
+                        user_display = _format_password_reset_user(new_employee)
+                        ticket.description = (
+                            f"<b>{request_type_display} Details:</b><br><br>"
+                            f"<b>Type:</b> {request_type_display}<br>"
+                            f"<b>Platform:</b> {pr_request.platform}<br>"
+                            f"<b>User:</b> {user_display}<br>"
+                            f"<b>Reason:</b> {pr_request.reason}"
+                        )
+                        ticket.save()
+
+                        # Update the email stored on the PR request, mirroring
+                        # the fallback chain used in PasswordResetRequestForm.save()
+                        # so we never persist a blank email when a company
+                        # email is not configured on the employee.
+                        new_email = ""
+                        try:
+                            new_email = (
+                                new_employee.employee_work_info.email or ""
+                            )
+                        except Exception:
+                            new_email = ""
+                        if not new_email:
+                            try:
+                                new_email = new_employee.employee_user_id.email or ""
+                            except Exception:
+                                pass
+                        if not new_email:
+                            try:
+                                new_email = getattr(new_employee, "email", "") or ""
+                            except Exception:
+                                pass
+                        if new_email:
+                            pr_request.user_id = new_email
+                            pr_request.save()
+
+                        # Note: The owner/assignee change is already recorded
+                        # automatically by horilla_audit history on ticket.save(),
+                        # so we intentionally do not create an extra Comment here
+                        # to avoid duplicate audit log entries on the request view.
 
                 mail_thread = AddAssigneeThread(
                     request,
@@ -1314,14 +1435,31 @@ def comment_create(request, ticket_id):
 def comment_edit(request):
     comment_id = request.POST.get("comment_id")
     new_comment = request.POST.get("new_comment")
-    if len(new_comment) > 1:
-        comment = Comment.objects.get(id=comment_id)
+    comment = Comment.objects.filter(id=comment_id).first()
+    if not comment:
+        return JsonResponse({"errors": "not_found"}, status=404)
+
+    employee = getattr(request.user, "employee_get", None)
+    is_dept_manager = False
+    try:
+        if comment.ticket_id:
+            is_dept_manager = is_department_manager(request, comment.ticket_id)
+    except Exception:
+        is_dept_manager = False
+
+    if not (
+        request.user.has_perm("helpdesk.change_comment")
+        or comment.employee_id == employee
+        or is_dept_manager
+    ):
+        return JsonResponse({"errors": "permission_denied"}, status=403)
+
+    if new_comment and len(new_comment) > 1:
         comment.comment = new_comment
         comment.save()
         messages.success(request, _("The comment updated successfully."))
-
     else:
-        messages.error(request, _("The comment needs to be atleast 2 charactors."))
+        messages.error(request, _("The comment needs to be at least 2 characters."))
     response = {
         "errors": "no_error",
     }
@@ -1329,12 +1467,31 @@ def comment_edit(request):
 
 
 @login_required
-@permission_required("helpdesk.delete_comment")
 def comment_delete(request, comment_id):
     comment = Comment.objects.filter(id=comment_id).first()
-    employee = comment.employee_id
+    if not comment:
+        messages.error(request, _("Comment not found."))
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    employee = getattr(request.user, "employee_get", None)
+    is_dept_manager = False
+    try:
+        if comment.ticket_id:
+            is_dept_manager = is_department_manager(request, comment.ticket_id)
+    except Exception:
+        is_dept_manager = False
+
+    if not (
+        request.user.has_perm("helpdesk.delete_comment")
+        or comment.employee_id == employee
+        or is_dept_manager
+    ):
+        messages.error(request, _("You do not have permission to delete this comment."))
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    employee_name = comment.employee_id
     comment.delete()
-    messages.success(request, _("{}'s comment has been deleted successfully.").format(employee))
+    messages.success(request, _("{}'s comment has been deleted successfully.").format(employee_name))
     return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
 
 
@@ -2136,19 +2293,24 @@ def password_reset_request_create(request):
             pr_request.iso_status = "PENDING"
             pr_request.request_type = "password_reset"
             pr_request.save()
-            # forward_to is M2M to User; selected_forward_users are already
-            # User objects (from the form's forward_to queryset).
-            forward_users = list(selected_forward_users)
-            pr_request.forward_to.set(forward_users)
+            # forward_to is M2M to User – selected_forward_users are already
+            # User objects (from the ModelMultipleChoiceField), so set directly.
+            pr_request.forward_to.set(selected_forward_users)
+            # Fold the m2m_changed-triggered '~' history record into the '+'
+            # create record so the timeline only shows "Created the ticket"
+            # on first save (and not a spurious "changed Forward to from None
+            # to <ISO officers>" entry). Subsequent forward_to edits remain
+            # tracked normally.
+            PasswordResetRequestForm._consolidate_create_history(pr_request)
 
             notification_actor = getattr(request.user, "employee_get", selected_employee)
 
             # In-app notification to selected ISO officers/admins (forward recipients)
             try:
-                if forward_users:
+                if selected_forward_users:
                     notify.send(
                         notification_actor,
-                        recipient=forward_users,
+                        recipient=selected_forward_users,
                         verb=f"New Password Reset request submitted for {selected_employee.get_full_name()} on {platform}.",
                         verb_ar="تم تقديم طلب إعادة تعيين كلمة المرور.",
                         verb_de="Eine neue Anfrage zum Zurücksetzen des Passworts wurde eingereicht.",
@@ -2181,7 +2343,7 @@ def password_reset_request_create(request):
                     ticket,
                     type="new_request",
                     pr_request=pr_request,
-                    iso_recipients=forward_users,
+                    iso_recipients=selected_forward_users,
                 )
                 mail_thread.start()
             except Exception as exc:
@@ -2244,10 +2406,6 @@ def password_reset_request_update(request, pr_id):
                 selected_forward_users
             )
 
-            # forward_to is M2M to User; selected_forward_users are already
-            # User objects (from the form's forward_to queryset).
-            forward_users = list(selected_forward_users)
-
             # Update the ticket FIRST so the owner (employee_id) is always
             # reassigned together with the description and other fields.
             # Re-fetch the ticket fresh from DB to avoid stale reference
@@ -2276,8 +2434,9 @@ def password_reset_request_update(request, pr_id):
             pr_request.request_type = "password_reset"
             pr_request.save()
 
-            # Set forward_to M2M after saving the PR request
-            pr_request.forward_to.set(forward_users)
+            # Set forward_to M2M after saving the PR request –
+            # selected_forward_users are already User objects.
+            pr_request.forward_to.set(selected_forward_users)
 
             messages.success(request, _("Password reset request updated successfully."))
             return HttpResponse("<script>window.location.reload()</script>")

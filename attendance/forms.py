@@ -263,11 +263,6 @@ class AttendanceUpdateForm(BaseModelForm):
                     _("Attendance cannot be marked before your joining date.")
                 )
 
-        is_future_date = block_future_attendance(attendance_date)
-        if is_future_date:
-            raise ValidationError(
-                _("Attendance cannot be marked more than 3 days in the future")
-            )
 
         if check_in_time and check_out_time:
             if check_out_time < check_in_time:
@@ -576,11 +571,6 @@ class AttendanceForm(BaseModelForm):
                     _("Attendance cannot be marked before your joining date.")
                 )
 
-        is_future_date = block_future_attendance(attendance_date)
-        if is_future_date:
-            raise ValidationError(
-                _("Attendance cannot be marked more than 3 days in the future")
-            )
 
         if check_in_time and check_out_time:
             if check_out_time < check_in_time:
@@ -841,15 +831,21 @@ class AttendanceRequestForm(BaseModelForm):
                 )
             kwargs["initial"] = initial
         super().__init__(*args, **kwargs)
+        max_date = (datetime.date.today() + datetime.timedelta(days=3)).strftime(
+            "%Y-%m-%d"
+        )
         self.fields["attendance_clock_in_date"].widget.attrs.update({
             "style": "pointer-events:none;",
+            "max": max_date,
         })
         self.fields["attendance_worked_hour"].widget.attrs.update({
             "style": "pointer-events:none;",
         })
         self.fields["attendance_clock_out_date"].widget.attrs.update({
             "style": "pointer-events:none;",
+            "max": max_date,
         })
+        self.fields["attendance_date"].widget.attrs.update({"max": max_date})
         self.fields["is_get_compensation_leave"].widget.attrs.update({
             "style": "display:none;",
         })
@@ -912,7 +908,7 @@ class AttendanceRequestForm(BaseModelForm):
         Render the form fields as HTML table rows with Bootstrap styling.
         """
         _ = args, kwargs  # Explicitly mark as used for pylint
-        context = {"form": self}
+        context = {"form": self, "hide_save_button": True}
         table_html = render_to_string("attendance_form.html", context)
         return table_html
 
@@ -953,11 +949,6 @@ class AttendanceRequestForm(BaseModelForm):
                     _("Attendance cannot be marked before your joining date.")
                 )
 
-        is_future_date = block_future_attendance(attendance_date)
-        if is_future_date:
-            raise ValidationError(
-                _("Attendance cannot be marked more than 3 days in the future")
-            )
 
         if check_in_time and check_out_time:
             if check_out_time < check_in_time:
@@ -1107,15 +1098,21 @@ class NewRequestForm(AttendanceRequestForm):
         }
         new_dict.update(old_dict)
         self.fields = new_dict
+        max_date = (datetime.date.today() + datetime.timedelta(days=3)).strftime(
+            "%Y-%m-%d"
+        )
         self.fields["attendance_clock_in_date"].widget.attrs.update({
             "style": "pointer-events:none;",
+            "max": max_date,
         })
         self.fields["attendance_worked_hour"].widget.attrs.update({
             "style": "pointer-events:none;",
         })
         self.fields["attendance_clock_out_date"].widget.attrs.update({
             "style": "pointer-events:none;",
+            "max": max_date,
         })
+        self.fields["attendance_date"].widget.attrs.update({"max": max_date})
         self.fields["is_get_compensation_leave"].widget.attrs.update({
             "style": "display:none;",
         })
@@ -1651,6 +1648,11 @@ class BulkAttendanceRequestForm(BaseModelForm):
         if employee and hasattr(employee, "employee_work_info"):
             shift = employee.employee_work_info.shift_id
             self.fields["shift_id"].initial = shift
+        max_date = (datetime.date.today() + datetime.timedelta(days=3)).strftime(
+            "%Y-%m-%d"
+        )
+        self.fields["from_date"].widget.attrs.update({"max": max_date})
+        self.fields["to_date"].widget.attrs.update({"max": max_date})
         for field in [
             "attendance_clock_in",
             "attendance_clock_out",
@@ -1688,14 +1690,8 @@ class BulkAttendanceRequestForm(BaseModelForm):
         date_list = get_date_list(employee_id, from_date, to_date)
         if from_date and to_date and from_date > to_date:
             raise ValidationError({"to_date": _("To date should be after from date")})
-        if to_date == today and attendance_clock_out > now:
-            raise ValidationError(
-                {
-                    "attendance_clock_out": (
-                        f"Check out time is in the future for the date {to_date}."
-                    )
-                }
-            )
+        # Future check-out times within today's date are allowed to support
+        # pre-scheduled / flexible attendance logging.
         if employee_id and not hasattr(employee_id, "employee_work_info"):
             raise ValidationError(_("Employee work info not found"))
         if len(date_list) <= 0:

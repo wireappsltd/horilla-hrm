@@ -64,6 +64,7 @@ from payroll.methods.methods import (
     compute_salary_on_period,
     paginator_qry,
     save_payslip,
+    truncate_2dp,
 )
 from payroll.methods.payslip_calc import (
     calculate_allowance,
@@ -186,8 +187,8 @@ def payroll_calculation(employee, start_date, end_date):
     if unpaid_days > 0:
         for allowance in allowances["allowances"]:
             if allowance.get("include_in_lop", True):
-                allowance_deduction_amount = round(
-                    (allowance["amount"] / 30) * unpaid_days, 2
+                allowance_deduction_amount = truncate_2dp(
+                    (allowance["amount"] / 30) * unpaid_days
                 )
 
                 if allowance_deduction_amount > 0:
@@ -205,7 +206,7 @@ def payroll_calculation(employee, start_date, end_date):
     payee_tax_base_amount = gross_pay - loss_of_pay_amount - total_lop_allowance_deductions
 
     print("Payee Tax Base Amount", payee_tax_base_amount)
-    payee_tax = calculate_payee_tax_deduction(payee_tax_base_amount)
+    payee_tax = truncate_2dp(calculate_payee_tax_deduction(payee_tax_base_amount))
 
     gross_pay_deductions = updated_gross_pay_data["deductions"]
 
@@ -213,10 +214,10 @@ def payroll_calculation(employee, start_date, end_date):
     taxable_gross_pay = calculate_taxable_gross_pay(**kwargs)
     # print("This is taxable gross pay",taxable_gross_pay)
     tax_deductions = calculate_tax_deduction(**kwargs)
-    federal_tax = calculate_taxable_amount(**kwargs)
+    federal_tax = truncate_2dp(calculate_taxable_amount(**kwargs))
     post_tax_deductions["post_tax_deductions"].append({
         "title": "EPF (Employee 8%)",
-        "amount": employee_epf_amount,
+        "amount": truncate_2dp(employee_epf_amount),
     })
     post_tax_deductions["post_tax_deductions"].append({
         "title": "PAYE Tax",
@@ -1044,8 +1045,12 @@ def validate_start_date(request):
         response["valid"] = False
 
     if end_datetime is not None:
-        if end_datetime > datetime.today().date():
-            error_message = '<ul class="errorlist"><li>The end date cannot be in the future.</li></ul>'
+        max_allowed = datetime.today().date() + timedelta(days=3)
+        if end_datetime > max_allowed:
+            error_message = (
+                '<ul class="errorlist"><li>The end date cannot be more than 3 '
+                "days in the future.</li></ul>"
+            )
             response["message"] = error_message
             response["valid"] = False
     return JsonResponse(response)
@@ -1685,10 +1690,39 @@ def create_reimbursement(request):
         uploaded_files = request.FILES.getlist("attachment")
         post_data = request.POST.copy()
 
-        if uploaded_files:
+        # Validate each uploaded file (type + size) BEFORE persisting
+        # anything to disk. This avoids writing disallowed / oversized
+        # files into the temp storage even when the form fails to bind
+        # them (e.g. extra files beyond the model field).
+        attachment_errors = []
+        allowed_extensions = forms.MultipleFileField.ALLOWED_EXTENSIONS
+        max_file_size = forms.MultipleFileField.MAX_FILE_SIZE
+        valid_uploads = []
+        for f in uploaded_files:
+            name = getattr(f, "name", "") or ""
+            ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+            if ext not in allowed_extensions:
+                allowed = ", ".join(
+                    sorted(e.upper() for e in allowed_extensions)
+                )
+                attachment_errors.append(
+                    f"Unsupported file type '{ext or name}'. "
+                    f"Allowed types: {allowed}."
+                )
+                continue
+            size = getattr(f, "size", 0) or 0
+            if size > max_file_size:
+                attachment_errors.append(
+                    f"File '{name}' exceeds the maximum allowed size of "
+                    f"{int(max_file_size / (1024 * 1024))} MB."
+                )
+                continue
+            valid_uploads.append(f)
+
+        if valid_uploads and not attachment_errors:
             paths = []
             names = []
-            for f in uploaded_files:
+            for f in valid_uploads:
                 f.seek(0)
                 path = default_storage.save(f"temp/reimbursements/{f.name}", f)
                 paths.append(path)
@@ -1697,7 +1731,11 @@ def create_reimbursement(request):
             post_data["temp_attachment_names"] = ",".join(names)
 
         form = forms.ReimbursementForm(post_data, request.FILES, instance=instance)
-        if form.is_valid():
+        if attachment_errors:
+            for msg in attachment_errors:
+                form.add_error("attachment", msg)
+                messages.error(request, msg)
+        if not attachment_errors and form.is_valid():
             form.save()
             for path in post_data.get("temp_attachment_paths", "").split(","):
                 path = path.strip()
@@ -2387,10 +2425,35 @@ def payslip_super_detailed_export(request):
 
     start_date_from = request.GET.get("start_date_from")
     start_date_till = request.GET.get("start_date_till")
+    if start_date_from and start_date_till:
+        try:
+            _sdf = datetime.strptime(start_date_from, "%Y-%m-%d").date()
+            _sdt = datetime.strptime(start_date_till, "%Y-%m-%d").date()
+        except (TypeError, ValueError):
+            _sdf = _sdt = None
+        if _sdf and _sdt:
+            if _sdt < _sdf:
+                messages.error(request, _("End date must be after start date."))
+                return redirect(request.META.get("HTTP_REFERER", "/"))
+            # Enforce max 30-day inclusive range (not 31 days)
+            if (_sdt - _sdf).days + 1 > 30:
+                messages.error(
+                    request, _("Date range cannot exceed 30 days.")
+                )
+                return redirect(request.META.get("HTTP_REFERER", "/"))
+    # Strictly include only payslips whose entire period (start_date..end_date)
+    # falls within the selected date range. Records partially overlapping the
+    # boundaries must be excluded.
     if start_date_from:
-        payslips = payslips.filter(start_date__gte=start_date_from)
+        payslips = payslips.filter(
+            start_date__gte=start_date_from,
+            end_date__gte=start_date_from,
+        )
     if start_date_till:
-        payslips = payslips.filter(start_date__lte=start_date_till)
+        payslips = payslips.filter(
+            start_date__lte=start_date_till,
+            end_date__lte=start_date_till,
+        )
 
 
     all_allowance_titles = set()

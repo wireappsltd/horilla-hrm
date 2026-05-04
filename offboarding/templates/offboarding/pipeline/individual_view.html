@@ -95,14 +95,24 @@
                 </span>
             </div>
         </div>
-        {% if employee.employeetask_set.all %}
         <div class="w-100 mt-3">
 
             <div class="d-flex justify-content-between align-items-center mb-3">
                 <h5 class="fw-semibold m-0">{% trans "Tasks" %}</h5>
-                <span class="text-muted small">{{ employee.employeetask_set.all.count }} tasks</span>
+                <div class="d-flex align-items-center gap-2">
+                    {% if perms.offboarding.add_offboardingtask or request.user.employee_get|is_any_stage_manager %}
+                    <a hx-get="{% url 'offboarding-add-task' %}?stage_id={{ employee.stage_id.id }}"
+                       hx-target="#objectDetailsModalTarget"
+                       class="oh-btn oh-btn--secondary oh-btn--sm d-flex align-items-center gap-1">
+                        <ion-icon name="add-outline"></ion-icon>
+                        {% trans "Add Task" %}
+                    </a>
+                    {% endif %}
+                    <span class="text-muted small">{{ employee.employeetask_set.all.count }} tasks</span>
+                </div>
             </div>
 
+            {% if employee.employeetask_set.all %}
             <div class="d-flex flex-column gap-3">
 
                 {% for task in employee.employeetask_set.all %}
@@ -120,7 +130,7 @@
                             </div>
                         </div>
 
-                        {% if perms.offboarding.delete_offboardingtask or perms.offboarding.edit_offboardingtask or request.user.employee_get|is_stage_manager:task.stage.grouper.title or request.user.employee_get|is_task_manager:task.title or request.user.employee_get|is_offboarding_manager %}
+                        {% if perms.offboarding.delete_offboardingtask or perms.offboarding.edit_offboardingtask or request.user.employee_get|is_stage_manager:task.task_id.stage_id.title or request.user.employee_get|is_task_manager:task.task_id.title or request.user.employee_get|is_offboarding_manager %}
                         <a hx-confirm="Do you want to delete task?"
                             hx-post="{% url 'delete-offboarding-task' %}?task_ids={{ task.task_id.id }}&employee_id={{ employee.id }}"
                             hx-target="#objectDetailsModalTarget" hx-swap="innerHTML"
@@ -139,9 +149,9 @@
                 {% endfor %}
 
             </div>
+            {% endif %}
 
         </div>
-        {% endif %}
 
     </div>
 </div>

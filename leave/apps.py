@@ -10,7 +10,7 @@ class LeaveConfig(AppConfig):
 
         from horilla.horilla_settings import APPS
         from horilla.urls import urlpatterns
-        from leave import signals
+        from leave import scheduler, signals
 
         APPS.append("leave")
         urlpatterns.append(

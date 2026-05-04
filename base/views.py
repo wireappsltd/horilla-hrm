@@ -42,6 +42,7 @@ from django.utils import timezone
 from django.utils.html import strip_tags
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.translation import gettext as _
+from django.views.decorators.cache import never_cache
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
@@ -565,10 +566,26 @@ def initialize_job_position_delete(request, obj_id):
     )
 
 
+@never_cache
 def login_user(request):
     """
     Handles user login and authentication.
     """
+    # If the user is already authenticated, prevent them from going back to
+    # the login page (e.g. via the browser back button).
+    if request.user.is_authenticated:
+        try:
+
+            two_factor_enabled = horilla_apps.TWO_FACTORS_AUTHENTICATION
+        except Exception:
+            two_factor_enabled = False
+
+        if two_factor_enabled and not request.session.get(
+            "otp_code_verified", False
+        ):
+            return redirect("/two-factor")
+        return redirect("/")
+
     if request.method == "POST":
         username = request.POST.get("username")
         password = request.POST.get("password")
@@ -622,6 +639,21 @@ def login_user(request):
                     ),
                 )
                 return redirect("login")
+
+        # Enforce the OTP lockout cooldown: even with valid credentials, do
+        # not let the user back in until the cooldown has expired.
+        lockout_remaining = get_otp_lockout_remaining(user)
+        if lockout_remaining > 0:
+            minutes = int((lockout_remaining + 59) // 60)
+            messages.error(
+                request,
+                _(
+                    "Too many invalid OTP attempts. Please try again after "
+                    "%(minutes)s minute(s)."
+                )
+                % {"minutes": minutes},
+            )
+            return redirect("login")
 
         login(request, user)
 
@@ -824,10 +856,121 @@ def change_username(request):
     return render(request, "base/auth/username_change.html", {"form": form})
 
 
+# OTP attempt limiting configuration
+OTP_MAX_ATTEMPTS = 5
+OTP_LOCKOUT_SECONDS = 5 * 60  # 5 minutes cooldown
+# OTP validity window: the generated code is accepted only for this many
+# seconds after it is issued. After this window the OTP is rejected and the
+# user must request a new one.
+OTP_VALIDITY_SECONDS = 5 * 60  # 5 minutes
+
+
+def _otp_lockout_cache_key(user):
+    """Return the cache key used to store the OTP lockout for a user."""
+    user_id = getattr(user, "pk", None) or getattr(user, "id", None) or "anon"
+    return f"otp_lockout:{user_id}"
+
+
+def _otp_attempts_cache_key(user):
+    """Return the cache key used to store the OTP attempt count for a user."""
+    user_id = getattr(user, "pk", None) or getattr(user, "id", None) or "anon"
+    return f"otp_attempts:{user_id}"
+
+
+def increment_otp_attempts(user):
+    """
+    Increment and return the number of failed OTP attempts for the given
+    user. The counter is stored in the cache (keyed by user) so that it
+    cannot be bypassed by logging out and starting a new session.
+    """
+    from django.core.cache import cache
+
+    if not getattr(user, "is_authenticated", False):
+        return 0
+    key = _otp_attempts_cache_key(user)
+    attempts = int(cache.get(key) or 0) + 1
+    # Keep the counter alive at least as long as the lockout window so that
+    # repeated re-logins cannot reset the count.
+    cache.set(key, attempts, timeout=OTP_LOCKOUT_SECONDS)
+    return attempts
+
+
+def reset_otp_attempts(user):
+    """Clear the failed-OTP-attempt counter for the given user."""
+    from django.core.cache import cache
+
+    if not getattr(user, "is_authenticated", False):
+        return
+    cache.delete(_otp_attempts_cache_key(user))
+
+
+def get_otp_lockout_remaining(user):
+    """
+    Return the number of seconds remaining on the OTP lockout for the given
+    user, or 0 if the user is not currently locked out.
+    """
+    from django.core.cache import cache
+
+    if not getattr(user, "is_authenticated", False):
+        return 0
+    expires_at = cache.get(_otp_lockout_cache_key(user))
+    if not expires_at:
+        return 0
+    remaining = int(expires_at - timezone.now().timestamp())
+    return max(remaining, 0)
+
+
+def set_otp_lockout(user):
+    """
+    Lock out the given user from OTP verification for the configured
+    cooldown period.
+    """
+    from django.core.cache import cache
+
+    if not getattr(user, "is_authenticated", False):
+        return
+    expires_at = timezone.now().timestamp() + OTP_LOCKOUT_SECONDS
+    cache.set(
+        _otp_lockout_cache_key(user),
+        expires_at,
+        timeout=OTP_LOCKOUT_SECONDS,
+    )
+    # Also clear the failed-attempt counter so it starts fresh after the
+    # cooldown expires.
+    reset_otp_attempts(user)
+
+
+@never_cache
 def two_factor_auth(request):
     """
     function to handle two-factor authentication for users.
     """
+    # Unauthenticated users should not access the OTP page directly.
+    if not request.user.is_authenticated:
+        return redirect("login")
+
+    # If the user has already verified OTP, prevent them from going back to
+    # the two-factor page (e.g. via the browser back button).
+    if request.method != "POST" and request.session.get(
+        "otp_code_verified", False
+    ):
+        return redirect("/")
+
+    # Enforce OTP lockout if the user has exceeded the allowed attempts.
+    lockout_remaining = get_otp_lockout_remaining(request.user)
+    if lockout_remaining > 0:
+        minutes = int((lockout_remaining + 59) // 60)
+        messages.error(
+            request,
+            _(
+                "Too many invalid OTP attempts. Please try again after "
+                "%(minutes)s minute(s)."
+            )
+            % {"minutes": minutes},
+        )
+        logout(request)
+        return redirect("login")
+
     # request.session["otp_code"] = None
     try:
         otp = get_otp(request)
@@ -836,24 +979,72 @@ def two_factor_auth(request):
 
     if request.method == "POST":
         user_otp = request.POST.get("otp")
-        if user_otp == otp:
+        if user_otp and user_otp == otp:
             request.session["otp_code"] = None
             request.session["otp_code_timestamp"] = None
             request.session["otp_code_verified"] = True
+            request.session["otp_attempts"] = 0
             request.session.save()
-            messages.success(request, "OTP verified successfully.")
+            reset_otp_attempts(request.user)
+            messages.success(request, _("OTP verified successfully."))
             return redirect("/")
-        elif otp is None:
-            messages.error(request, "OTP expired. Please request a new one.")
-            return render(request, "base/auth/two_factor_auth.html")
+
+        # Invalid or expired OTP: count this as a failed attempt. The
+        # counter is tracked in the cache (keyed by user) so that it
+        # cannot be reset by logging out and starting a new session.
+        attempts = increment_otp_attempts(request.user)
+        request.session["otp_attempts"] = attempts
+        request.session.save()
+
+        remaining = OTP_MAX_ATTEMPTS - attempts
+        if remaining <= 0:
+            # Lock out further attempts for the cooldown period and force
+            # the user to re-initiate the login flow.
+            set_otp_lockout(request.user)
+            request.session["otp_code"] = None
+            request.session["otp_code_timestamp"] = None
+            request.session["otp_attempts"] = 0
+            request.session.save()
+            messages.error(
+                request,
+                _(
+                    "Too many invalid OTP attempts. Your account has been "
+                    "temporarily locked. Please try logging in again after "
+                    "%(minutes)s minute(s)."
+                )
+                % {"minutes": OTP_LOCKOUT_SECONDS // 60},
+            )
+            logout(request)
+            return redirect("login")
+
+        if otp is None:
+            messages.error(
+                request,
+                _(
+                    "OTP expired. Please request a new one. "
+                    "%(remaining)s attempt(s) remaining before lockout."
+                )
+                % {"remaining": remaining},
+            )
         else:
-            messages.error(request, "Invalid OTP.")
-            return render(request, "base/auth/two_factor_auth.html")
+            messages.error(
+                request,
+                _(
+                    "Invalid OTP. %(remaining)s attempt(s) remaining before "
+                    "lockout."
+                )
+                % {"remaining": remaining},
+            )
+        return render(request, "base/auth/two_factor_auth.html")
 
     if not horilla_apps.TWO_FACTORS_AUTHENTICATION:
         return redirect("/")
 
     if otp is None:
+        # Generate a fresh OTP. Note: the failed-attempt counter is
+        # intentionally NOT reset here — it is tracked per user in the
+        # cache so that requesting a new OTP cannot be used to bypass
+        # the attempt limit.
         send_otp(request)
     return render(request, "base/auth/two_factor_auth.html")
 
@@ -899,12 +1090,13 @@ def set_otp(request):
 def get_otp(request):
     """
     Function to retrieve the OTP code from the session.
-    Checks if the OTP code has expired (10 minutes) and clears it if so.
+    Checks if the OTP code has expired (see ``OTP_VALIDITY_SECONDS``) and
+    clears it if so, forcing the user to request a new one.
     """
-    created_at = request.session.get("otp_code_timestamp", 0)
+    created_at = request.session.get("otp_code_timestamp", 0) or 0
     current_time = timezone.now().timestamp()
 
-    if current_time - created_at > 600:
+    if not created_at or current_time - created_at > OTP_VALIDITY_SECONDS:
         request.session["otp_code"] = None
         request.session["otp_code_timestamp"] = None
         request.session.save()

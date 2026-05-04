@@ -44,6 +44,7 @@
 
     </div>
 
+    {% if not hide_save_button %}
     <div class="oh-modal__dialog-footer p-0 mt-3">
       <button
         type="submit"
@@ -52,5 +53,6 @@
         {% trans "Save" %}
       </button>
     </div>
+    {% endif %}
   </div>
 </div>

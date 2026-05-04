@@ -28,6 +28,10 @@ def leave_reset():
                     assigned_date=today_date, available_leave=available_leave
                 )
                 available_leave.reset_date = new_reset_date
+                # Mark the start of the new period so leave_taken/pending_leaves
+                # exclude pre-reset approvals. Without this, total_leaves keeps
+                # adding pre-reset approved days into the new period's stats.
+                available_leave.last_reset_date = today_date.replace(month=1, day=1)
                 available_leave.save()
             if expired_date and expired_date <= today_date:
                 new_expired_date = available_leave.set_expired_date(
@@ -40,6 +44,20 @@ def leave_reset():
             leave_type.carryforward_expire_date
             and leave_type.carryforward_expire_date <= today_date
         ):
+            # Zero out CF days on every employee's AvailableLeave for this
+            # leave type — bumping the expire date alone leaves stale CF
+            # showing in leave statistics indefinitely. Capture the value
+            # into expired_carryforward_days first so the expired total
+            # remains visible as a stat after the wipe.
+            for available_leave in leave_type.employee_available_leave.all():
+                # `> 0` rather than truthy: a corrupted negative balance
+                # would otherwise be captured as a negative expired stat.
+                if available_leave.carryforward_days > 0:
+                    available_leave.expired_carryforward_days = (
+                        available_leave.carryforward_days
+                    )
+                    available_leave.carryforward_days = 0
+                    available_leave.save()
             leave_type.carryforward_expire_date = leave_type.set_expired_date(
                 today_date
             )

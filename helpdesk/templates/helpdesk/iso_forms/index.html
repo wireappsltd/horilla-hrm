@@ -148,6 +148,51 @@
     </div>
 </div>
 
+{# ── Approve Comment Modal ── #}
+<div class="oh-modal" id="approveCommentModal" role="dialog" aria-labelledby="approveCommentModalTitle" aria-hidden="true">
+    <div class="oh-modal__dialog">
+        <div class="oh-modal__dialog-header">
+            <h2 class="oh-modal__dialog-title" id="approveCommentModalTitle">
+                {% trans "Approve Request" %}
+            </h2>
+            <button class="oh-modal__close" aria-label="Close" onclick="closeApproveModal();">
+                <ion-icon name="close-outline"></ion-icon>
+            </button>
+        </div>
+        <div class="oh-modal__dialog-body">
+            <p class="text-muted mb-3">
+                {% trans "You are about to approve request" %}
+                <strong id="approveTicketId"></strong>.
+                {% trans "You may optionally add a review comment." %}
+            </p>
+            <form id="approveCommentForm" method="post" action="">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="approve" />
+                <div class="oh-form__group">
+                    <label class="oh-label" for="approveFeedbackInput">
+                        {% trans "Review Comment (optional)" %}
+                    </label>
+                    <textarea
+                        id="approveFeedbackInput"
+                        name="iso_feedback"
+                        class="oh-input w-100"
+                        rows="3"
+                        placeholder="{% trans 'Add an optional comment about this approval...' %}"
+                    ></textarea>
+                </div>
+                <div class="d-flex justify-content-end mt-3 gap-2">
+                    <button type="button" class="oh-btn oh-btn--light-bkg" onclick="closeApproveModal();">
+                        {% trans "Cancel" %}
+                    </button>
+                    <button type="submit" class="oh-btn oh-btn--success">
+                        {% trans "Approve" %}
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 {# ── Reject Reason Modal ── #}
 <div class="oh-modal" id="rejectReasonModal" role="dialog" aria-labelledby="rejectReasonModalTitle" aria-hidden="true">
     <div class="oh-modal__dialog">
@@ -198,6 +243,23 @@
 </div>
 
 <script>
+    function openApproveModal(actionUrl, ticketId) {
+        var modal = document.getElementById('approveCommentModal');
+        var form = document.getElementById('approveCommentForm');
+        var ticketLabel = document.getElementById('approveTicketId');
+        var feedbackInput = document.getElementById('approveFeedbackInput');
+
+        form.action = actionUrl;
+        ticketLabel.textContent = ticketId;
+        feedbackInput.value = '';
+        modal.classList.add('oh-modal--show');
+    }
+
+    function closeApproveModal() {
+        var modal = document.getElementById('approveCommentModal');
+        modal.classList.remove('oh-modal--show');
+    }
+
     function openRejectModal(actionUrl, ticketId) {
         var modal = document.getElementById('rejectReasonModal');
         var form = document.getElementById('rejectReasonForm');

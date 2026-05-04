@@ -805,9 +805,41 @@ class MultipleFileInput(forms.ClearableFileInput):
 
 
 class MultipleFileField(forms.FileField):
+    # Allowed file extensions for reimbursement attachments
+    ALLOWED_EXTENSIONS = {"pdf", "jpg", "jpeg", "png", "docx"}
+    # Max size per file in bytes (5 MB)
+    MAX_FILE_SIZE = 5 * 1024 * 1024
+
     def __init__(self, *args, **kwargs):
+        self.allowed_extensions = kwargs.pop(
+            "allowed_extensions", self.ALLOWED_EXTENSIONS
+        )
+        self.max_file_size = kwargs.pop("max_file_size", self.MAX_FILE_SIZE)
         kwargs.setdefault("widget", MultipleFileInput())
         super().__init__(*args, **kwargs)
+
+    def _validate_file(self, file):
+        if not file:
+            return
+        name = getattr(file, "name", "") or ""
+        ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+        if ext not in self.allowed_extensions:
+            allowed = ", ".join(sorted(e.upper() for e in self.allowed_extensions))
+            raise forms.ValidationError(
+                _("Unsupported file type '%(ext)s'. Allowed types: %(allowed)s.")
+                % {"ext": ext or name, "allowed": allowed}
+            )
+        size = getattr(file, "size", 0) or 0
+        if size > self.max_file_size:
+            raise forms.ValidationError(
+                _(
+                    "File '%(name)s' exceeds the maximum allowed size of %(limit)s MB."
+                )
+                % {
+                    "name": name,
+                    "limit": int(self.max_file_size / (1024 * 1024)),
+                }
+            )
 
     def clean(self, data, initial=None):
         single_file_clean = super().clean
@@ -815,6 +847,8 @@ class MultipleFileField(forms.FileField):
             result = [single_file_clean(d, initial) for d in data]
         else:
             result = [single_file_clean(data, initial)]
+        for f in result:
+            self._validate_file(f)
         return result[0] if result else None
 
 
@@ -894,12 +928,29 @@ class ReimbursementForm(ModelForm):
         self.fields.pop("attachment", None)
         self.fields["attachment"] = MultipleFileField(
             label="Attachments",
-            required=True,
+            # On edit, an attachment already exists on the instance,
+            # so do not force the user to re-upload one just to save changes.
+            required=not is_edit,
         )
-        self.fields["attachment"].widget.attrs["accept"] = ".jpg, .jpeg, .png, .pdf"
+        self.fields["attachment"].widget.attrs["accept"] = (
+            ".jpg, .jpeg, .png, .pdf, .docx"
+        )
 
         if is_edit:
             self.initial["attachment"] = None
+            # Keep the original type visible in the (hidden) form field even
+            # if the incoming POST data somehow carries a different value.
+            # This prevents the form from silently switching between
+            # Reimbursement / Leave Encashment / Bonus Encashment on re-render.
+            original_type = self.instance.type
+            self.initial["type"] = original_type
+            if hasattr(self.data, "_mutable"):
+                was_mutable = self.data._mutable
+                self.data._mutable = True
+                self.data["type"] = original_type
+                self.data._mutable = was_mutable
+            elif isinstance(self.data, dict):
+                self.data["type"] = original_type
 
         self.exclude_fields_by_type(exclude_fields)
 
@@ -924,32 +975,42 @@ class ReimbursementForm(ModelForm):
         self.fields["employee_id"].empty_label = None
 
     def exclude_fields_by_type(self, exclude_fields):
-        """Determine which fields to exclude based on type."""
-        type = (
-            self.data.get("type")
-            if self.data
-            else self.instance.type if self.instance else None
-        )
-        is_edit = self.instance and self.instance.pk
-        has_data = bool(self.data)
+        """Determine which fields to exclude based on type.
 
-        if type == "reimbursement" and is_edit:
+        The form must render the correct set of fields server-side so that
+        the user never sees an inconsistent / wrong form (e.g. Leave
+        Encashment fields appearing on a Reimbursement request) when the
+        client-side toggle script is delayed by htmx swap timing,
+        select2 initialization, or a slow connection.
+
+        Resolution order for the active type:
+            1. POST data ``type`` (form re-render after submit)
+            2. Existing instance ``type`` (edit)
+            3. Model default ``"reimbursement"`` (fresh create)
+        """
+        type = None
+        if self.data:
+            type = self.data.get("type")
+        if not type and self.instance is not None:
+            # ``self.instance.type`` falls back to the model's default
+            # ("reimbursement") on a brand new instance, which is exactly
+            # what we want for a fresh GET.
+            type = getattr(self.instance, "type", None)
+        if not type:
+            type = "reimbursement"
+
+        is_edit = self.instance and self.instance.pk
+
+        if type == "reimbursement":
             exclude_fields += [
                 "leave_type_id",
                 "cfd_to_encash",
                 "ad_to_encash",
                 "bonus_to_encash",
             ]
-        elif type == "reimbursement" and has_data:  # NEW: handle POST re-render
-            exclude_fields += [
-                "leave_type_id",
-                "cfd_to_encash",
-                "ad_to_encash",
-                "bonus_to_encash",
-            ]
-        elif type == "leave_encashment" and (is_edit or has_data):
+        elif type == "leave_encashment":
             exclude_fields += ["attachment", "amount", "bonus_to_encash"]
-        elif type == "bonus_encashment" and (is_edit or has_data):
+        elif type == "bonus_encashment":
             exclude_fields += [
                 "attachment",
                 "amount",
@@ -960,7 +1021,15 @@ class ReimbursementForm(ModelForm):
 
         if is_edit:
             exclude_fields += ["employee_id"]
-            self.fields["type"].widget = forms.HiddenInput()
+            # Keep the Request Type field visible on edit so admins and
+            # employees can verify what kind of request they are editing,
+            # but mark it read-only so the type cannot be changed once
+            # the request has been created (changing the type would
+            # invalidate the related fields like leave_type_id /
+            # cfd_to_encash / attachment etc.).
+            self.fields["type"].disabled = True
+            self.fields["type"].widget.attrs["disabled"] = "disabled"
+            self.fields["type"].widget.attrs.pop("onchange", None)
 
     def as_p(self):
         """
@@ -1072,6 +1141,18 @@ class ReimbursementForm(ModelForm):
 
         if not self.instance.employee_id_id:
             self.instance.employee_id = self.employee
+
+        # Never allow the request type to change when editing an existing
+        # reimbursement; always preserve the originally persisted type so
+        # the form cannot silently switch to a different kind of request.
+        if not is_new:
+            original_type = (
+                self.instance.__class__.objects.filter(pk=self.instance.pk)
+                .values_list("type", flat=True)
+                .first()
+            )
+            if original_type:
+                self.instance.type = original_type
 
         if not attachments:
             temp_paths = self.data.get("temp_attachment_paths", "")

@@ -455,8 +455,12 @@ def validate_attendance_request(request, attendance_id):
     if attendance.request_type == "create_request":
         other_dict = first_dict
         first_dict = empty_data
+        requested_compensation_leave = attendance.is_get_compensation_leave
     else:
-        other_dict = json.loads(attendance.requested_data)
+        other_dict = json.loads(attendance.requested_data) if attendance.requested_data else {}
+        requested_compensation_leave = other_dict.get(
+            "is_get_compensation_leave", attendance.is_get_compensation_leave
+        )
     requests_ids_json = request.GET.get("requests_ids")
     previous_instance_id = next_instance_id = attendance.pk
     if requests_ids_json:
@@ -472,6 +476,7 @@ def validate_attendance_request(request, attendance_id):
             "previous": previous_instance_id,
             "next": next_instance_id,
             "requests_ids": requests_ids_json,
+            "requested_compensation_leave": requested_compensation_leave,
         },
     )
 
@@ -862,11 +867,15 @@ def edit_validate_attendance(request, attendance_id):
         initial = request.GET.dict()
     else:
         if attendance.request_type != "create_request":
-            initial = json.loads(attendance.requested_data)
+            initial = json.loads(attendance.requested_data) if attendance.requested_data else {}
+            initial.setdefault(
+                "is_get_compensation_leave", attendance.is_get_compensation_leave
+            )
         initial["request_description"] = attendance.request_description
     form = AttendanceRequestForm(initial=initial)
     form.instance.id = attendance.id
     hx_target = request.META.get("HTTP_HX_TARGET")
+    show_compensation = False
     if request.method == "POST":
         form = AttendanceRequestForm(request.POST, instance=copy.copy(attendance))
         if form.is_valid():
@@ -900,10 +909,20 @@ def edit_validate_attendance(request, attendance_id):
                                 </script>
                                 """
             )
+        attendance_date_str = request.POST.get("attendance_date")
+        if attendance_date_str:
+            try:
+                parsed_date = datetime.strptime(attendance_date_str, "%Y-%m-%d").date()
+                result = is_mercantile_or_poya_holiday(parsed_date)
+                show_compensation = result.get("is_mercantile_holiday", False)
+            except (ValueError, TypeError):
+                pass
+    else:
+        show_compensation = attendance.is_mercantile_holiday
     return render(
         request,
         "requests/attendance/update_form.html",
-        {"form": form, "hx_target": hx_target},
+        {"form": form, "hx_target": hx_target, "show_compensation": show_compensation},
     )
 
 

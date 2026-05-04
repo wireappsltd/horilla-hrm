@@ -2878,7 +2878,6 @@ def check_compensation(request):
     )
 
 def check_attendance_duplicate(request):
-    print("request triggered")
     employee_id = request.GET.get("employee_id")
     attendance_date = request.GET.get("attendance_date")
 

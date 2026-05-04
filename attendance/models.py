@@ -473,6 +473,7 @@ class Attendance(HorillaModel):
             "batch_attendance_id": (
                 self.batch_attendance_id.id if self.batch_attendance_id else ""
             ),
+            "is_get_compensation_leave": self.is_get_compensation_leave,
             # Add other fields you want to store
         }
         return serialized_data
@@ -573,8 +574,12 @@ class Attendance(HorillaModel):
 
     def clean(self, *args, **kwargs):
         super().clean(*args, **kwargs)
-        now = datetime.now().time()
-        today = datetime.today().date()
+        from datetime import timedelta
+
+        now = datetime.now()
+        today = now.date()
+        # Allow attendance to be marked up to 3 days into the future.
+        max_allowed_date = today + timedelta(days=3)
 
         # Convert to time if it's a string
         if isinstance(self.attendance_clock_out, str):
@@ -599,11 +604,31 @@ class Attendance(HorillaModel):
                 }
             )
 
-        if self.attendance_clock_out_date and self.attendance_clock_out_date >= today:
-            if out_time > now:
-                raise ValidationError(
-                    {"attendance_clock_out": "Check-out time cannot be in the future"}
-                )
+        # Block attendance dates more than 3 days in the future.
+        if self.attendance_date and self.attendance_date > max_allowed_date:
+            raise ValidationError(
+                {
+                    "attendance_date": "Attendance cannot be marked more than 3 days in the future"
+                }
+            )
+        if (
+            self.attendance_clock_in_date
+            and self.attendance_clock_in_date > max_allowed_date
+        ):
+            raise ValidationError(
+                {
+                    "attendance_clock_in_date": "Check-in date cannot be more than 3 days in the future"
+                }
+            )
+        if (
+            self.attendance_clock_out_date
+            and self.attendance_clock_out_date > max_allowed_date
+        ):
+            raise ValidationError(
+                {
+                    "attendance_clock_out_date": "Check-out date cannot be more than 3 days in the future"
+                }
+            )
 
 
 class AttendanceRequestFile(HorillaModel):
