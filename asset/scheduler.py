@@ -414,6 +414,108 @@ def notify_overdue_checkups():
         CheckupMailThread(email_recipients, email_context, is_overdue=True).start()
 
 
+def notify_overdue_checkups_recurring():
+    """
+    Sends a recurring 3-month follow-up notification for any asset assignment
+    whose yearly check-up is overdue and has not been marked complete.
+
+    A record receives the next reminder once 90 days have elapsed since its
+    last reminder (or its check-up due date, if never reminded). The job
+    stops sending reminders for an assignment as soon as it is marked
+    Complete or returned.
+    """
+    logger.info("[notify_overdue_checkups_recurring] job started")
+
+    from django.contrib.auth.models import User
+
+    from asset.models import AssetAssignment
+    from horilla.methods import horilla_users_with_perms
+
+    today = date.today()
+    threshold = today - timedelta(days=90)
+    from django.conf import settings
+    bot = User.objects.filter(username=settings.NOTIFICATION_BOT_USERNAME).first()
+    if not bot:
+        logger.warning(
+            "[notify_overdue_checkups_recurring] bot user '%s' missing; aborting",
+            getattr(settings, "NOTIFICATION_BOT_USERNAME", None),
+        )
+        return
+
+    from django.db.models import Q
+
+    overdue_assignments = AssetAssignment.objects.filter(
+        yearly_checkup_date__lte=today,
+        checkup_completed=False,
+        return_date__isnull=True,
+    ).filter(
+        Q(last_overdue_notification_date__isnull=True)
+        | Q(last_overdue_notification_date__lte=threshold)
+    )
+
+    logger.info(
+        "[notify_overdue_checkups_recurring] matched %s assignment(s)",
+        overdue_assignments.count(),
+    )
+
+    for assignment in overdue_assignments:
+        asset = assignment.asset_id
+        employee = assignment.assigned_to_employee_id
+        shop = assignment.service_shop_name or "N/A"
+        checkup_date = assignment.yearly_checkup_date.strftime("%Y-%m-%d")
+
+        message = (
+            f"REMINDER: Yearly check-up for asset '{asset.asset_name}' "
+            f"({asset.asset_tracking_id}) was due on {checkup_date} and is "
+            f"still overdue. Service shop: {shop}."
+        )
+
+        notify.send(
+            bot,
+            recipient=employee.employee_user_id,
+            verb=message,
+            redirect=reverse("asset-request-allocation-view"),
+            label="System",
+            icon="alert-circle",
+        )
+
+        permed_users = horilla_users_with_perms("asset.view_assetassignment")
+        if permed_users.exists():
+            notify.send(
+                bot,
+                recipient=permed_users,
+                verb=message,
+                redirect=reverse("asset-request-allocation-view"),
+                label="System",
+                icon="alert-circle",
+            )
+
+        notified_pks = set(permed_users.values_list("pk", flat=True))
+        notified_pks.add(employee.employee_user_id.pk)
+
+        for group_name in ("HR", "OPS"):
+            try:
+                group = Group.objects.get(name=group_name)
+                group_users = group.user_set.exclude(pk__in=notified_pks)
+                if group_users.exists():
+                    notify.send(
+                        bot,
+                        recipient=group_users,
+                        verb=message,
+                        redirect=reverse("asset-request-allocation-view"),
+                        label="System",
+                        icon="alert-circle",
+                    )
+                    notified_pks.update(
+                        group_users.values_list("pk", flat=True)
+                    )
+            except Group.DoesNotExist:
+                pass
+
+        assignment.last_overdue_notification_date = today
+        assignment.save(update_fields=["last_overdue_notification_date"])
+
+
 if not any(
     cmd in sys.argv
     for cmd in ["makemigrations", "migrate", "compilemessages", "flush", "shell"]
@@ -427,6 +529,7 @@ if not any(
         scheduler.add_job(notify_expiring_documents, "interval", hours=4)
         scheduler.add_job(notify_upcoming_checkups, "interval", hours=4)
         scheduler.add_job(notify_overdue_checkups, "interval", hours=4)
+        scheduler.add_job(notify_overdue_checkups_recurring, "interval", hours=24)
         scheduler.start()
         logger.info(
             "[asset.scheduler] BackgroundScheduler started with %s job(s): %s",

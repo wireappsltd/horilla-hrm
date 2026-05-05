@@ -402,6 +402,64 @@ class AssetReturnForm(ModelForm):
         return return_date
 
 
+YEARLY_CHECKUP_MAX_IMAGE_BYTES = 5 * 1024 * 1024
+
+
+class YearlyCheckupForm(ModelForm):
+    """ModelForm for submitting an asset's yearly check-up."""
+
+    class Meta:
+        model = AssetAssignment
+        fields = ["yearly_checkup_date", "checkup_description", "checkup_image"]
+        widgets = {
+            "yearly_checkup_date": forms.DateInput(
+                attrs={
+                    "type": "date",
+                    "class": "oh-input w-100",
+                    "required": "true",
+                }
+            ),
+            "checkup_description": forms.Textarea(
+                attrs={
+                    "class": "oh-input oh-input--textarea oh-input--block",
+                    "rows": 3,
+                    "required": "true",
+                    "placeholder": _("Describe the check-up performed."),
+                }
+            ),
+            "checkup_image": forms.ClearableFileInput(
+                attrs={
+                    "class": "oh-input w-100",
+                    "accept": "image/*",
+                    "required": "true",
+                }
+            ),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["yearly_checkup_date"].required = True
+        self.fields["checkup_description"].required = True
+        self.fields["checkup_image"].required = True
+        self.fields["yearly_checkup_date"].label = _("Check-up Date")
+        self.fields["checkup_description"].label = _("Description")
+        self.fields["checkup_image"].label = _("Image")
+
+    def clean_yearly_checkup_date(self):
+        checkup_date = self.cleaned_data.get("yearly_checkup_date")
+        if checkup_date and checkup_date > date.today():
+            raise forms.ValidationError(_("Check-up date cannot be in the future."))
+        return checkup_date
+
+    def clean_checkup_image(self):
+        image = self.cleaned_data.get("checkup_image")
+        if image and getattr(image, "size", 0) > YEARLY_CHECKUP_MAX_IMAGE_BYTES:
+            raise forms.ValidationError(
+                _("Image file exceeds the 5 MB limit. Please upload a smaller image.")
+            )
+        return image
+
+
 class AssetBatchForm(ModelForm):
     """
     A Django ModelForm for creating or updating AssetLot instances.
