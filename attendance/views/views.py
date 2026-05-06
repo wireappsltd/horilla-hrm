@@ -473,7 +473,12 @@ def attendance_update(request, obj_id):
         form = AttendanceUpdateForm(request.POST, instance=attendance)
         form = choosesubordinates(request, form, "attendance.change_attendance")
         if form.is_valid():
-            form.save()
+            saved_attendance = form.save()
+            if saved_attendance.is_mercantile_holiday:
+                saved_attendance.is_get_compensation_leave = (
+                    request.POST.get("is_get_compensation_leave") == "on"
+                )
+                saved_attendance.save(update_fields=["is_get_compensation_leave"])
             messages.success(request, _("Attendance Updated."))
             urlencode = request.GET.urlencode()
             modified_url = f"/attendance/attendance-view/?{urlencode}"
@@ -494,7 +499,14 @@ def attendance_update(request, obj_id):
                     result = is_mercantile_or_poya_holiday(parsed_date)
                     show_compensation = result.get("is_mercantile_holiday", False)
                     if show_compensation:
-                        compensation_form = AttendanceForm()
+                        compensation_form = AttendanceForm(
+                            initial={
+                                "is_get_compensation_leave": request.POST.get(
+                                    "is_get_compensation_leave"
+                                )
+                                == "on"
+                            }
+                        )
                 except (ValueError, TypeError):
                     pass
             return render(
@@ -508,10 +520,18 @@ def attendance_update(request, obj_id):
                     "compensation_form": compensation_form,
                 },
             )
+    show_compensation = attendance.is_mercantile_holiday
+    compensation_form = AttendanceForm(instance=attendance) if show_compensation else None
     return render(
         request,
         "attendance/attendance/update_form.html",
-        {"form": form, "urlencode": request.GET.urlencode(), "obj_id": obj_id},
+        {
+            "form": form,
+            "urlencode": request.GET.urlencode(),
+            "obj_id": obj_id,
+            "show_compensation": show_compensation,
+            "compensation_form": compensation_form,
+        },
     )
 
 
@@ -1801,6 +1821,19 @@ def user_request_one_view(request, id):
     instance_ids_json = request.GET["instances_ids"]
     instance_ids = json.loads(instance_ids_json) if instance_ids_json else []
     previous_instance, next_instance = closest_numbers(instance_ids, id)
+    requested_compensation_leave = attendance_request.is_get_compensation_leave
+    if (
+        attendance_request.request_type
+        and attendance_request.request_type != "create_request"
+        and attendance_request.requested_data
+    ):
+        try:
+            requested_data = json.loads(attendance_request.requested_data)
+            requested_compensation_leave = requested_data.get(
+                "is_get_compensation_leave", requested_compensation_leave
+            )
+        except (TypeError, ValueError):
+            pass
     return render(
         request,
         "attendance/attendance/attendance_request_one.html",
@@ -1812,6 +1845,7 @@ def user_request_one_view(request, id):
             "next_instance": next_instance,
             "instance_ids_json": instance_ids_json,
             "dashboard": request.GET.get("dashboard"),
+            "requested_compensation_leave": requested_compensation_leave,
         },
     )
 
