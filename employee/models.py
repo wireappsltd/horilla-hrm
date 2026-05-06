@@ -125,8 +125,8 @@ class Employee(models.Model):
     )
     children = models.IntegerField(blank=True, null=True)
     emergency_contact = models.CharField(max_length=15, null=True, blank=True)
-    emergency_contact_name = models.CharField(max_length=20, null=True, blank=True)
-    emergency_contact_relation = models.CharField(max_length=20, null=True, blank=True ,  verbose_name="Relationship to Emergency Contact")
+    emergency_contact_name = models.CharField(max_length=255, null=True, blank=True)
+    emergency_contact_relation = models.CharField(max_length=255, null=True, blank=True ,  verbose_name="Relationship to Emergency Contact")
     is_active = models.BooleanField(default=True)
     additional_info = models.JSONField(null=True, blank=True)
     is_from_onboarding = models.BooleanField(
