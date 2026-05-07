@@ -273,6 +273,19 @@ def auto_assign_task_to_stage_employees(sender, instance, created, **kwargs):
     from offboarding.methods import assign_task_to_stage_employees
     assign_task_to_stage_employees(sender, instance, created, **kwargs)
 
+
+@receiver(post_save, sender=OffboardingEmployee)
+def auto_assign_tasks_to_offboarding_employee(sender, instance, created, **kwargs):
+    """
+    Hook into OffboardingEmployee save to backfill EmployeeTask rows for every
+    OffboardingTask defined on the employee's current stage (and global tasks).
+    Covers two cases the task-side signal cannot:
+      - employee added to a stage that already has tasks
+      - employee moved to a different stage with its own tasks
+    """
+    from offboarding.methods import assign_stage_tasks_to_employee
+    assign_stage_tasks_to_employee(instance)
+
 class EmployeeTask(HorillaModel):
     """
     EmployeeTask model
