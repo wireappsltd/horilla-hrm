@@ -22,6 +22,17 @@
 					>{% trans "Personal Info" %}</a
 				>
 			</li>
+			{% if can_edit_work_info %}
+			<li class="oh-general__tab">
+				<a
+					href="#"
+					class="oh-general__tab-link"
+					data-action="general-tab"
+					data-target="#work"
+					>{% trans "Work Information" %}</a
+				>
+			</li>
+			{% endif %}
 			<li class="oh-general__tab">
 				<a
 					href="#"
@@ -36,6 +47,9 @@
 </section>
 <div class="oh-wrapper">
 	{% include 'employee/profile/personal_info.html' %}
+	{% if can_edit_work_info %}
+		{% include 'employee/profile/work_info.html' %}
+	{% endif %}
     {% include 'employee/profile/bank_info.html' %}
 </div>
 
@@ -47,7 +61,7 @@
 		  var serverActiveTab = "{{ active_tab|default:'' }}";
 		  var activeTab = serverActiveTab || localStorage.getItem("activeEmpprofileTab");
 
-		  if (!["#personal", "#bank"].includes(activeTab)) {
+		  if (!["#personal", "#bank", "#work"].includes(activeTab)) {
 			activeTab = "#personal";
 		  }
 
