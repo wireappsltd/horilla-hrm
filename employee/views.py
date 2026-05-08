@@ -297,6 +297,17 @@ def self_info_update(request):
         instance=EmployeeBankDetails.objects.filter(employee_id=employee).first()
     )
     form = EmployeeForm(instance=Employee.objects.filter(employee_user_id=user).first())
+    can_edit_work_info = request.user.has_perm(
+        "employee.change_employeeworkinformation"
+    )
+    work_info_instance = EmployeeWorkInformation.objects.filter(
+        employee_id=employee
+    ).first()
+    work_form = (
+        EmployeeWorkInformationForm(instance=work_info_instance)
+        if can_edit_work_info
+        else None
+    )
     if request.POST:
         if request.POST.get("profile_update"):
             instance = Employee.objects.filter(employee_user_id=request.user).first()
@@ -326,13 +337,34 @@ def self_info_update(request):
             else:
                 messages.error(request, _("Bank update failed. Please fix the errors below."))
 
+        elif request.POST.get("form_type") == "work" and can_edit_work_info:
+            work_form = EmployeeWorkInformationUpdateForm(
+                request.POST, instance=work_info_instance
+            )
+            if work_form.is_valid():
+                instance = work_form.save(commit=False)
+                instance.employee_id = employee
+                instance.save()
+                instance.tags.set(request.POST.getlist("tags"))
+                messages.success(request, _("Work information updated."))
+                return redirect("employee-profile")
+            else:
+                messages.error(
+                    request,
+                    _("Work information update failed. Please fix the errors below."),
+                )
+
     active_tab = "#bank" if bank_form.errors else "#personal"
+    if can_edit_work_info and work_form is not None and work_form.errors:
+        active_tab = "#work"
     return render(
         request,
         "employee/profile/profile.html",
         {
             "form": form,
             "bank_form": bank_form,
+            "work_form": work_form,
+            "can_edit_work_info": can_edit_work_info,
             "active_tab": active_tab,
         },
     )

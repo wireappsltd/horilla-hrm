@@ -188,6 +188,7 @@ class EmployeeForm(ModelForm):
             }),
             "experience": forms.NumberInput(attrs={
                 "step": "0.1",
+                "onwheel": "this.blur()",
             }),
         }
 
@@ -205,6 +206,10 @@ class EmployeeForm(ModelForm):
             "style": "text-transform:none;"
         })
         self.fields["badge_id"].required = False
+
+        for _field_name in ("children", "experience"):
+            if _field_name in self.fields:
+                self.fields[_field_name].widget.attrs["onwheel"] = "this.blur()"
 
         if instance := kwargs.get("instance"):
             # ----
