@@ -143,9 +143,9 @@
                 {% with s=leave.start_date_breakdown|default:"full_day" e=leave.end_date_breakdown|default:"full_day" %}
                     {% if leave.start_date == leave.end_date %}
                         {% if s == "first_half" %}
-                            Same Day: First Half ({{ leave.requested_days }} Days)
+                            Half Day: First Half ({{ leave.requested_days }} Days)
                         {% elif s == "second_half" %}
-                            Same Day: Second Half ({{ leave.requested_days }} Days)
+                            Half Day: Second Half ({{ leave.requested_days }} Days)
                         {% else %}
                             Full Day ({{ leave.requested_days }} Days)
                         {% endif %}
