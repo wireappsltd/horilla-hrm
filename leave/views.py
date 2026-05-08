@@ -5533,6 +5533,24 @@ def monthly_leave_report_pdf(request):
     if not start or not end:
         return HttpResponseBadRequest(_("Start date and end date are required."))
 
+    try:
+        start_dt = datetime.strptime(start, "%Y-%m-%d").date()
+        end_dt = datetime.strptime(end, "%Y-%m-%d").date()
+    except ValueError:
+        return HttpResponseBadRequest(_("Invalid date format."))
+
+    if start_dt > end_dt:
+        return HttpResponseBadRequest(_("Start date cannot be later than end date."))
+
+    try:
+        max_end = start_dt.replace(year=start_dt.year + 1)
+    except ValueError:
+        max_end = start_dt.replace(year=start_dt.year + 1, day=28)
+    if end_dt > max_end:
+        return HttpResponseBadRequest(
+            _("Report generation is limited to a maximum of 12 months. Please select a shorter date range.")
+        )
+
     request_employee = getattr(request.user, "employee_get", None)
     # print("REQUEST EMPLOYEE:", request_employee)
 
