@@ -732,6 +732,11 @@ class EmployeeWorkInformation(models.Model):
         null=True,
         verbose_name=_("Probation End Date"),
     )
+    intern_period_end_date = models.DateField(
+        blank=True,
+        null=True,
+        verbose_name=_("Intern Period End Date"),
+    )
     basic_salary = models.IntegerField(
         null=True, blank=True, default=0, verbose_name=_("Basic Salary")
     )
