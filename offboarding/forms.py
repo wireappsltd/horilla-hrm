@@ -216,6 +216,12 @@ class TaskForm(ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["stage_id"].empty_label = "All Stages in Offboarding"
+        # When multiple offboarding flows exist, several stages share the same
+        # title ("Notice Period", "FNF", ...). Prefix each option with its
+        # flow so admins can pick the correct one.
+        self.fields["stage_id"].label_from_instance = (
+            lambda obj: f"{obj.offboarding_id.title} — {obj.title}"
+        )
         self.fields["managers"].required = False
 
     def as_p(self):
@@ -244,6 +250,9 @@ class EmployeeTaskForm(ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["stage_id"].empty_label = "All Stages in Offboarding"
+        self.fields["stage_id"].label_from_instance = (
+            lambda obj: f"{obj.offboarding_id.title} — {obj.title}"
+        )
         self.fields["managers"].empty_label = None
         if not self.instance.pk:
             queryset = OffboardingEmployee.objects.filter(
