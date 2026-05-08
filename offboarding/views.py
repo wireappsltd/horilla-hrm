@@ -951,6 +951,13 @@ def offboarding_individual_view(request, emp_id):
         emp_id(int): the id of the offboarding employee
     """
     employee = OffboardingEmployee.objects.get(id=emp_id)
+    # Ensure EmployeeTask rows exist for every OffboardingTask defined on the
+    # employee's current stage and any global tasks. Idempotent — safe to call
+    # on every render. Covers the case where signals didn't fire (historical
+    # data created before the signals were deployed, or on environments where
+    # for any reason post_save did not run).
+    from offboarding.methods import assign_stage_tasks_to_employee
+    assign_stage_tasks_to_employee(employee)
     tasks = EmployeeTask.objects.filter(employee_id=emp_id)
     stage_forms = {}
     offboarding_stages = OffboardingStage.objects.filter(
