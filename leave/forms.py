@@ -429,6 +429,10 @@ class UserLeaveRequestForm(BaseModelForm):
         employee = kwargs.pop("employee", None)
         super(UserLeaveRequestForm, self).__init__(*args, **kwargs)
         self.fields["attachment"].widget.attrs["accept"] = ".jpg, .jpeg, .png, .pdf"
+        # Disable selection of past dates in the calendar/date picker
+        today_str = date.today().strftime("%Y-%m-%d")
+        self.fields["start_date"].widget.attrs["min"] = today_str
+        self.fields["end_date"].widget.attrs["min"] = today_str
         if employee:
             available_leaves = employee.available_leave.all()
             assigned_leave_types = LeaveType.objects.filter(
@@ -480,6 +484,30 @@ class UserLeaveRequestForm(BaseModelForm):
                 "hx-target": "#attachmentLabelWrapper",
                 "hx-swap": "outerHTML",
             })
+
+    def clean(self):
+        cleaned_data = super().clean()
+        start_date = cleaned_data.get("start_date")
+        end_date = cleaned_data.get("end_date")
+        today = date.today()
+        # Allow editing existing requests whose start date is already in the past
+        is_existing_past = (
+            getattr(self.instance, "pk", None)
+            and getattr(self.instance, "start_date", None)
+            and self.instance.start_date < today
+        )
+        if not is_existing_past:
+            if start_date and start_date < today:
+                self.add_error(
+                    "start_date",
+                    _("Start date cannot be earlier than today."),
+                )
+            if end_date and end_date < today:
+                self.add_error(
+                    "end_date",
+                    _("End date cannot be earlier than today."),
+                )
+        return cleaned_data
 
     def as_p(self, *args, **kwargs):
         """
@@ -600,6 +628,10 @@ class UserLeaveRequestCreationForm(BaseModelForm):
         employee = kwargs.pop("employee", None)
         super().__init__(*args, **kwargs)
         self.fields["attachment"].widget.attrs["accept"] = ".jpg, .jpeg, .png, .pdf"
+        # Disable selection of past dates in the calendar/date picker
+        today_str = date.today().strftime("%Y-%m-%d")
+        self.fields["start_date"].widget.attrs["min"] = today_str
+        self.fields["end_date"].widget.attrs["min"] = today_str
         if employee:
             available_leaves = employee.available_leave.all()
             assigned_leave_types = LeaveType.objects.filter(
@@ -631,6 +663,23 @@ class UserLeaveRequestCreationForm(BaseModelForm):
                      self.fields["leave_type_id"].queryset = self.fields["leave_type_id"].queryset.filter(name__icontains="Annual Leave")
         except Exception:
             pass
+
+    def clean(self):
+        cleaned_data = super().clean()
+        start_date = cleaned_data.get("start_date")
+        end_date = cleaned_data.get("end_date")
+        today = date.today()
+        if start_date and start_date < today:
+            self.add_error(
+                "start_date",
+                _("Start date cannot be earlier than today."),
+            )
+        if end_date and end_date < today:
+            self.add_error(
+                "end_date",
+                _("End date cannot be earlier than today."),
+            )
+        return cleaned_data
 
     class Meta:
         """
