@@ -126,10 +126,12 @@
             {% trans "Reject" %}
         </a>
         {% if request.user|is_reportingmanager or perms.attendance.change_attendance %}
+        {% if attendance.employee_id.employee_user_id != request.user %}
         <a href="{% url 'approve-validate-attendance-request' attendance.id %}" class="oh-btn oh-btn--success w-100">
             <ion-icon name="checkmark-outline"></ion-icon>
             {% trans "Approve" %}
         </a>
+        {% endif %}
         {% endif %}
         {% if request.user|is_reportingmanager or perms.attendance.change_attendance %}
         <a hx-get="{% url 'edit-validate-attendance' attendance.id %}"
