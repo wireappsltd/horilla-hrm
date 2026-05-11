@@ -604,7 +604,17 @@ class EmployeeWorkInformationUpdateForm(ModelForm):
 
         model = EmployeeWorkInformation
         fields = "__all__"
-        exclude = ("employee_id","contract_end_date","shift_id","work_type_id")
+        exclude = (
+            "employee_id",
+            "contract_end_date",
+            "shift_id",
+            "work_type_id",
+            # ``additional_info`` and ``experience`` are surfaced on the
+            # personal info section; excluding them here prevents the
+            # work info edit view from rendering duplicate columns.
+            "additional_info",
+            "experience",
+        )
 
         widgets = {
             "date_joining": DateInput(attrs={"type": "date"}),
