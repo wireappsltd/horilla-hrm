@@ -1528,6 +1528,9 @@ def leave_assign_view(request):
     request.GET = request.GET.copy()
     request.GET["field"] = True
 
+    initial_filter_dict = parse_qs(previous_data)
+    initial_filter_dict.pop("field", None)
+
     return render(
         request,
         "leave/leave_assign/assign_view.html",
@@ -1535,7 +1538,7 @@ def leave_assign_view(request):
             "available_leaves": page_obj,
             "f": AssignedLeaveFilter(),
             "pd": previous_data,
-            "filter_dict": parse_qs(previous_data),
+            "filter_dict": initial_filter_dict,
             "gp_fields": LeaveAssignReGroup.fields,
             "assign_form": AssignLeaveForm(),
             "available_leave_ids": available_leave_ids,
@@ -1587,7 +1590,7 @@ def leave_assign_filter(request):
     queryset = filtersubordinates(request, queryset, "leave.view_availableleave")
     assigned_leave_filter = AssignedLeaveFilter(request.GET, queryset).qs
     previous_data = request.GET.urlencode()
-    field = request.GET.get("field")
+    field = request.GET.get("field") or "leave_type_id"
     page_number = request.GET.get("page")
     template = ("leave/leave_assign/assigned_leave.html",)
     available_leaves = assigned_leave_filter.order_by("-id")
@@ -1612,6 +1615,7 @@ def leave_assign_filter(request):
         page_obj = paginator_qry(available_leaves, page_number)
 
     data_dict = parse_qs(previous_data)
+    data_dict.pop("field", None)
     get_key_instances(AvailableLeave, data_dict)
     return render(
         request,
