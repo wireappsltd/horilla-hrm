@@ -225,6 +225,16 @@ class LeaveRequestCreationForm(BaseModelForm):
                 "hx-get": "/leave/get-employee-leave-types?form=LeaveRequestCreationForm",
             }
         )
+        # Exclude the selected employee (if any) from covering person choices
+        employee_id_val = None
+        if self.is_bound:
+            employee_id_val = self.data.get("employee_id")
+        elif getattr(self.instance, "pk", None):
+            employee_id_val = getattr(self.instance, "employee_id_id", None)
+        if employee_id_val:
+            self.fields["manager"].queryset = self.fields["manager"].queryset.exclude(
+                id=employee_id_val
+            )
         self.fields["start_date"].widget.attrs.update(
             {
                 "hx-include": "#leaveRequestCreateForm",
@@ -299,6 +309,19 @@ class LeaveRequestUpdationForm(BaseModelForm):
             }
         )
         self.fields["attachment"].widget.attrs["accept"] = ".jpg, .jpeg, .png, .pdf"
+
+        # Exclude the requesting employee from covering person choices
+        employee_id_val = None
+        if self.is_bound:
+            employee_id_val = self.data.get("employee_id")
+        if not employee_id_val and employee is not None:
+            employee_id_val = getattr(employee, "id", None)
+        if not employee_id_val and getattr(self.instance, "pk", None):
+            employee_id_val = getattr(self.instance, "employee_id_id", None)
+        if employee_id_val:
+            self.fields["manager"].queryset = self.fields["manager"].queryset.exclude(
+                id=employee_id_val
+            )
 
         self.fields["start_date"].widget.attrs.update(
             {
@@ -471,6 +494,19 @@ class UserLeaveRequestForm(BaseModelForm):
             is_required = (str(val).strip().lower() in ("yes", "true", "1"))
 
         self.fields["attachment"].required = is_required
+
+        # Exclude the requesting employee from covering person choices
+        emp_id_val = None
+        if self.is_bound:
+            emp_id_val = self.data.get("employee_id")
+        if not emp_id_val and employee is not None:
+            emp_id_val = getattr(employee, "id", None)
+        if not emp_id_val and getattr(self.instance, "pk", None):
+            emp_id_val = getattr(self.instance, "employee_id_id", None)
+        if emp_id_val and "manager" in self.fields:
+            self.fields["manager"].queryset = self.fields["manager"].queryset.exclude(
+                id=emp_id_val
+            )
 
         if getattr(self.instance, "pk", None):
             self.fields["leave_type_id"].widget.attrs.update({
