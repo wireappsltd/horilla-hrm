@@ -534,8 +534,8 @@
                                             <div class="oh-sticky-table__th">{% trans "Asset" %}</div>
                                             <div class="oh-sticky-table__th">{% trans "Assigned Date" %}</div>
                                             <div class="oh-sticky-table__th">{% trans "Return Date" %}</div>
-                                            <div class="oh-sticky-table__th">{% trans "Yearly Check-up Date" %}</div>
                                             <div class="oh-sticky-table__th">{% trans "Yearly Check-up Status" %}</div>
+                                            <div class="oh-sticky-table__th">{% trans "Yearly Check-up Date" %}</div>
                                             <div class="oh-sticky-table__th"></div>
                                         </div>
                                     </div>
@@ -575,11 +575,6 @@
                                                 </span>
                                             </div>
                                             {% endif %}
-                                            <div class="oh-sticky-table__td dateformat_changer"
-                                                data-toggle="oh-modal-toggle"
-                                                data-target="#returnStatus{{asset_allocation.id}}">
-                                                {{ asset_allocation.yearly_checkup_date|default:"-" }}
-                                            </div>
                                             <div class="oh-sticky-table__td" data-toggle="oh-modal-toggle"
                                                 data-target="#returnStatus{{asset_allocation.id}}">
                                                 {% if asset_allocation.yearly_checkup_status == "Complete" %}
@@ -599,26 +594,41 @@
                                                     </div>
                                                 {% endif %}
                                             </div>
-                                            {% if not asset_allocation.return_status %}
-                                                <div class="oh-sticky-table__td">
-                                                    <button href="#" class="oh-btn oh-btn--secondary" role="button"
-                                                        data-toggle="oh-modal-toggle" data-target="#objectCreateModal"
-                                                        hx-get="{%url 'asset-allocate-return'  asset_id=asset_allocation.asset_id.id %}"
-                                                        hx-target="#objectCreateModalTarget"><ion-icon
-                                                            name="return-down-back-sharp"></ion-icon>{% trans "Return" %}
-                                                    </button>
+                                            <div class="oh-sticky-table__td dateformat_changer"
+                                                data-toggle="oh-modal-toggle"
+                                                data-target="#returnStatus{{asset_allocation.id}}"
+                                                style="vertical-align: middle;">
+                                                {{ asset_allocation.yearly_checkup_date|default:"-" }}
+                                            </div>
+                                            <div class="oh-sticky-table__td">
+                                                <div class="d-flex align-items-center" style="gap: 4px;">
+                                                    {% if asset_allocation.yearly_checkup_status == "Overdue" %}
+                                                        <button class="oh-btn oh-btn--warning" role="button"
+                                                            onclick="event.stopPropagation()"
+                                                            data-toggle="oh-modal-toggle" data-target="#objectCreateModal"
+                                                            hx-get="{% url 'asset-yearly-checkup-submit' asset_allocation_id=asset_allocation.id %}"
+                                                            hx-target="#objectCreateModalTarget">
+                                                            <ion-icon name="construct-outline"></ion-icon>{% trans "Yearly Check-up" %}
+                                                        </button>
+                                                    {% endif %}
+                                                    {% if not asset_allocation.return_status %}
+                                                        <button href="#" class="oh-btn oh-btn--secondary" role="button"
+                                                            data-toggle="oh-modal-toggle" data-target="#objectCreateModal"
+                                                            hx-get="{%url 'asset-allocate-return'  asset_id=asset_allocation.asset_id.id %}"
+                                                            hx-target="#objectCreateModalTarget"><ion-icon
+                                                                name="return-down-back-sharp"></ion-icon>{% trans "Return" %}
+                                                        </button>
+                                                    {% else %}
+                                                        <div class="d-flex align-items-center">
+                                                            <span
+                                                                class="oh-dot oh-dot--small  me-1 oh-dot--color oh-dot--info"></span>
+                                                            <span class="link-primary">
+                                                                {% trans "Returned" %}
+                                                            </span>
+                                                        </div>
+                                                    {% endif %}
                                                 </div>
-                                            {% else %}
-                                                <div class="oh-sticky-table__td">
-                                                    <div class="d-flex align-items-center">
-                                                        <span
-                                                            class="oh-dot oh-dot--small  me-1 oh-dot--color oh-dot--info"></span>
-                                                        <span class="link-primary">
-                                                            {% trans "Returned" %}
-                                                        </span>
-                                                    </div>
-                                                </div>
-                                            {% endif %}
+                                            </div>
                                         </div>
 
                                         <!-- Asset Return Status -->
@@ -759,8 +769,8 @@
                                 <div class="oh-sticky-table__th">{% trans "Asset" %}</div>
                                 <div class="oh-sticky-table__th">{% trans "Assigned Date" %}</div>
                                 <div class="oh-sticky-table__th">{% trans "Return Date" %}</div>
-                                <div class="oh-sticky-table__th">{% trans "Yearly Check-up Date" %}</div>
                                 <div class="oh-sticky-table__th">{% trans "Yearly Check-up Status" %}</div>
+                                <div class="oh-sticky-table__th">{% trans "Yearly Check-up Date" %}</div>
                                 <div class="oh-sticky-table__th"></div>
                             </div>
                         </div>
@@ -797,10 +807,6 @@
                                     </span>
                                 </div>
                                 {% endif %}
-                                <div class="oh-sticky-table__td dateformat_changer" data-toggle="oh-modal-toggle"
-                                    data-target="#returnStatus{{asset_allocation.id}}">
-                                    {{ asset_allocation.yearly_checkup_date|default:"-" }}
-                                </div>
                                 <div class="oh-sticky-table__td" data-toggle="oh-modal-toggle"
                                     data-target="#returnStatus{{asset_allocation.id}}">
                                     {% if asset_allocation.yearly_checkup_status == "Complete" %}
@@ -820,24 +826,38 @@
                                         </div>
                                     {% endif %}
                                 </div>
-                                {% if not asset_allocation.return_status %}
-                                <div class="oh-sticky-table__td">
-                                    <button href="#" class="oh-btn oh-btn--secondary" role="button"
-                                        data-toggle="oh-modal-toggle" data-target="#objectCreateModal"
-                                        hx-get="{%url 'asset-allocate-return'  asset_id=asset_allocation.asset_id.id %}"
-                                        hx-target="#objectCreateModalTarget"><ion-icon
-                                            name="return-down-back-sharp"></ion-icon>{% trans "Return" %}</button>
+                                <div class="oh-sticky-table__td dateformat_changer" data-toggle="oh-modal-toggle"
+                                    data-target="#returnStatus{{asset_allocation.id}}"
+                                    style="vertical-align: middle;">
+                                    {{ asset_allocation.yearly_checkup_date|default:"-" }}
                                 </div>
-                                {% else %}
                                 <div class="oh-sticky-table__td">
-                                    <div class="d-flex align-items-center">
-                                        <span class="oh-dot oh-dot--small  me-1 oh-dot--color oh-dot--info"></span>
-                                        <span class="link-primary">
-                                            {% trans "Returned" %}
-                                        </span>
+                                    <div class="d-flex align-items-center" style="gap: 4px;">
+                                        {% if asset_allocation.yearly_checkup_status == "Overdue" %}
+                                            <button class="oh-btn oh-btn--warning" role="button"
+                                                onclick="event.stopPropagation()"
+                                                data-toggle="oh-modal-toggle" data-target="#objectCreateModal"
+                                                hx-get="{% url 'asset-yearly-checkup-submit' asset_allocation_id=asset_allocation.id %}"
+                                                hx-target="#objectCreateModalTarget">
+                                                <ion-icon name="construct-outline"></ion-icon>{% trans "Yearly Check-up" %}
+                                            </button>
+                                        {% endif %}
+                                        {% if not asset_allocation.return_status %}
+                                            <button href="#" class="oh-btn oh-btn--secondary" role="button"
+                                                data-toggle="oh-modal-toggle" data-target="#objectCreateModal"
+                                                hx-get="{%url 'asset-allocate-return'  asset_id=asset_allocation.asset_id.id %}"
+                                                hx-target="#objectCreateModalTarget"><ion-icon
+                                                    name="return-down-back-sharp"></ion-icon>{% trans "Return" %}</button>
+                                        {% else %}
+                                            <div class="d-flex align-items-center">
+                                                <span class="oh-dot oh-dot--small  me-1 oh-dot--color oh-dot--info"></span>
+                                                <span class="link-primary">
+                                                    {% trans "Returned" %}
+                                                </span>
+                                            </div>
+                                        {% endif %}
                                     </div>
                                 </div>
-                                {% endif %}
                             </div>
 
                             <!-- Asset Return Status -->
