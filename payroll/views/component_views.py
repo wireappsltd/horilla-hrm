@@ -2441,6 +2441,16 @@ def payslip_super_detailed_export(request):
                     request, _("Date range cannot exceed 30 days.")
                 )
                 return redirect(request.META.get("HTTP_REFERER", "/"))
+            # Enforce that the end date is not more than 3 days in the future,
+            # consistent with the attendance marking restriction.
+            today = date.today()
+            max_allowed_end_date = today + timedelta(days=3)
+            if _sdt > max_allowed_end_date:
+                messages.error(
+                    request,
+                    _("The end date cannot be more than 3 days from the current date."),
+                )
+                return redirect(request.META.get("HTTP_REFERER", "/"))
     # Strictly include only payslips whose entire period (start_date..end_date)
     # falls within the selected date range. Records partially overlapping the
     # boundaries must be excluded.
