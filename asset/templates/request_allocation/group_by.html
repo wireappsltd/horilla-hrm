@@ -534,6 +534,8 @@
                                             <div class="oh-sticky-table__th">{% trans "Asset" %}</div>
                                             <div class="oh-sticky-table__th">{% trans "Assigned Date" %}</div>
                                             <div class="oh-sticky-table__th">{% trans "Return Date" %}</div>
+                                            <div class="oh-sticky-table__th">{% trans "Yearly Check-up Date" %}</div>
+                                            <div class="oh-sticky-table__th">{% trans "Yearly Check-up Status" %}</div>
                                             <div class="oh-sticky-table__th"></div>
                                         </div>
                                     </div>
@@ -573,6 +575,30 @@
                                                 </span>
                                             </div>
                                             {% endif %}
+                                            <div class="oh-sticky-table__td dateformat_changer"
+                                                data-toggle="oh-modal-toggle"
+                                                data-target="#returnStatus{{asset_allocation.id}}">
+                                                {{ asset_allocation.yearly_checkup_date|default:"-" }}
+                                            </div>
+                                            <div class="oh-sticky-table__td" data-toggle="oh-modal-toggle"
+                                                data-target="#returnStatus{{asset_allocation.id}}">
+                                                {% if asset_allocation.yearly_checkup_status == "Complete" %}
+                                                    <div class="d-flex align-items-center">
+                                                        <span class="oh-dot oh-dot--small me-1 oh-dot--color oh-dot--success"></span>
+                                                        <span class="link-success">{% trans "Complete" %}</span>
+                                                    </div>
+                                                {% elif asset_allocation.yearly_checkup_status == "Overdue" %}
+                                                    <div class="d-flex align-items-center">
+                                                        <span class="oh-dot oh-dot--small me-1 oh-dot--color oh-dot--danger"></span>
+                                                        <span class="link-danger">{% trans "Overdue" %}</span>
+                                                    </div>
+                                                {% else %}
+                                                    <div class="d-flex align-items-center">
+                                                        <span class="oh-dot oh-dot--small me-1 oh-dot--color oh-dot--warning"></span>
+                                                        <span class="link-warning">{% trans "Pending" %}</span>
+                                                    </div>
+                                                {% endif %}
+                                            </div>
                                             {% if not asset_allocation.return_status %}
                                                 <div class="oh-sticky-table__td">
                                                     <button href="#" class="oh-btn oh-btn--secondary" role="button"
@@ -733,6 +759,8 @@
                                 <div class="oh-sticky-table__th">{% trans "Asset" %}</div>
                                 <div class="oh-sticky-table__th">{% trans "Assigned Date" %}</div>
                                 <div class="oh-sticky-table__th">{% trans "Return Date" %}</div>
+                                <div class="oh-sticky-table__th">{% trans "Yearly Check-up Date" %}</div>
+                                <div class="oh-sticky-table__th">{% trans "Yearly Check-up Status" %}</div>
                                 <div class="oh-sticky-table__th"></div>
                             </div>
                         </div>
@@ -769,6 +797,29 @@
                                     </span>
                                 </div>
                                 {% endif %}
+                                <div class="oh-sticky-table__td dateformat_changer" data-toggle="oh-modal-toggle"
+                                    data-target="#returnStatus{{asset_allocation.id}}">
+                                    {{ asset_allocation.yearly_checkup_date|default:"-" }}
+                                </div>
+                                <div class="oh-sticky-table__td" data-toggle="oh-modal-toggle"
+                                    data-target="#returnStatus{{asset_allocation.id}}">
+                                    {% if asset_allocation.yearly_checkup_status == "Complete" %}
+                                        <div class="d-flex align-items-center">
+                                            <span class="oh-dot oh-dot--small me-1 oh-dot--color oh-dot--success"></span>
+                                            <span class="link-success">{% trans "Complete" %}</span>
+                                        </div>
+                                    {% elif asset_allocation.yearly_checkup_status == "Overdue" %}
+                                        <div class="d-flex align-items-center">
+                                            <span class="oh-dot oh-dot--small me-1 oh-dot--color oh-dot--danger"></span>
+                                            <span class="link-danger">{% trans "Overdue" %}</span>
+                                        </div>
+                                    {% else %}
+                                        <div class="d-flex align-items-center">
+                                            <span class="oh-dot oh-dot--small me-1 oh-dot--color oh-dot--warning"></span>
+                                            <span class="link-warning">{% trans "Pending" %}</span>
+                                        </div>
+                                    {% endif %}
+                                </div>
                                 {% if not asset_allocation.return_status %}
                                 <div class="oh-sticky-table__td">
                                     <button href="#" class="oh-btn oh-btn--secondary" role="button"
