@@ -319,7 +319,7 @@ class AssetAssignment(HorillaModel):
 
     @property
     def yearly_checkup_status(self):
-        """Returns one of: "Complete", "Overdue", "N/A"."""
+        """Returns one of: "Complete", "Overdue", "Pending"."""
         from django.utils import timezone
 
         if self.checkup_completed:
@@ -330,7 +330,7 @@ class AssetAssignment(HorillaModel):
             and self.yearly_checkup_date <= timezone.localdate()
         ):
             return "Overdue"
-        return "N/A"
+        return "Pending"
 
 
 class AssetRequest(HorillaModel):
