@@ -173,17 +173,7 @@ def disciplinary_actions(request):
     """
     This method is used to view all Disciplinaryaction
     """
-    employee = Employee.objects.filter(employee_user_id=request.user).first()
-    if request.user.has_perm("employee.view_disciplinaryaction"):
-        dis_actions = DisciplinaryAction.objects.all()
-    else:
-        dis_actions = filtersubordinates(
-            request, DisciplinaryAction.objects.all(), "base.add_disciplinaryaction"
-        ).distinct()
-        dis_actions = (
-            dis_actions
-            | DisciplinaryAction.objects.filter(employee_id=employee).distinct()
-        )
+    dis_actions = _accessible_disciplinary_actions(request)
 
     form = DisciplinaryActionFilter(request.GET, queryset=dis_actions)
     page_number = request.GET.get("page")
@@ -419,6 +409,27 @@ def action_type_name(request):
     return JsonResponse({"action_type": action_type})
 
 
+def _accessible_disciplinary_actions(request):
+    """
+    Return the queryset of DisciplinaryAction visible to the current user.
+
+    Admins / users with the view permission see all records; other users
+    see actions for their subordinates and any actions they are part of.
+    """
+    employee = Employee.objects.filter(employee_user_id=request.user).first()
+    if request.user.has_perm("employee.view_disciplinaryaction"):
+        return DisciplinaryAction.objects.all()
+    dis_actions = filtersubordinates(
+        request, DisciplinaryAction.objects.all(), "base.add_disciplinaryaction"
+    ).distinct()
+    if employee is not None:
+        dis_actions = (
+            dis_actions
+            | DisciplinaryAction.objects.filter(employee_id=employee).distinct()
+        )
+    return dis_actions.distinct()
+
+
 @login_required
 @hx_request_required
 def disciplinary_filter_view(request):
@@ -428,7 +439,9 @@ def disciplinary_filter_view(request):
 
     previous_data = request.GET.urlencode()
     action_id = request.GET.get("click_id") if request.GET.get("click_id") else None
-    dis_filter = DisciplinaryActionFilter(request.GET).qs
+    dis_filter = DisciplinaryActionFilter(
+        request.GET, queryset=_accessible_disciplinary_actions(request)
+    ).qs
     page_number = request.GET.get("page")
     page_obj = paginator_qry(dis_filter, page_number)
     data_dict = parse_qs(previous_data)
@@ -451,7 +464,9 @@ def search_disciplinary(request):
     """
     This method is used to search in Disciplinary Actions
     """
-    disciplinary = DisciplinaryActionFilter(request.GET).qs
+    disciplinary = DisciplinaryActionFilter(
+        request.GET, queryset=_accessible_disciplinary_actions(request)
+    ).qs
     return render(
         request,
         "disciplinary_actions/disciplinary_records.html",
