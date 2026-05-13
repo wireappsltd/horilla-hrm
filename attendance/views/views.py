@@ -473,12 +473,14 @@ def attendance_update(request, obj_id):
         form = AttendanceUpdateForm(request.POST, instance=attendance)
         form = choosesubordinates(request, form, "attendance.change_attendance")
         if form.is_valid():
-            saved_attendance = form.save()
-            if saved_attendance.is_mercantile_holiday:
-                saved_attendance.is_get_compensation_leave = (
+            # AttendanceUpdateForm excludes is_get_compensation_leave; set it on
+            # the unsaved instance so the single form.save() persists it along
+            # with the rest of the changes instead of writing twice.
+            if attendance.is_mercantile_holiday:
+                form.instance.is_get_compensation_leave = (
                     request.POST.get("is_get_compensation_leave") == "on"
                 )
-                saved_attendance.save(update_fields=["is_get_compensation_leave"])
+            form.save()
             messages.success(request, _("Attendance Updated."))
             urlencode = request.GET.urlencode()
             modified_url = f"/attendance/attendance-view/?{urlencode}"

@@ -1604,6 +1604,7 @@ def edit_common_task(request, task_id):
 
 
 @login_required
+@permission_required("offboarding.delete_offboardingtask")
 def delete_common_task(request, task_id):
     task = get_object_or_404(OffboardingTask, id=task_id)
     assigned_count = EmployeeTask.objects.filter(task_id=task).count()
@@ -1615,7 +1616,9 @@ def delete_common_task(request, task_id):
     else:
         task.delete()
 
-    tasks = OffboardingTask.objects.filter(is_active=True, is_fine=False)
+    task_list = OffboardingTask.objects.filter(is_active=True, is_fine=False).order_by("-id")
+    paginator = Paginator(task_list, 5)
+    tasks = paginator.get_page(request.GET.get("page", 1))
     return render(
         request,
         "offboarding/task/common_task_list.html",

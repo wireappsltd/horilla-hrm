@@ -274,15 +274,40 @@ def auto_assign_task_to_stage_employees(sender, instance, created, **kwargs):
     assign_task_to_stage_employees(sender, instance, created, **kwargs)
 
 
+from django.db.models.signals import pre_save
+
+
+@receiver(pre_save, sender=OffboardingEmployee)
+def _track_offboarding_employee_stage(sender, instance, **kwargs):
+    """Snapshot the previous stage_id so the post_save hook can decide whether
+    a stage transition actually happened."""
+    if instance.pk:
+        try:
+            instance._previous_stage_id = (
+                sender.objects.entire()
+                .filter(pk=instance.pk)
+                .values_list("stage_id", flat=True)
+                .first()
+            )
+        except Exception:
+            instance._previous_stage_id = None
+    else:
+        instance._previous_stage_id = None
+
+
 @receiver(post_save, sender=OffboardingEmployee)
 def auto_assign_tasks_to_offboarding_employee(sender, instance, created, **kwargs):
     """
     Hook into OffboardingEmployee save to backfill EmployeeTask rows for every
     OffboardingTask defined on the employee's current stage (and global tasks).
-    Covers two cases the task-side signal cannot:
-      - employee added to a stage that already has tasks
-      - employee moved to a different stage with its own tasks
+    Runs only on creation or when stage_id changes, so unrelated save() calls
+    (notes updates, last_working_date edits, etc.) do not trigger redundant
+    backfill queries.
     """
+    if not created:
+        previous_stage_id = getattr(instance, "_previous_stage_id", None)
+        if previous_stage_id == instance.stage_id_id:
+            return
     from offboarding.methods import assign_stage_tasks_to_employee
     assign_stage_tasks_to_employee(instance)
 
