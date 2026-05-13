@@ -844,6 +844,12 @@ class MultipleFileField(forms.FileField):
     def clean(self, data, initial=None):
         single_file_clean = super().clean
         if isinstance(data, (list, tuple)):
+            # An empty list means no file was uploaded; delegate to the
+            # parent FileField so the standard "This field is required."
+            # error fires for required fields instead of being silently
+            # turned into ``None``.
+            if not data:
+                return single_file_clean(None, initial)
             result = [single_file_clean(d, initial) for d in data]
         else:
             result = [single_file_clean(data, initial)]
@@ -928,9 +934,12 @@ class ReimbursementForm(ModelForm):
         self.fields.pop("attachment", None)
         self.fields["attachment"] = MultipleFileField(
             label="Attachments",
-            # On edit, an attachment already exists on the instance,
-            # so do not force the user to re-upload one just to save changes.
-            required=not is_edit,
+            # The attachment requirement is enforced in ``clean()`` so it
+            # can take ``temp_attachment_paths`` (files staged from a
+            # previous failed submission) and edit-vs-create into account.
+            # Keeping the field itself optional avoids duplicate "This
+            # field is required." / "Attachment is required." messages.
+            required=False,
         )
         self.fields["attachment"].widget.attrs["accept"] = (
             ".jpg, .jpeg, .png, .pdf, .docx"
@@ -1127,7 +1136,7 @@ class ReimbursementForm(ModelForm):
                 self.add_error("amount", "Amount must be greater than zero.")
             has_temp = bool(self.data.get("temp_attachment_paths", ""))
             if is_new and not attachment and not has_temp:
-                raise forms.ValidationError("Attachment is required.")
+                self.add_error("attachment", _("Attachment is required."))
 
         return cleaned_data
 
