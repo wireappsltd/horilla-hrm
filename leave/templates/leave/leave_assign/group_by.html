@@ -59,16 +59,25 @@
                     {% trans "Leave Type" %}
                   </div>
                   <div class="oh-sticky-table__th">
-                    {% trans "Available Days" %}
+                    {% trans "Approved Leaves" %}
+                  </div>
+                  <div class="oh-sticky-table__th">
+                    {% trans "Pending Leaves" %}
+                  </div>
+                  <div class="oh-sticky-table__th">
+                    {% trans "Balance Leave" %}
+                  </div>
+                  <div class="oh-sticky-table__th">
+                    {% trans "Total Leave Count" %}
                   </div>
                   <div class="oh-sticky-table__th">
                     {% trans "Carryforward Days" %}
                   </div>
                   <div class="oh-sticky-table__th">
-                    {% trans "Total Leave Days" %}
+                    {% trans "Used Carryforward" %}
                   </div>
                   <div class="oh-sticky-table__th">
-                    {% trans "Used Leave Days" %}
+                    {% trans "Expired Carryforward" %}
                   </div>
                   <div class="oh-sticky-table__th">
                     {% trans "Assigned Date" %}
@@ -117,25 +126,32 @@
                     {{available_leave.leave_type_id}}
                   </div>
                   <div class="oh-sticky-table__td">
-                    {% if available_leave.leave_type_id.limit_leave %}
-                      {{available_leave.available_days}}
-                    {% else %}
-                      {% trans "No Limit" %}
-                    {% endif %}
+                    {{available_leave.leave_taken}}
                   </div>
+                  <div class="oh-sticky-table__td">
+                    {{available_leave.pending_leaves}}
+                  </div>
+                  <div class="oh-sticky-table__td">
+                    {% if available_leave.leave_type_id.limit_leave %}{{available_leave.balance_leaves}}{% else %}{% trans "No Limit" %}{% endif %}
+                  </div>
+                  <div class="oh-sticky-table__td">
+                    {% if available_leave.leave_type_id.limit_leave %}{{available_leave.total_leaves}}{% else %}{% trans "No Limit" %}{% endif %}
+                  </div>
+                  {% if available_leave.leave_type_id.carryforward_type == "no carryforward" %}
+                  <div class="oh-sticky-table__td" style="color: #b5b5b5;" title="{% trans 'Carryforward is not configured for this leave type' %}">—</div>
+                  <div class="oh-sticky-table__td" style="color: #b5b5b5;" title="{% trans 'Carryforward is not configured for this leave type' %}">—</div>
+                  <div class="oh-sticky-table__td" style="color: #b5b5b5;" title="{% trans 'Carryforward is not configured for this leave type' %}">—</div>
+                  {% else %}
                   <div class="oh-sticky-table__td">
                     {{available_leave.carryforward_days}}
                   </div>
                   <div class="oh-sticky-table__td">
-                    {% if available_leave.leave_type_id.limit_leave %}
-                      {{available_leave.total_leave_days}}
-                    {% else %}
-                      {% trans "No Limit" %}
-                    {% endif %}
+                    {{available_leave.used_carryforward_days}}
                   </div>
                   <div class="oh-sticky-table__td">
-                    {{available_leave.leave_taken}}
+                    {{available_leave.expired_carryforward_days}}
                   </div>
+                  {% endif %}
                   <div class="oh-sticky-table__td dateformat_changer">
                     {{available_leave.assigned_date}}
                   </div>

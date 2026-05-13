@@ -58,21 +58,66 @@
                     <span class="oh-timeoff-modal__stat-count">{{available_leave.leave_type_id}}</span>
                 </div>
                 <div class="oh-timeoff-modal__stat" style="margin-left: 20px">
-                    <span class="oh-timeoff-modal__stat-title">{% trans "Available Days" %}</span>
-                    <span class="oh-timeoff-modal__stat-count">{{available_leave.available_days}}</span>
+                    <span class="oh-timeoff-modal__stat-title">{% trans "Approved Leaves" %}</span>
+                    <span class="oh-timeoff-modal__stat-count">{{available_leave.leave_taken}}</span>
                 </div>
             </div>
 
+            <div class="oh-timeoff-modal__stats-container mt-3 mb-3">
+                <div class="oh-timeoff-modal__stat">
+                    <span class="oh-timeoff-modal__stat-title">{% trans "Pending Leaves" %}</span>
+                    <span class="oh-timeoff-modal__stat-count">{{available_leave.pending_leaves}}</span>
+                </div>
+                <div class="oh-timeoff-modal__stat" style="margin-left: 20px">
+                    <span class="oh-timeoff-modal__stat-title">{% trans "Balance Leave" %}</span>
+                    <span class="oh-timeoff-modal__stat-count">{% if available_leave.leave_type_id.limit_leave %}{{available_leave.balance_leaves}}{% else %}{% trans "No Limit" %}{% endif %}</span>
+                </div>
+            </div>
+
+            <div class="oh-timeoff-modal__stats-container mt-3 mb-3">
+                <div class="oh-timeoff-modal__stat">
+                    <span class="oh-timeoff-modal__stat-title">{% trans "Total Leave Count" %}</span>
+                    <span class="oh-timeoff-modal__stat-count">{% if available_leave.leave_type_id.limit_leave %}{{available_leave.total_leaves}}{% else %}{% trans "No Limit" %}{% endif %}</span>
+                </div>
+            </div>
+
+            {% if available_leave.leave_type_id.carryforward_type == "no carryforward" %}
+            <div class="oh-timeoff-modal__stats-container mt-3 mb-3" title="{% trans 'Carryforward is not configured for this leave type' %}">
+                <div class="oh-timeoff-modal__stat" style="color: #b5b5b5;">
+                    <span class="oh-timeoff-modal__stat-title">{% trans "Carryforward Days" %}</span>
+                    <span class="oh-timeoff-modal__stat-count">—</span>
+                </div>
+                <div class="oh-timeoff-modal__stat" style="margin-left: 20px; color: #b5b5b5;">
+                    <span class="oh-timeoff-modal__stat-title">{% trans "Used Carryforward Days" %}</span>
+                    <span class="oh-timeoff-modal__stat-count">—</span>
+                </div>
+            </div>
+
+            <div class="oh-timeoff-modal__stats-container mt-3 mb-3" title="{% trans 'Carryforward is not configured for this leave type' %}">
+                <div class="oh-timeoff-modal__stat" style="color: #b5b5b5;">
+                    <span class="oh-timeoff-modal__stat-title">{% trans "Expired Carryforward Days" %}</span>
+                    <span class="oh-timeoff-modal__stat-count">—</span>
+                </div>
+            </div>
+            {% else %}
             <div class="oh-timeoff-modal__stats-container mt-3 mb-3">
                 <div class="oh-timeoff-modal__stat">
                     <span class="oh-timeoff-modal__stat-title">{% trans "Carryforward Days" %}</span>
                     <span class="oh-timeoff-modal__stat-count">{{available_leave.carryforward_days}}</span>
                 </div>
                 <div class="oh-timeoff-modal__stat" style="margin-left: 20px">
-                    <span class="oh-timeoff-modal__stat-title">{% trans "Total Leave Days" %}</span>
-                    <span class="oh-timeoff-modal__stat-count">{{available_leave.total_leave_days}}</span>
+                    <span class="oh-timeoff-modal__stat-title">{% trans "Used Carryforward Days" %}</span>
+                    <span class="oh-timeoff-modal__stat-count">{{available_leave.used_carryforward_days}}</span>
                 </div>
             </div>
+
+            <div class="oh-timeoff-modal__stats-container mt-3 mb-3">
+                <div class="oh-timeoff-modal__stat">
+                    <span class="oh-timeoff-modal__stat-title">{% trans "Expired Carryforward Days" %}</span>
+                    <span class="oh-timeoff-modal__stat-count">{{available_leave.expired_carryforward_days}}</span>
+                </div>
+            </div>
+            {% endif %}
 
             <div class="oh-timeoff-modal__stats-container mt-3 mb-3">
                 <div class="oh-timeoff-modal__stat">

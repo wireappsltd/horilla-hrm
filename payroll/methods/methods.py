@@ -6,11 +6,25 @@ Payroll related module to write custom calculation methods
 
 import calendar
 from datetime import date, datetime, timedelta
+from decimal import ROUND_DOWN, Decimal
 
 from dateutil.relativedelta import relativedelta
 from django.apps import apps
 from django.core.paginator import Paginator
 from django.db.models import F, Q
+
+
+def truncate_2dp(amount):
+    """Truncate ``amount`` to 2 decimal places without rounding up.
+
+    Examples: 13.057 -> 13.05, 13.059 -> 13.05, 13.05 -> 13.05.
+    Used to keep allowance/deduction/LOP values consistent on the payslip.
+    """
+    if amount is None:
+        return 0.0
+    return float(
+        Decimal(str(float(amount))).quantize(Decimal("0.01"), rounding=ROUND_DOWN)
+    )
 
 # from attendance.models import Attendance
 from base.methods import (
@@ -330,10 +344,10 @@ def daily_computation(employee, wage, start_date, end_date):
 
     unpaid_leaves = leave_data["unpaid_leaves"] - unpaid_half_leaves
     if contract.calculate_daily_leave_amount:
-        loss_of_pay = (unpaid_leaves) * wage
+        loss_of_pay = truncate_2dp((unpaid_leaves) * wage)
     else:
         fixed_penalty = contract.deduction_for_one_leave_amount
-        loss_of_pay = (unpaid_leaves) * fixed_penalty
+        loss_of_pay = truncate_2dp((unpaid_leaves) * fixed_penalty)
     if contract.deduct_leave_from_basic_pay:
         basic_pay = basic_pay - loss_of_pay
 
@@ -534,10 +548,10 @@ def monthly_computation(employee, wage, start_date, end_date, *args, **kwargs):
         "day_wage"
     ]
     if contract.calculate_daily_leave_amount:
-        loss_of_pay = (unpaid_leaves) * daily_computed_salary
+        loss_of_pay = truncate_2dp((unpaid_leaves) * daily_computed_salary)
     else:
         fixed_penalty = contract.deduction_for_one_leave_amount
-        loss_of_pay = (unpaid_leaves) * fixed_penalty
+        loss_of_pay = truncate_2dp((unpaid_leaves) * fixed_penalty)
 
     if contract.deduct_leave_from_basic_pay:
         basic_pay = basic_pay - loss_of_pay
@@ -595,7 +609,7 @@ def compute_salary_on_30_day_wage(employee, wage, start_date, end_date, *args, *
             holiday_allowances.append({
                 "title": "Mercantile Holiday Allowance",
                 "code": "mercantile_holiday",
-                "amount": salary_per_day * 2,
+                "amount": truncate_2dp(salary_per_day * 2),
                 "is_taxable": False,
                 "include_in_lop": False,
             })
@@ -605,7 +619,7 @@ def compute_salary_on_30_day_wage(employee, wage, start_date, end_date, *args, *
             holiday_allowances.append({
                 "title": "Mercantile Holiday Half Day Allowance",
                 "code": "mercantile_holiday_half_day",
-                "amount": salary_per_day * 1,
+                "amount": truncate_2dp(salary_per_day * 1),
                 "is_taxable": False,
                 "include_in_lop": False,
             })
@@ -619,7 +633,7 @@ def compute_salary_on_30_day_wage(employee, wage, start_date, end_date, *args, *
             holiday_allowances.append({
                 "title": "Poya Holiday Allowance",
                 "code": "poya_holiday",
-                "amount": salary_per_day * 1.5,
+                "amount": truncate_2dp(salary_per_day * 1.5),
                 "is_taxable": False,
                 "include_in_lop": False,
             })
@@ -629,7 +643,7 @@ def compute_salary_on_30_day_wage(employee, wage, start_date, end_date, *args, *
             holiday_allowances.append({
                 "title": "Poya Holiday Half Day Allowance",
                 "code": "poya_holiday_half_day",
-                "amount": salary_per_day * 0.75,
+                "amount": truncate_2dp(salary_per_day * 0.75),
                 "is_taxable": False,
                 "include_in_lop": False,
             })
@@ -660,12 +674,12 @@ def compute_salary_on_30_day_wage(employee, wage, start_date, end_date, *args, *
     # calculate basic pay based on the working days and paid leaves
     basic_pay = wage
     loss_of_pay_dates = 30 - paid_days
-    loss_of_pay = salary_per_day * loss_of_pay_dates
+    loss_of_pay = truncate_2dp(salary_per_day * loss_of_pay_dates)
 
 
-    employee_epf_amount = (wage - loss_of_pay) / 100 * 8
-    employer_epf_amount = (wage - loss_of_pay) / 100 * 12
-    employer_etf_amount = (wage - loss_of_pay) / 100 * 3
+    employee_epf_amount = truncate_2dp((wage - loss_of_pay) / 100 * 8)
+    employer_epf_amount = truncate_2dp((wage - loss_of_pay) / 100 * 12)
+    employer_etf_amount = truncate_2dp((wage - loss_of_pay) / 100 * 3)
 
     logger.info(f"""
     --- Debug Info ---

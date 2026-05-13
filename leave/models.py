@@ -272,35 +272,48 @@ class LeaveType(HorillaModel):
                 else int(day)
             )
 
-        if self.reset_based == "yearly":
-            month, day = int(self.reset_month), get_reset_day(
-                int(self.reset_month), self.reset_day
-            )
-            reset_date = datetime(
-                today.year + (datetime(today.year, month, day).date() < today),
-                month,
-                day,
-            ).date()
-
-        elif self.reset_based == "monthly":
-            month = today.month
-            reset_date = datetime(
-                today.year, month, get_reset_day(month, self.reset_day)
-            ).date()
-            if reset_date < today:
-                month = (month % 12) + 1
-                year = today.year + (month == 1)
+        # Reset config can legitimately be partially populated (e.g. reset=True
+        # toggled before reset_day/reset_month are filled in). Returning None
+        # for incomplete config matches the "no next reset" branch below — the
+        # caller in employee_available_leave_count guards on None already.
+        try:
+            if self.reset_based == "yearly":
+                if self.reset_month is None or self.reset_day is None:
+                    return None
+                month, day = int(self.reset_month), get_reset_day(
+                    int(self.reset_month), self.reset_day
+                )
                 reset_date = datetime(
-                    year, month, get_reset_day(month, self.reset_day)
+                    today.year + (datetime(today.year, month, day).date() < today),
+                    month,
+                    day,
                 ).date()
 
-        elif self.reset_based == "weekly":
-            target_weekday = WEEK_DAYS[self.reset_day]
-            days_until_reset = (target_weekday - today.weekday()) % 7 or 7
-            reset_date = today + timedelta(days=days_until_reset)
+            elif self.reset_based == "monthly":
+                if self.reset_day is None:
+                    return None
+                month = today.month
+                reset_date = datetime(
+                    today.year, month, get_reset_day(month, self.reset_day)
+                ).date()
+                if reset_date < today:
+                    month = (month % 12) + 1
+                    year = today.year + (month == 1)
+                    reset_date = datetime(
+                        year, month, get_reset_day(month, self.reset_day)
+                    ).date()
 
-        else:
-            reset_date = None
+            elif self.reset_based == "weekly":
+                if self.reset_day is None or self.reset_day not in WEEK_DAYS:
+                    return None
+                target_weekday = WEEK_DAYS[self.reset_day]
+                days_until_reset = (target_weekday - today.weekday()) % 7 or 7
+                reset_date = today + timedelta(days=days_until_reset)
+
+            else:
+                reset_date = None
+        except (TypeError, ValueError, KeyError):
+            return None
 
         return reset_date
 
@@ -411,12 +424,20 @@ class AvailableLeave(HorillaModel):
     carryforward_days = models.FloatField(
         default=0, verbose_name=_("Carryforward Days")
     )
+    expired_carryforward_days = models.FloatField(
+        default=0, verbose_name=_("Expired Carryforward Days")
+    )
     total_leave_days = models.FloatField(default=0, verbose_name=_("Total Leave Days"))
     assigned_date = models.DateField(
         default=timezone.now, verbose_name=_("Assigned Date")
     )
     reset_date = models.DateField(
         blank=True, null=True, verbose_name=_("Leave Reset Date")
+    )
+    last_reset_date = models.DateField(
+        blank=True,
+        null=True,
+        verbose_name=_("Last Leave Reset Date"),
     )
     expired_date = models.DateField(
         blank=True, null=True, verbose_name=_("CarryForward Expired Date")
@@ -450,11 +471,17 @@ class AvailableLeave(HorillaModel):
 
     def update_carryforward(self):
         if self.leave_type_id.carryforward_type != "no carryforward":
-            if self.leave_type_id.carryforward_max >= self.total_leave_days:
-                self.carryforward_days = self.total_leave_days
-            else:
-                self.carryforward_days = self.leave_type_id.carryforward_max
+            # Only the unused portion of the current period (available_days)
+            # rolls over. Previously-carried-forward days do NOT compound —
+            # otherwise carryforward_days grows by total_days every reset
+            # whenever carryforward_max is unset (defaults to math.inf).
+            unused_current_period = max(self.available_days, 0)
+            carryforward_max = self.leave_type_id.carryforward_max
+            self.carryforward_days = min(carryforward_max, unused_current_period)
         self.available_days = self.leave_type_id.total_days
+        # expired_carryforward_days is a per-period stat; clear it so the
+        # next period starts at 0 and only reflects CF expired in that period.
+        self.expired_carryforward_days = 0
 
     # Setting the reset date for carryforward leaves
 
@@ -515,29 +542,66 @@ class AvailableLeave(HorillaModel):
 
         return reset_date
 
+    def current_year(self):
+        # Stats are scoped strictly to the current calendar year. A leave
+        # whose start_date is in another year is excluded — that includes
+        # both prior-year requests and future-year requests (e.g. a leave
+        # filed in 2026 for January 2027 would not count toward 2026).
+        return date.today().year
+
     def leave_taken(self):
+        year = self.current_year()
         leave_taken = LeaveRequest.objects.filter(
             leave_type_id=self.leave_type_id,
             employee_id=self.employee_id,
             status="approved",
+            start_date__year=year,
         ).aggregate(total_sum=Sum("requested_days"))
 
         return leave_taken["total_sum"] if leave_taken["total_sum"] else 0
 
+    def used_carryforward_days(self):
+        year = self.current_year()
+        used = LeaveRequest.objects.filter(
+            leave_type_id=self.leave_type_id,
+            employee_id=self.employee_id,
+            status="approved",
+            start_date__year=year,
+        ).aggregate(total=Sum("approved_carryforward_days"))
+        return used["total"] if used["total"] else 0
+
     def pending_leaves(self):
+        year = self.current_year()
         pending_leaves = LeaveRequest.objects.filter(
             leave_type_id=self.leave_type_id,
             employee_id=self.employee_id,
             status="requested",
+            start_date__year=year,
         ).aggregate(total_days=Sum('requested_days'))['total_days']
         return pending_leaves if pending_leaves else 0
 
     def balance_leaves(self):
-        balance_leave_days = self.available_days + self.carryforward_days - self.pending_leaves()
+        # Anchor on the leave type's configured max so the balance does not
+        # drift with the cached available_days field (which can desync from
+        # request data when the scheduler/approval logic misbehaves).
+        # Period max = total_days + starting CF (rolled in at period start),
+        # reconstructed as live carryforward_days + already-used CF.
+        max_days = (
+            (self.leave_type_id.total_days or 0)
+            + self.carryforward_days
+            + self.used_carryforward_days()
+        )
+        balance_leave_days = max_days - self.leave_taken() - self.pending_leaves()
         return balance_leave_days if balance_leave_days else 0
 
     def total_leaves(self):
-        total_leave_days_assigned = self.available_days + self.carryforward_days + self.leave_taken()
+        # See balance_leaves: anchored on the configured max plus starting CF
+        # rather than the live (drifty) available_days bucket.
+        total_leave_days_assigned = (
+            (self.leave_type_id.total_days or 0)
+            + self.carryforward_days
+            + self.used_carryforward_days()
+        )
         return total_leave_days_assigned if total_leave_days_assigned else 0
 
     # Setting the expiration date for carryforward leaves
@@ -550,8 +614,18 @@ class AvailableLeave(HorillaModel):
         else:
             expired_date = assigned_date + relativedelta(years=period)
 
+        # Capture the CF balance that is about to be wiped so it remains
+        # visible as a per-period stat. Without this, once carryforward_days
+        # is zeroed there is no record of how many CF days expired unused.
+        # Only the unused portion (live carryforward_days) is captured —
+        # used CF was already drawn down at approval time.
+        available_leave.expired_carryforward_days = max(
+            0, available_leave.carryforward_days
+        )
         available_leave.carryforward_days = 0
-        available_leave.available_days = available_leave.leave_type_id.total_days
+        # Do NOT reset available_days here. Expiry only retires unused CF;
+        # refilling available_days is the period reset's job and would
+        # erase mid-year consumption history if conflated with expiry.
         return expired_date
 
     def pre_save_processing(self):
@@ -564,18 +638,30 @@ class AvailableLeave(HorillaModel):
                 assigned_date=self.assigned_date, available_leave=self
             )
 
-        # Logic for expired_date
-        if self.leave_type_id.carryforward_type == "carryforward expire":
+        # Logic for expired_date — only initialize, never overwrite. Once the
+        # scheduler advances expired_date forward (set_expired_date), a
+        # subsequent save must not snap it back to the leave_type's current
+        # carryforward_expire_date.
+        if (
+            self.expired_date is None
+            and self.leave_type_id.carryforward_type == "carryforward expire"
+        ):
             expiry_date = self.assigned_date
             if self.leave_type_id.carryforward_expire_date:
                 expiry_date = self.leave_type_id.carryforward_expire_date
             self.expired_date = expiry_date
 
-        # Compute total_leave_days and ensure carryforward_days >= 0
-        self.total_leave_days = round(
-            max(self.available_days + self.carryforward_days, 0), 3
-        )
+        # total_leave_days reflects the year's allocation (constant within
+        # the calendar year): every approval shifts days from available_days
+        # into leave_taken, so we must add leave_taken back to keep the field
+        # stable. Without this, the "Total Leave Days" column shrinks every
+        # time a leave is approved. leave_taken() is bounded to Jan 1 – Dec 31
+        # of the current year, so it rolls back to 0 when the year flips.
         self.carryforward_days = round(max(self.carryforward_days, 0), 3)
+        period_taken = self.leave_taken() if self.pk else 0
+        self.total_leave_days = round(
+            max(self.available_days + self.carryforward_days + period_taken, 0), 3
+        )
 
     def save(self, *args, **kwargs):
         self.pre_save_processing()

@@ -125,8 +125,8 @@ class Employee(models.Model):
     )
     children = models.IntegerField(blank=True, null=True)
     emergency_contact = models.CharField(max_length=15, null=True, blank=True)
-    emergency_contact_name = models.CharField(max_length=20, null=True, blank=True)
-    emergency_contact_relation = models.CharField(max_length=20, null=True, blank=True ,  verbose_name="Relationship to Emergency Contact")
+    emergency_contact_name = models.CharField(max_length=255, null=True, blank=True)
+    emergency_contact_relation = models.CharField(max_length=255, null=True, blank=True ,  verbose_name="Relationship to Emergency Contact")
     is_active = models.BooleanField(default=True)
     additional_info = models.JSONField(null=True, blank=True)
     is_from_onboarding = models.BooleanField(
@@ -731,6 +731,11 @@ class EmployeeWorkInformation(models.Model):
         blank=True,
         null=True,
         verbose_name=_("Probation End Date"),
+    )
+    intern_period_end_date = models.DateField(
+        blank=True,
+        null=True,
+        verbose_name=_("Intern Period End Date"),
     )
     basic_salary = models.IntegerField(
         null=True, blank=True, default=0, verbose_name=_("Basic Salary")

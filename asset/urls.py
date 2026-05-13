@@ -210,4 +210,9 @@ urlpatterns = [
         views.trigger_checkup_notifications,
         name="trigger-checkup-notifications",
     ),
+    path(
+        "asset-yearly-checkup-submit/<int:asset_allocation_id>/",
+        views.asset_yearly_checkup_submit,
+        name="asset-yearly-checkup-submit",
+    ),
 ]
