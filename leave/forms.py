@@ -231,6 +231,13 @@ class LeaveRequestCreationForm(BaseModelForm):
             employee_id_val = self.data.get("employee_id")
         elif getattr(self.instance, "pk", None):
             employee_id_val = getattr(self.instance, "employee_id_id", None)
+        else:
+            # Unbound form rendered with initial={'employee_id': ...}
+            # (e.g. the create view pre-fills the current employee).
+            # Accept either a Model instance or a raw pk.
+            initial_emp = self.initial.get("employee_id")
+            if initial_emp:
+                employee_id_val = getattr(initial_emp, "pk", initial_emp)
         if employee_id_val:
             self.fields["manager"].queryset = self.fields["manager"].queryset.exclude(
                 id=employee_id_val
@@ -503,6 +510,14 @@ class UserLeaveRequestForm(BaseModelForm):
             emp_id_val = getattr(employee, "id", None)
         if not emp_id_val and getattr(self.instance, "pk", None):
             emp_id_val = getattr(self.instance, "employee_id_id", None)
+        if not emp_id_val and isinstance(leave_type, dict):
+            # The view may pass the requesting employee via the popped
+            # `initial` kwarg (e.g. initial={'employee_id': employee, ...})
+            # without supplying an `employee=` kwarg. Read it from there
+            # so the dropdown filters self out at render time.
+            initial_emp = leave_type.get("employee_id")
+            if initial_emp:
+                emp_id_val = getattr(initial_emp, "pk", initial_emp)
         if emp_id_val and "manager" in self.fields:
             self.fields["manager"].queryset = self.fields["manager"].queryset.exclude(
                 id=emp_id_val
