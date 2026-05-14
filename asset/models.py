@@ -332,6 +332,20 @@ class AssetAssignment(HorillaModel):
             return "Overdue"
         return "Pending"
 
+    @property
+    def is_checkup_button_enabled(self):
+        """The Yearly Check-up button is enabled within 30 days of the
+        scheduled date and only while the check-up has not been completed."""
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        if self.checkup_completed or self.return_date is not None:
+            return False
+        if not self.yearly_checkup_date:
+            return False
+        return timezone.localdate() >= self.yearly_checkup_date - timedelta(days=30)
+
 
 class AssetRequest(HorillaModel):
     """
