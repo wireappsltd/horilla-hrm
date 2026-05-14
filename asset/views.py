@@ -50,6 +50,7 @@ from asset.models import (
     AssetLot,
     AssetRequest,
     ReturnImages,
+    YearlyCheckupLog,
 )
 from base.methods import (
     closest_numbers,
@@ -224,6 +225,120 @@ def asset_update(request, asset_id):
     return render(request, "asset/asset_update.html", context=context)
 
 
+def build_asset_timeline(asset):
+    """
+    Build a unified, time-sorted audit trail of every notable event in an
+    asset's life: creation, each allocation, each return, each yearly
+    check-up, and each report.
+
+    Returns a list of dicts ordered newest first. Each dict has:
+        - timestamp: datetime/date used for sorting
+        - sort_key:  comparable datetime (timestamp normalised)
+        - kind:      'created' | 'allocated' | 'returned' | 'checkup' | 'report'
+        - actor:     Employee or User who performed the action (or None)
+        - title:     short headline shown in the bubble header
+        - body:      free-text body
+        - images:    iterable of ReturnImages
+        - documents: iterable of AssetDocuments
+        - extras:    dict for kind-specific badges/values
+    """
+    from datetime import datetime, time
+
+    events = []
+
+    def _to_dt(value):
+        if value is None:
+            return datetime.min
+        if isinstance(value, datetime):
+            return value.replace(tzinfo=None) if value.tzinfo else value
+        return datetime.combine(value, time.min)
+
+    if asset.created_at:
+        events.append({
+            "timestamp": _to_dt(asset.created_at),
+            "sort_key": _to_dt(asset.created_at),
+            "kind": "created",
+            "actor": asset.created_by,
+            "title": _("Asset added to inventory"),
+            "body": asset.asset_description or "",
+            "images": [],
+            "documents": [],
+            "extras": {"tracking_id": asset.asset_tracking_id},
+        })
+
+    assignments = AssetAssignment.objects.filter(asset_id=asset).select_related(
+        "assigned_to_employee_id", "assigned_by_employee_id"
+    )
+    for assignment in assignments:
+        if assignment.assigned_date:
+            events.append({
+                "timestamp": _to_dt(assignment.assigned_date),
+                "sort_key": _to_dt(assignment.assigned_date),
+                "kind": "allocated",
+                "actor": assignment.assigned_by_employee_id,
+                "title": _("Allocated to %(employee)s") % {
+                    "employee": assignment.assigned_to_employee_id or "-",
+                },
+                "body": "",
+                "images": list(assignment.assign_images.all()),
+                "documents": [],
+                "extras": {
+                    "assigned_to": assignment.assigned_to_employee_id,
+                    "assignment_id": assignment.id,
+                },
+            })
+        if assignment.return_date:
+            events.append({
+                "timestamp": _to_dt(assignment.return_date),
+                "sort_key": _to_dt(assignment.return_date),
+                "kind": "returned",
+                "actor": assignment.assigned_to_employee_id,
+                "title": _("Returned by %(employee)s") % {
+                    "employee": assignment.assigned_to_employee_id or "-",
+                },
+                "body": assignment.return_condition or "",
+                "images": list(assignment.return_images.all()),
+                "documents": [],
+                "extras": {
+                    "return_status": assignment.return_status,
+                    "assignment_id": assignment.id,
+                },
+            })
+        for log in assignment.checkup_logs.all():
+            log_ts = log.created_at or log.checkup_date
+            events.append({
+                "timestamp": _to_dt(log_ts),
+                "sort_key": _to_dt(log_ts),
+                "kind": "checkup",
+                "actor": log.submitted_by,
+                "title": _("Yearly check-up performed"),
+                "body": log.description or "",
+                "images": list(log.images.all()),
+                "documents": [],
+                "extras": {
+                    "checkup_date": log.checkup_date,
+                    "assigned_to": assignment.assigned_to_employee_id,
+                    "assignment_id": assignment.id,
+                },
+            })
+
+    for report in asset.asset_report.all():
+        events.append({
+            "timestamp": _to_dt(report.created_at),
+            "sort_key": _to_dt(report.created_at),
+            "kind": "report",
+            "actor": report.created_by,
+            "title": _("Report filed: %(title)s") % {"title": report.title or "-"},
+            "body": "",
+            "images": [],
+            "documents": list(report.documents.all()) if hasattr(report, "documents") else [],
+            "extras": {"report_id": report.id},
+        })
+
+    events.sort(key=lambda e: e["sort_key"], reverse=True)
+    return events
+
+
 @login_required
 @hx_request_required
 def asset_information(request, asset_id):
@@ -237,7 +352,10 @@ def asset_information(request, asset_id):
     """
 
     asset = Asset.objects.get(id=asset_id)
-    context = {"asset": asset}
+    context = {
+        "asset": asset,
+        "asset_timeline": build_asset_timeline(asset),
+    }
     requests_ids_json = request.GET.get("requests_ids")
     if requests_ids_json:
         requests_ids = json.loads(requests_ids_json)
@@ -1923,14 +2041,6 @@ def asset_yearly_checkup_submit(request, asset_allocation_id):
     """
     asset_allocation = get_object_or_404(AssetAssignment, id=asset_allocation_id)
 
-    if asset_allocation.checkup_completed:
-        messages.info(request, _("This check-up is already marked as complete."))
-        if request.META.get("HTTP_HX_REQUEST") == "true":
-            return HttpResponse(
-                "<script>location.reload();</script>"
-            )
-        return redirect("asset-request-allocation-view")
-
     if not asset_allocation.is_checkup_button_enabled:
         messages.error(
             request,
@@ -1950,16 +2060,38 @@ def asset_yearly_checkup_submit(request, asset_allocation_id):
         if form.is_valid():
             assignment = form.save(commit=False)
             assignment.checkup_completed = True
+            checkup_date = form.cleaned_data.get(
+                "yearly_checkup_date"
+            ) or date.today()
+            # Advance the next scheduled check-up by one year so the eligibility
+            # window re-opens for the next cycle.
+            try:
+                assignment.yearly_checkup_date = checkup_date.replace(
+                    year=checkup_date.year + 1
+                )
+            except ValueError:
+                assignment.yearly_checkup_date = checkup_date.replace(
+                    year=checkup_date.year + 1, day=28
+                )
             assignment.save()
+
             files = request.FILES.getlist("checkup_images")
-            if files:
-                attachments = []
-                for file in files:
-                    attachment = ReturnImages()
-                    attachment.image = file
-                    attachment.save()
-                    attachments.append(attachment)
-                assignment.checkup_images.add(*attachments)
+            attachments = []
+            for file in files:
+                attachment = ReturnImages()
+                attachment.image = file
+                attachment.save()
+                attachments.append(attachment)
+
+            log = YearlyCheckupLog.objects.create(
+                asset_assignment=assignment,
+                checkup_date=checkup_date,
+                description=form.cleaned_data.get("checkup_description") or "",
+                submitted_by=getattr(request.user, "employee_get", None),
+            )
+            if attachments:
+                log.images.add(*attachments)
+
             send_checkup_completion_notification(request, assignment)
             messages.success(
                 request, _("Yearly check-up submitted successfully.")
@@ -2052,4 +2184,68 @@ def send_checkup_completion_notification(request, assignment):
         redirect=reverse("asset-request-allocation-view"),
         label="System",
         icon="checkmark-circle",
+    )
+
+
+def _is_asset_admin(user):
+    return (
+        user.is_superuser
+        or user.groups.filter(name__in=("HR", "OPS", "ISO")).exists()
+        or user.has_perm("asset.view_assetassignment")
+    )
+
+
+@login_required
+def asset_yearly_checkup_list(request):
+    """
+    Standalone list of asset allocations for yearly check-up tracking.
+
+    HR/OPS/ISO/superusers and users with `asset.view_assetassignment` see every
+    allocation; everyone else sees only their own. Clicking a row navigates to
+    the full-page detail view that shows the chat-style submission timeline.
+    """
+    qs = (
+        AssetAssignment.objects.select_related(
+            "asset_id",
+            "asset_id__asset_category_id",
+            "assigned_to_employee_id",
+        )
+        .prefetch_related("checkup_logs")
+    )
+    if not _is_asset_admin(request.user):
+        qs = qs.filter(assigned_to_employee_id=request.user.employee_get)
+    qs = qs.order_by("yearly_checkup_date", "-id")
+
+    page_obj = Paginator(qs, get_pagination()).get_page(request.GET.get("page"))
+    context = {"allocations": page_obj}
+    return render(
+        request,
+        "request_allocation/yearly_checkup_list.html",
+        context,
+    )
+
+
+@login_required
+def asset_yearly_checkup_detail(request, allocation_id):
+    """
+    Full-page detail for an asset allocation, modeled after the helpdesk
+    ticket-detail layout: a chat-style timeline of check-up submissions on the
+    left and summary cards (asset, allocation, status, documents) on the right.
+    """
+    asset_allocation = get_object_or_404(AssetAssignment, id=allocation_id)
+    if (
+        not _is_asset_admin(request.user)
+        and asset_allocation.assigned_to_employee_id != request.user.employee_get
+    ):
+        return HttpResponse(status=403)
+
+    checkup_logs = asset_allocation.checkup_logs.all().order_by("created_at", "id")
+    context = {
+        "asset_allocation": asset_allocation,
+        "checkup_logs": checkup_logs,
+    }
+    return render(
+        request,
+        "request_allocation/yearly_checkup_detail.html",
+        context,
     )
