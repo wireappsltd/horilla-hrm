@@ -429,6 +429,10 @@ class UserLeaveRequestForm(BaseModelForm):
         employee = kwargs.pop("employee", None)
         super(UserLeaveRequestForm, self).__init__(*args, **kwargs)
         self.fields["attachment"].widget.attrs["accept"] = ".jpg, .jpeg, .png, .pdf"
+        # Disable selection of past dates in the calendar/date picker
+        today_str = date.today().strftime("%Y-%m-%d")
+        self.fields["start_date"].widget.attrs["min"] = today_str
+        self.fields["end_date"].widget.attrs["min"] = today_str
         if employee:
             available_leaves = employee.available_leave.all()
             assigned_leave_types = LeaveType.objects.filter(
@@ -600,6 +604,10 @@ class UserLeaveRequestCreationForm(BaseModelForm):
         employee = kwargs.pop("employee", None)
         super().__init__(*args, **kwargs)
         self.fields["attachment"].widget.attrs["accept"] = ".jpg, .jpeg, .png, .pdf"
+        # Disable selection of past dates in the calendar/date picker
+        today_str = date.today().strftime("%Y-%m-%d")
+        self.fields["start_date"].widget.attrs["min"] = today_str
+        self.fields["end_date"].widget.attrs["min"] = today_str
         if employee:
             available_leaves = employee.available_leave.all()
             assigned_leave_types = LeaveType.objects.filter(

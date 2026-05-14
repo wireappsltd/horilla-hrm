@@ -511,6 +511,14 @@ def approve_validate_attendance_request(request, attendance_id):
     This method is used to validate the attendance requests
     """
     attendance = Attendance.objects.get(id=attendance_id)
+    # Prevent managers from approving their own attendance requests.
+    # Approval must be performed by a higher authority or another authorized manager.
+    if attendance.employee_id.employee_user_id_id == request.user.id:
+        messages.error(
+            request,
+            _("You cannot approve your own attendance request."),
+        )
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
     prev_attendance_date = attendance.attendance_date
     prev_attendance_clock_in_date = attendance.attendance_clock_in_date
     prev_attendance_clock_in = attendance.attendance_clock_in
@@ -711,8 +719,13 @@ def bulk_approve_attendance_request(request):
     """
     ids = request.POST["ids"]
     ids = json.loads(ids)
+    skipped_self = 0
     for attendance_id in ids:
         attendance = Attendance.objects.get(id=attendance_id)
+        # Skip approval of own attendance requests; users cannot self-approve.
+        if attendance.employee_id.employee_user_id_id == request.user.id:
+            skipped_self += 1
+            continue
         prev_attendance_date = attendance.attendance_date
         prev_attendance_clock_in_date = attendance.attendance_clock_in_date
         prev_attendance_clock_in = attendance.attendance_clock_in
@@ -829,6 +842,11 @@ def bulk_approve_attendance_request(request):
                 redirect=reverse("request-attendance-view") + f"?id={attendance.id}",
                 icon="checkmark-circle-outline",
             )
+    if skipped_self:
+        messages.warning(
+            request,
+            _("You cannot approve your own attendance request(s); they were skipped."),
+        )
     return HttpResponse("success")
 
 

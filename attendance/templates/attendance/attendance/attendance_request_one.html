@@ -115,6 +115,38 @@
 {#                <span class="oh-timeoff-modal__stat-count">{{attendance_request.batch_attendance_id}}</span>#}
 {#            </div>#}
 {#        </div>#}
+        {% with compensation_request=attendance_request.compensatory_leave_request %}
+        <div class="oh-timeoff-modal__stats-container mt-3 mb-3">
+            <div class="oh-timeoff-modal__stat">
+                <span class="oh-timeoff-modal__stat-title">{% trans "Compensation Requested" %}</span>
+                {% if compensation_request %}
+                    {% if compensation_request.status == "approved" %}
+                        <span class="oh-timeoff-modal__stat-count oh-badge oh-badge--success">
+                            {% trans "Requested" %} ({% trans "Approved" %})
+                        </span>
+                    {% elif compensation_request.status == "rejected" %}
+                        <span class="oh-timeoff-modal__stat-count oh-badge oh-badge--danger">
+                            {% trans "Requested" %} ({% trans "Rejected" %})
+                        </span>
+                    {% else %}
+                        <span class="oh-timeoff-modal__stat-count oh-badge oh-badge--warning">
+                            {% trans "Requested" %} ({% trans "Pending" %})
+                        </span>
+                    {% endif %}
+                {% else %}
+                    <span class="oh-timeoff-modal__stat-count oh-badge oh-badge--secondary">
+                        {% trans "Not Requested" %}
+                    </span>
+                {% endif %}
+            </div>
+            {% if compensation_request %}
+            <div class="oh-timeoff-modal__stat" style="margin-left: 20px;">
+                <span class="oh-timeoff-modal__stat-title">{% trans "Compensation Days" %}</span>
+                <span class="oh-timeoff-modal__stat-count">{{ compensation_request.requested_days }}</span>
+            </div>
+            {% endif %}
+        </div>
+        {% endwith %}
         <div class="oh-timeoff-modal__stats-container mt-3 mb-3">
             <div class="oh-timeoff-modal__stat" style="cursor: pointer;">
                 <span class="oh-timeoff-modal__stat-title">{% trans "Activities" %}</span>
