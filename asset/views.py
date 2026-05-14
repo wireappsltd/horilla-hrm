@@ -886,19 +886,26 @@ def filter_pagination_asset_request_allocation(request):
     and returns a context dictionary with the filtered data and associated forms for rendering in
     a template.
     """
+    from django.contrib.auth.models import Group
+
     asset_request_allocation_search = request.GET.get("search")
     request_field = request.GET.get("request_field")
     allocation_field = request.GET.get("allocation_field")
     if asset_request_allocation_search is None:
         asset_request_allocation_search = ""
     employee = request.user.employee_get
-    asset_assignment = AssetAssignment.objects.all()
-    asset_request = filtersubordinates(
-        request=request,
-        perm="asset.view_assetrequest",
-        queryset=AssetRequest.objects.all(),
-        field="requested_employee_id",
-    ) | AssetRequest.objects.filter(requested_employee_id=request.user.employee_get)
+    is_hr_or_ops = (
+        request.user.is_superuser
+        or request.user.groups.filter(name__in=("HR", "OPS")).exists()
+    )
+    if is_hr_or_ops:
+        asset_assignment = AssetAssignment.objects.all()
+        asset_request = AssetRequest.objects.all()
+    else:
+        asset_assignment = AssetAssignment.objects.filter(
+            assigned_to_employee_id=employee
+        )
+        asset_request = AssetRequest.objects.filter(requested_employee_id=employee)
     asset_request = asset_request.distinct()
     if request.GET.get("assign_sortby"):
         asset_assignment = sortby(request, asset_assignment, "assign_sortby")
@@ -1041,7 +1048,13 @@ def own_asset_individual_view(request, asset_id):
         request : HTTP request object
         id (int): Id of the asset assignment
     """
-    asset_assignment = AssetAssignment.objects.get(id=asset_id)
+    asset_assignment = get_object_or_404(AssetAssignment, id=asset_id)
+    is_hr_or_ops = (
+        request.user.is_superuser
+        or request.user.groups.filter(name__in=("HR", "OPS")).exists()
+    )
+    if not is_hr_or_ops and asset_assignment.assigned_to_employee_id != request.user.employee_get:
+        return HttpResponse(status=403)
     asset = asset_assignment.asset_id
     context = {
         "asset": asset,
@@ -1078,7 +1091,13 @@ def asset_request_individual_view(request, asset_request_id):
     dashboard = not request.META.get("HTTP_HX_CURRENT_URL", "").endswith(
         "asset-request-allocation-view/"
     )
-    asset_request = AssetRequest.objects.get(id=asset_request_id)
+    asset_request = get_object_or_404(AssetRequest, id=asset_request_id)
+    is_hr_or_ops = (
+        request.user.is_superuser
+        or request.user.groups.filter(name__in=("HR", "OPS")).exists()
+    )
+    if not is_hr_or_ops and asset_request.requested_employee_id != request.user.employee_get:
+        return HttpResponse(status=403)
     context = {
         "asset_request": asset_request,
         "dashboard": dashboard,
@@ -1111,7 +1130,13 @@ def asset_allocation_individual_view(request, asset_allocation_id):
     Returns:
         HttpResponse: The rendered 'individual_allocation.html' template with the context data.
     """
-    asset_allocation = AssetAssignment.objects.get(id=asset_allocation_id)
+    asset_allocation = get_object_or_404(AssetAssignment, id=asset_allocation_id)
+    is_hr_or_ops = (
+        request.user.is_superuser
+        or request.user.groups.filter(name__in=("HR", "OPS")).exists()
+    )
+    if not is_hr_or_ops and asset_allocation.assigned_to_employee_id != request.user.employee_get:
+        return HttpResponse(status=403)
     context = {"asset_allocation": asset_allocation}
     allocation_ids_json = request.GET.get("allocations_ids")
     if allocation_ids_json:
@@ -1904,6 +1929,15 @@ def asset_yearly_checkup_submit(request, asset_allocation_id):
             return HttpResponse(
                 "<script>location.reload();</script>"
             )
+        return redirect("asset-request-allocation-view")
+
+    if not asset_allocation.is_checkup_button_enabled:
+        messages.error(
+            request,
+            _("Yearly check-up can only be submitted within 30 days of the scheduled date."),
+        )
+        if request.META.get("HTTP_HX_REQUEST") == "true":
+            return HttpResponse("<script>location.reload();</script>")
         return redirect("asset-request-allocation-view")
 
     initial = {"yearly_checkup_date": date.today()}
