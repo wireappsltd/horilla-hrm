@@ -602,13 +602,20 @@
                                             </div>
                                             <div class="oh-sticky-table__td">
                                                 <div class="d-flex align-items-center" style="gap: 4px;">
-                                                    {% if asset_allocation.yearly_checkup_status == "Overdue" %}
+                                                    {% if asset_allocation.is_checkup_button_enabled %}
                                                         <button class="oh-btn oh-btn--warning oh-btn--x-small" role="button"
                                                             style="white-space: nowrap;"
                                                             onclick="event.stopPropagation()"
                                                             data-toggle="oh-modal-toggle" data-target="#objectCreateModal"
                                                             hx-get="{% url 'asset-yearly-checkup-submit' asset_allocation_id=asset_allocation.id %}"
                                                             hx-target="#objectCreateModalTarget">
+                                                            <ion-icon name="construct-outline"></ion-icon>{% trans "Yearly Check-up" %}
+                                                        </button>
+                                                    {% else %}
+                                                        <button class="oh-btn oh-btn--warning oh-btn--x-small oh-btn--disabled" role="button"
+                                                            style="white-space: nowrap;"
+                                                            onclick="event.stopPropagation()"
+                                                            disabled>
                                                             <ion-icon name="construct-outline"></ion-icon>{% trans "Yearly Check-up" %}
                                                         </button>
                                                     {% endif %}
@@ -835,13 +842,20 @@
                                 </div>
                                 <div class="oh-sticky-table__td">
                                     <div class="d-flex align-items-center" style="gap: 4px;">
-                                        {% if asset_allocation.yearly_checkup_status == "Overdue" %}
+                                        {% if asset_allocation.is_checkup_button_enabled %}
                                             <button class="oh-btn oh-btn--warning oh-btn--x-small" role="button"
                                                 style="white-space: nowrap;"
                                                 onclick="event.stopPropagation()"
                                                 data-toggle="oh-modal-toggle" data-target="#objectCreateModal"
                                                 hx-get="{% url 'asset-yearly-checkup-submit' asset_allocation_id=asset_allocation.id %}"
                                                 hx-target="#objectCreateModalTarget">
+                                                <ion-icon name="construct-outline"></ion-icon>{% trans "Yearly Check-up" %}
+                                            </button>
+                                        {% else %}
+                                            <button class="oh-btn oh-btn--warning oh-btn--x-small oh-btn--disabled" role="button"
+                                                style="white-space: nowrap;"
+                                                onclick="event.stopPropagation()"
+                                                disabled>
                                                 <ion-icon name="construct-outline"></ion-icon>{% trans "Yearly Check-up" %}
                                             </button>
                                         {% endif %}
