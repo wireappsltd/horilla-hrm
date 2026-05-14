@@ -14,23 +14,35 @@ class CheckupMailThread(Thread):
     Sends asset yearly check-up notification emails in a background thread.
     """
 
-    def __init__(self, recipients, context, is_overdue=False):
+    SUBJECT_PREFIXES = {
+        "upcoming": "",
+        "overdue": "OVERDUE: ",
+        "completed": "COMPLETED: ",
+    }
+
+    def __init__(self, recipients, context, is_overdue=False, notification_type=None):
         """
         Args:
             recipients: list of Employee instances to email
             context: dict with keys: asset_name, tracking_id, assigned_to,
                      checkup_date, service_shop, message
-            is_overdue: bool indicating if this is an overdue follow-up
+            is_overdue: legacy bool. If notification_type is unset, True maps
+                        to "overdue" and False maps to "upcoming".
+            notification_type: one of "upcoming", "overdue", "completed".
         """
         Thread.__init__(self)
         self.recipients = recipients
         self.context = context
-        self.is_overdue = is_overdue
+        if notification_type is None:
+            notification_type = "overdue" if is_overdue else "upcoming"
+        self.notification_type = notification_type
+        self.is_overdue = notification_type == "overdue"
+        self.is_completed = notification_type == "completed"
 
     def run(self):
         email_backend = ConfiguredEmailBackend()
         from_email = email_backend.dynamic_from_email_with_display_name
-        subject_prefix = "OVERDUE: " if self.is_overdue else ""
+        subject_prefix = self.SUBJECT_PREFIXES.get(self.notification_type, "")
         subject = (
             f"{subject_prefix}Asset Yearly Check-up - "
             f"{self.context['asset_name']}"
@@ -47,6 +59,8 @@ class CheckupMailThread(Thread):
                     **self.context,
                     "recipient_name": employee.get_full_name(),
                     "is_overdue": self.is_overdue,
+                    "is_completed": self.is_completed,
+                    "notification_type": self.notification_type,
                 },
             )
 
@@ -61,7 +75,8 @@ class CheckupMailThread(Thread):
             try:
                 email.send()
                 logger.info(
-                    "Checkup email sent to %s for asset %s",
+                    "Checkup %s email sent to %s for asset %s",
+                    self.notification_type,
                     recipient_email,
                     self.context["asset_name"],
                 )
