@@ -128,7 +128,7 @@
                     {% else %}
                     <div data-cell-index="3" class="oh-sticky-table__td">{% trans "No file has been uploaded." %}</div>
                     {% endif %}
-                    <div data-cell-index="4" class="oh-sticky-table__td">{{ i.description|truncatechars:25}}</div>
+                    <div data-cell-index="4" class="oh-sticky-table__td" title="{{ i.description }}" style="white-space: normal; word-break: break-word;">{{ i.description|linebreaksbr }}</div>
 
                     {% if perms.employee.change_disciplinaryaction or perms.employee.delete_disciplinaryaction or perms.employee.add_disciplinaryaction %}
                     <div class="oh-sticky-table__td">
