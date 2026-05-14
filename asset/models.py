@@ -286,6 +286,12 @@ class AssetAssignment(HorillaModel):
         blank=True,
         verbose_name=_("Check-up Image"),
     )
+    checkup_images = models.ManyToManyField(
+        ReturnImages,
+        blank=True,
+        related_name="checkup_images",
+        verbose_name=_("Check-up Images"),
+    )
     last_overdue_notification_date = models.DateField(
         null=True,
         blank=True,
