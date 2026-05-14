@@ -2073,6 +2073,9 @@ def asset_yearly_checkup_submit(request, asset_allocation_id):
                 assignment.yearly_checkup_date = checkup_date.replace(
                     year=checkup_date.year + 1, day=28
                 )
+            # Clear notification flags so next year's Upcoming/Overdue re-trigger.
+            assignment.last_upcoming_notification_date = None
+            assignment.last_overdue_notification_date = None
             assignment.save()
 
             files = request.FILES.getlist("checkup_images")
@@ -2185,6 +2188,25 @@ def send_checkup_completion_notification(request, assignment):
         label="System",
         icon="checkmark-circle",
     )
+
+    from asset.threading import CheckupMailThread
+    from employee.models import Employee
+
+    email_context = {
+        "asset_name": asset.asset_name,
+        "tracking_id": asset.asset_tracking_id,
+        "assigned_to": employee.get_full_name(),
+        "checkup_date": checkup_date,
+        "service_shop": assignment.service_shop_name or "N/A",
+        "message": message,
+    }
+    email_recipients = list(
+        Employee.objects.filter(employee_user_id__in=recipient_user_qs)
+    )
+    if email_recipients:
+        CheckupMailThread(
+            email_recipients, email_context, notification_type="completed"
+        ).start()
 
 
 def _is_asset_admin(user):
