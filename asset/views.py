@@ -2013,18 +2013,105 @@ def asset_request_tab(request, emp_id):
 @permission_required(perm="asset.view_assetassignment")
 def trigger_checkup_notifications(request):
     """
-    Temporary view to manually trigger checkup notification schedulers for QA testing.
+    Manually trigger checkup notification schedulers for QA testing.
+
+    Query params:
+        type=upcoming|overdue (default: upcoming)
+        reset=1 — clears the matching idempotency flag on every active
+                  assignment first, so the job will re-fire even if you
+                  already tested today.
     """
+    from datetime import date, timedelta
+
+    from asset.models import AssetAssignment
     from asset.scheduler import notify_overdue_checkups, notify_upcoming_checkups
 
     notification_type = request.GET.get("type", "upcoming")
+    reset = request.GET.get("reset") == "1"
+    today = date.today()
+
+    # Snapshot what the filter will see before we run the job, so the user
+    # immediately knows whether anything *can* match.
+    if notification_type == "overdue":
+        flag_field = "last_overdue_notification_date"
+        if reset:
+            reset_count = AssetAssignment.objects.filter(
+                yearly_checkup_date__lt=today,
+                checkup_completed=False,
+                return_date__isnull=True,
+            ).update(last_overdue_notification_date=None)
+        else:
+            reset_count = 0
+        candidates = AssetAssignment.objects.filter(
+            yearly_checkup_date__lt=today,
+            checkup_completed=False,
+            return_date__isnull=True,
+            last_overdue_notification_date__isnull=True,
+        )
+    else:
+        flag_field = "last_upcoming_notification_date"
+        if reset:
+            reset_count = AssetAssignment.objects.filter(
+                yearly_checkup_date__gt=today,
+                yearly_checkup_date__lte=today + timedelta(days=30),
+                checkup_completed=False,
+                return_date__isnull=True,
+            ).update(last_upcoming_notification_date=None)
+        else:
+            reset_count = 0
+        candidates = AssetAssignment.objects.filter(
+            yearly_checkup_date__gt=today,
+            yearly_checkup_date__lte=today + timedelta(days=30),
+            checkup_completed=False,
+            return_date__isnull=True,
+            last_upcoming_notification_date__isnull=True,
+        )
+
+    candidate_ids = list(candidates.values_list("pk", flat=True))
+    match_count = len(candidate_ids)
 
     if notification_type == "overdue":
         notify_overdue_checkups()
-        messages.success(request, _("Overdue checkup notifications triggered."))
     else:
         notify_upcoming_checkups()
-        messages.success(request, _("Upcoming checkup notifications triggered."))
+
+    if match_count == 0:
+        # Help the admin understand why nothing fired.
+        total_assigned = AssetAssignment.objects.filter(
+            checkup_completed=False, return_date__isnull=True
+        ).count()
+        already_flagged = AssetAssignment.objects.filter(
+            checkup_completed=False,
+            return_date__isnull=True,
+            **{f"{flag_field}__isnull": False},
+        ).count()
+        messages.warning(
+            request,
+            _(
+                "%(type)s trigger ran but matched 0 assignments. "
+                "Active assignments: %(total)s. Already-notified (flag set): %(flagged)s. "
+                "Add ?reset=1 to the URL to clear the flag and retest."
+            ) % {
+                "type": notification_type.capitalize(),
+                "total": total_assigned,
+                "flagged": already_flagged,
+            },
+        )
+    else:
+        messages.success(
+            request,
+            _(
+                "%(type)s trigger ran. Matched %(count)s assignment(s) (ids: %(ids)s)%(reset)s. "
+                "Check the server console for [CheckupMailThread] SENT/failed lines."
+            ) % {
+                "type": notification_type.capitalize(),
+                "count": match_count,
+                "ids": ", ".join(str(i) for i in candidate_ids) or "-",
+                "reset": (
+                    f" — reset %d flag(s)" % reset_count if reset else ""
+                ),
+            },
+        )
 
     return redirect("asset-request-allocation-view")
 
@@ -2126,7 +2213,15 @@ def send_checkup_completion_notification(request, assignment):
     Notify Admin (superusers) and ISO group users that a yearly check-up has
     been marked complete for an asset assignment.
     """
+    import logging
+
     from django.contrib.auth.models import Group, User
+
+    logger = logging.getLogger(__name__)
+    logger.info(
+        "[send_checkup_completion_notification] START assignment=%s",
+        assignment.pk,
+    )
 
     asset = assignment.asset_id
     employee = assignment.assigned_to_employee_id
@@ -2172,8 +2267,18 @@ def send_checkup_completion_notification(request, assignment):
     recipient_user_qs = User.objects.filter(is_active=True).filter(
         Q(is_superuser=True) | Q(groups__name=iso_group_name)
     ).distinct()
+    logger.info(
+        "[send_checkup_completion_notification] recipients (superusers + %s group) count=%s ids=%s",
+        iso_group_name,
+        recipient_user_qs.count(),
+        list(recipient_user_qs.values_list("pk", flat=True)),
+    )
 
     if not recipient_user_qs.exists():
+        logger.warning(
+            "[send_checkup_completion_notification] no superusers or %s group members; aborting",
+            iso_group_name,
+        )
         return
 
     notify.send(
@@ -2187,6 +2292,10 @@ def send_checkup_completion_notification(request, assignment):
         redirect=reverse("asset-request-allocation-view"),
         label="System",
         icon="checkmark-circle",
+    )
+    logger.info(
+        "[send_checkup_completion_notification] in-app notify sent to %s recipient(s)",
+        recipient_user_qs.count(),
     )
 
     from asset.threading import CheckupMailThread
@@ -2203,10 +2312,23 @@ def send_checkup_completion_notification(request, assignment):
     email_recipients = list(
         Employee.objects.filter(employee_user_id__in=recipient_user_qs)
     )
+    logger.info(
+        "[send_checkup_completion_notification] email recipients employees=%s emails=%s",
+        [str(e) for e in email_recipients],
+        [e.get_mail() for e in email_recipients],
+    )
     if email_recipients:
         CheckupMailThread(
             email_recipients, email_context, notification_type="completed"
         ).start()
+        logger.info(
+            "[send_checkup_completion_notification] CheckupMailThread started type=completed"
+        )
+    else:
+        logger.warning(
+            "[send_checkup_completion_notification] no Employee rows linked to recipient users; "
+            "no email will be sent. Check that the superusers/ISO users have linked Employee records."
+        )
 
 
 def _is_asset_admin(user):
