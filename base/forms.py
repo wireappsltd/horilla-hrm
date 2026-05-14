@@ -1869,6 +1869,47 @@ class WorkTypeRequestForm(ModelForm):
         return super().save(commit)
 
 
+import re as _re_password_strength
+
+
+def validate_password_strength(password):
+    """
+    Validates that the provided password meets the configured strength
+    requirements:
+
+    * Minimum length of 8 characters
+    * At least one uppercase letter (A-Z)
+    * At least one lowercase letter (a-z)
+    * At least one digit (0-9)
+    * At least one special character
+
+    Raises ``forms.ValidationError`` listing every rule that the supplied
+    password fails to satisfy.
+    """
+    if password is None:
+        return password
+
+    errors = []
+    if len(password) < 8:
+        errors.append(_("Password must be at least 8 characters long."))
+    if not _re_password_strength.search(r"[A-Z]", password):
+        errors.append(_("Password must contain at least one uppercase letter."))
+    if not _re_password_strength.search(r"[a-z]", password):
+        errors.append(_("Password must contain at least one lowercase letter."))
+    if not _re_password_strength.search(r"\d", password):
+        errors.append(_("Password must contain at least one number."))
+    if not _re_password_strength.search(
+        r"[!@#$%^&*()_+\-=\[\]{};':\"\\|,.<>/?`~]", password
+    ):
+        errors.append(
+            _("Password must contain at least one special character (e.g. !@#$%^&*).")
+        )
+
+    if errors:
+        raise forms.ValidationError(errors)
+    return password
+
+
 class ChangePasswordForm(forms.Form):
     old_password = forms.CharField(
         label=_("Old password"),
@@ -1921,6 +1962,13 @@ class ChangePasswordForm(forms.Form):
             raise forms.ValidationError(
                 "New password must be different from the old password."
             )
+
+        # Bypass strength enforcement for the very first password set by a
+        # brand-new employee (the forced initial password change). For every
+        # other case (existing users changing their password) enforce the
+        # password strength policy.
+        if not getattr(self.user, "is_new_employee", False):
+            validate_password_strength(new_password)
 
         return new_password
 
@@ -2015,6 +2063,16 @@ class ResetPasswordForm(SetPasswordForm):
         ),
         help_text=_("Enter the same password as before, for verification."),
     )
+
+    def clean_new_password1(self):
+        """
+        Enforce password strength on password reset. The reset flow is only
+        accessible to existing users (via the forgot-password email link),
+        so the policy is always applied here.
+        """
+        password = self.cleaned_data.get("new_password1")
+        validate_password_strength(password)
+        return password
 
     def save(self, commit=True):
         if self.is_valid():
