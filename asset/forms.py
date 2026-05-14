@@ -431,7 +431,6 @@ class YearlyCheckupForm(ModelForm):
                 attrs={
                     "class": "oh-input w-100",
                     "accept": "image/*",
-                    "required": "true",
                 }
             ),
         }
@@ -440,7 +439,7 @@ class YearlyCheckupForm(ModelForm):
         super().__init__(*args, **kwargs)
         self.fields["yearly_checkup_date"].required = True
         self.fields["checkup_description"].required = True
-        self.fields["checkup_image"].required = True
+        self.fields["checkup_image"].required = False
         self.fields["yearly_checkup_date"].label = _("Check-up Date")
         self.fields["checkup_description"].label = _("Description")
         self.fields["checkup_image"].label = _("Image")
