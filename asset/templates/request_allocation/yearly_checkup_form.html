@@ -49,17 +49,17 @@
                 {{ yearly_checkup_form.checkup_description.errors }}
             </div>
             <div class="oh-input__group">
-                <label class="oh-input__label" for="{{ yearly_checkup_form.checkup_image.id_for_label }}">
-                    {{ yearly_checkup_form.checkup_image.label }}
+                <label class="oh-input__label" for="{{ yearly_checkup_form.checkup_images.id_for_label }}">
+                    {{ yearly_checkup_form.checkup_images.label }}
                 </label>
-                {{ yearly_checkup_form.checkup_image }}
+                {{ yearly_checkup_form.checkup_images }}
                 <span class="oh-input__help text-muted">
-                    {% trans "Maximum image size: 5 MB." %}
+                    {% trans "You can select multiple images. Maximum size per image: 5 MB." %}
                 </span>
                 <span id="checkupImageInlineError" class="oh-input__error link-danger" style="display:none;">
-                    {% trans "Image file exceeds the 5 MB limit. Please upload a smaller image." %}
+                    {% trans "One or more image files exceed the 5 MB limit. Please upload smaller images." %}
                 </span>
-                {{ yearly_checkup_form.checkup_image.errors }}
+                {{ yearly_checkup_form.checkup_images.errors }}
             </div>
             <div class="oh-modal__dialog-footer p-0">
                 <button id="yearlyCheckupConfirmBtn" type="submit"
@@ -77,20 +77,27 @@
 
         var dateInput = form.querySelector("[name='yearly_checkup_date']");
         var descInput = form.querySelector("[name='checkup_description']");
-        var imageInput = form.querySelector("[name='checkup_image']");
+        var imageInput = form.querySelector("[name='checkup_images']");
         var confirmBtn = document.getElementById("yearlyCheckupConfirmBtn");
         var inlineError = document.getElementById("checkupImageInlineError");
         var maxBytes = 5 * 1024 * 1024;
 
+        if (imageInput) {
+            imageInput.setAttribute("multiple", "multiple");
+        }
+
+        function imagesWithinLimit() {
+            if (!imageInput || !imageInput.files) return true;
+            for (var i = 0; i < imageInput.files.length; i++) {
+                if (imageInput.files[i].size > maxBytes) return false;
+            }
+            return true;
+        }
+
         function updateConfirmState() {
             var hasDate = dateInput && dateInput.value.trim() !== "";
             var hasDesc = descInput && descInput.value.trim() !== "";
-            var hasImage = imageInput && imageInput.files && imageInput.files.length > 0;
-            var imageOk = true;
-            if (hasImage) {
-                imageOk = imageInput.files[0].size <= maxBytes;
-            }
-            confirmBtn.disabled = !(hasDate && hasDesc && imageOk);
+            confirmBtn.disabled = !(hasDate && hasDesc && imagesWithinLimit());
         }
 
         if (dateInput) dateInput.addEventListener("input", updateConfirmState);
@@ -100,7 +107,7 @@
         }
         if (imageInput) {
             imageInput.addEventListener("change", function () {
-                if (this.files && this.files.length > 0 && this.files[0].size > maxBytes) {
+                if (!imagesWithinLimit()) {
                     inlineError.style.display = "block";
                     this.value = "";
                 } else {
