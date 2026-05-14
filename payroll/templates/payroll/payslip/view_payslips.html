@@ -590,12 +590,27 @@
       var day = String(d.getDate()).padStart(2, "0");
       return d.getFullYear() + "-" + m + "-" + day;
     }
+    // Parse a YYYY-MM-DD value from <input type="date"> as a local-time
+    // Date. `new Date("YYYY-MM-DD")` parses as UTC midnight in most
+    // browsers, which silently shifts comparisons against `maxEndDate`
+    // (built in local time) by the user's timezone offset and breaks the
+    // 3-day rule at timezone boundaries.
+    function parseLocalDate(str) {
+      if (!str) return new Date(NaN);
+      var parts = str.split("-");
+      if (parts.length !== 3) return new Date(NaN);
+      var y = parseInt(parts[0], 10);
+      var m = parseInt(parts[1], 10);
+      var d = parseInt(parts[2], 10);
+      if (isNaN(y) || isNaN(m) || isNaN(d)) return new Date(NaN);
+      return new Date(y, m - 1, d);
+    }
     endInput.setAttribute("max", toISO(maxEndDate));
 
     form.addEventListener("submit", function (e) {
       errorEl.style.display = "none";
-      var start = new Date(startInput.value);
-      var end = new Date(endInput.value);
+      var start = parseLocalDate(startInput.value);
+      var end = parseLocalDate(endInput.value);
 
       if (isNaN(start) || isNaN(end)) {
         e.preventDefault();
