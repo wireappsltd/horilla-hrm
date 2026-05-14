@@ -1951,6 +1951,15 @@ def asset_yearly_checkup_submit(request, asset_allocation_id):
             assignment = form.save(commit=False)
             assignment.checkup_completed = True
             assignment.save()
+            files = request.FILES.getlist("checkup_images")
+            if files:
+                attachments = []
+                for file in files:
+                    attachment = ReturnImages()
+                    attachment.image = file
+                    attachment.save()
+                    attachments.append(attachment)
+                assignment.checkup_images.add(*attachments)
             send_checkup_completion_notification(request, assignment)
             messages.success(
                 request, _("Yearly check-up submitted successfully.")
