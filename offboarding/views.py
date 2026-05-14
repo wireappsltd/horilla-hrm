@@ -1604,12 +1604,26 @@ def edit_common_task(request, task_id):
 
 
 @login_required
+@permission_required("offboarding.delete_offboardingtask")
 def delete_common_task(request, task_id):
     task = get_object_or_404(OffboardingTask, id=task_id)
-    task.delete()
+    assigned_count = EmployeeTask.objects.filter(task_id=task).count()
+    error_message = None
+    if assigned_count:
+        error_message = _(
+            "This task is assigned to %(count)d employee(s) and cannot be deleted."
+        ) % {"count": assigned_count}
+    else:
+        task.delete()
 
-    tasks = OffboardingTask.objects.filter(is_active=True, is_fine=False)
-    return render(request, "offboarding/task/common_task_list.html", {"tasks": tasks})
+    task_list = OffboardingTask.objects.filter(is_active=True, is_fine=False).order_by("-id")
+    paginator = Paginator(task_list, 5)
+    tasks = paginator.get_page(request.GET.get("page", 1))
+    return render(
+        request,
+        "offboarding/task/common_task_list.html",
+        {"tasks": tasks, "error_message": error_message},
+    )
 
 
 def create_common_task(request):

@@ -1,5 +1,8 @@
 {% load i18n %}
-<div id="compensation-field-container">
+{# This partial is rendered both as included markup (parent provides the wrapping
+   #compensation-field-container div) and as the HTMX response of the
+   check-compensation endpoint (innerHTML-swapped into the same wrapper). Do
+   not re-wrap with #compensation-field-container here or the id collides. #}
     {% if show_field %}
         <div class="mb-3 mt-1">
             <div class="d-flex align-items-center mb-2 gap-1">
@@ -99,5 +102,3 @@
             <span class="text-danger text-center">{% trans "Existing record detected. Proceeding will updates it." %}</span>
         </div>
     {% endif %}
-
-</div>

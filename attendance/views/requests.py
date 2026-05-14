@@ -349,7 +349,16 @@ def attendance_request_changes(request, attendance_id):
     if request.GET.get("previous_url"):
         form = AttendanceRequestForm(initial=request.GET.dict())
     else:
-        form = AttendanceRequestForm(instance=attendance)
+        initial = {}
+        if attendance.request_type != "create_request" and attendance.requested_data:
+            try:
+                initial = json.loads(attendance.requested_data)
+            except (TypeError, ValueError):
+                initial = {}
+        initial.setdefault(
+            "is_get_compensation_leave", attendance.is_get_compensation_leave
+        )
+        form = AttendanceRequestForm(instance=attendance, initial=initial)
         # form.fields["work_type_id"].widget.attrs.update(
         #     {
         #         "class": "w-100",
@@ -424,10 +433,24 @@ def attendance_request_changes(request, attendance_id):
                 ).content.decode("utf-8")
                 + "<script>location.reload();</script>"
             )
+    show_compensation = attendance.is_mercantile_holiday
+    if request.method == "POST":
+        attendance_date_str = request.POST.get("attendance_date")
+        if attendance_date_str:
+            try:
+                parsed_date = datetime.strptime(attendance_date_str, "%Y-%m-%d").date()
+                result = is_mercantile_or_poya_holiday(parsed_date)
+                show_compensation = result.get("is_mercantile_holiday", False)
+            except (ValueError, TypeError):
+                pass
     return render(
         request,
         "requests/attendance/form.html",
-        {"form": form, "attendance_id": attendance_id},
+        {
+            "form": form,
+            "attendance_id": attendance_id,
+            "show_compensation": show_compensation,
+        },
     )
 
 

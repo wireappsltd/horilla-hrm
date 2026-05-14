@@ -125,6 +125,32 @@
                 </span>
             </div>
         </div>
+        {% if attendance_request.is_mercantile_holiday %}
+        <div class="mb-3 mx-1">
+            <div class="d-flex align-items-center gap-2 mb-2">
+                <i class="bi bi-calendar-event" style="font-size:1rem;color:hsl(8,77%,56%);"></i>
+                <span class="fw-semibold" style="font-size:0.85rem;">{% trans "Mercantile Holiday — Compensation Type" %}</span>
+            </div>
+            <div class="d-flex gap-2">
+                <div style="flex:1;border:2px solid {% if not requested_compensation_leave %}hsl(8,77%,56%){% else %}hsl(213,22%,84%){% endif %};border-radius:8px;padding:10px 14px;background:{% if not requested_compensation_leave %}hsl(8,77%,97%){% else %}white{% endif %};">
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="d-flex align-items-center justify-content-center rounded-circle" style="width:28px;height:28px;background:{% if not requested_compensation_leave %}hsl(8,77%,56%){% else %}hsl(0,0%,93%){% endif %};">
+                            <i class="bi bi-cash-coin" style="font-size:0.85rem;color:{% if not requested_compensation_leave %}#fff{% else %}inherit{% endif %};"></i>
+                        </span>
+                        <span class="fw-semibold" style="font-size:0.78rem;">{% trans "Compensation Payment" %}</span>
+                    </div>
+                </div>
+                <div style="flex:1;border:2px solid {% if requested_compensation_leave %}hsl(8,77%,56%){% else %}hsl(213,22%,84%){% endif %};border-radius:8px;padding:10px 14px;background:{% if requested_compensation_leave %}hsl(8,77%,97%){% else %}white{% endif %};">
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="d-flex align-items-center justify-content-center rounded-circle" style="width:28px;height:28px;background:{% if requested_compensation_leave %}hsl(8,77%,56%){% else %}hsl(0,0%,93%){% endif %};">
+                            <i class="bi bi-calendar2-check" style="font-size:0.85rem;color:{% if requested_compensation_leave %}#fff{% else %}inherit{% endif %};"></i>
+                        </span>
+                        <span class="fw-semibold" style="font-size:0.78rem;">{% trans "Compensation Leave" %}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
         {% if request.GET.my_attendance %}
 
         {% elif request.GET.all_attendance %}
