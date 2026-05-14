@@ -16,7 +16,7 @@ from django.contrib import messages
 from django.core.paginator import Paginator
 from django.db import transaction
 from django.db.models import ProtectedError, Q
-from django.http import HttpResponse, JsonResponse, HttpResponseBadRequest
+from django.http import HttpResponse, HttpResponseBadRequest, HttpResponseRedirect, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.encoding import force_str
@@ -521,11 +521,20 @@ def leave_request_creation(request, type_id=None, emp_id=None):
                     )
                 form = LeaveRequestCreationForm()
                 if referer_parts[-2] == "employee-view":
-                    return HttpResponse("<script>window.location.reload();</script>")
+                    return _trigger_leave_stats_refresh(
+                        HttpResponse("<script>window.location.reload();</script>")
+                    )
 
             leave_requests = LeaveRequest.objects.all()
             if len(leave_requests) == 1:
-                return HttpResponse("<script>window.location.reload()</script>")
+                return _trigger_leave_stats_refresh(
+                    HttpResponse("<script>window.location.reload()</script>")
+                )
+            _leave_saved = True
+        else:
+            _leave_saved = False
+    else:
+        _leave_saved = False
     referrer = request.META.get("HTTP_REFERER", "")
     referrer = "/" + "/".join(referrer.split("/")[3:])
     if referrer == "/":
@@ -534,7 +543,7 @@ def leave_request_creation(request, type_id=None, emp_id=None):
     else:
         hx_url = "/leave/request-filter?"
         hx_target = "#leaveRequest"
-    return render(
+    response = render(
         request,
         "leave/leave_request/leave_request_form.html",
         {
@@ -544,6 +553,9 @@ def leave_request_creation(request, type_id=None, emp_id=None):
             "hx_target": hx_target,
         },
     )
+    if _leave_saved:
+        _trigger_leave_stats_refresh(response)
+    return response
 
 
 @login_required
@@ -1132,7 +1144,9 @@ def leave_request_approve(request, id, emp_id=None):
     if emp_id is not None:
         employee_id = emp_id
         return redirect(f"/employee/employee-view/{employee_id}/")
-    return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+    return _trigger_leave_stats_refresh(
+        HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+    )
 
 
 @login_required
@@ -1175,7 +1189,9 @@ def leave_request_bulk_approve(request):
             except (ValueError, OverflowError, LeaveRequest.DoesNotExist):
                 messages.error(request, _("Leave request not found"))
                 pass
-    return HttpResponse("<script>window.location.reload();</script>")
+    return _trigger_leave_stats_refresh(
+        HttpResponse("<script>window.location.reload();</script>")
+    )
 
 
 @login_required
@@ -1189,7 +1205,9 @@ def leave_bulk_reject(request):
         )
         leave_request_cancel(request, leave_request.id)
 
-    return HttpResponse("<script>window.location.reload();</script>")
+    return _trigger_leave_stats_refresh(
+        HttpResponse("<script>window.location.reload();</script>")
+    )
 
 
 @login_required
@@ -1284,7 +1302,9 @@ def leave_request_cancel(request, id, emp_id=None):
             if emp_id is not None:
                 employee_id = emp_id
                 return redirect(f"/employee/employee-view/{employee_id}/")
-            return HttpResponse("<script>location.reload();</script>")
+            return _trigger_leave_stats_refresh(
+                HttpResponse("<script>location.reload();</script>")
+            )
     return render(
         request, "leave/leave_request/cancel_form.html", {"form": form, "id": id}
     )
@@ -1328,7 +1348,9 @@ def user_leave_cancel(request, id):
                         request, leave_request, type="cancel"
                     )
                     mail_thread.start()
-                    return HttpResponse("<script>location.reload();</script>")
+                    return _trigger_leave_stats_refresh(
+                        HttpResponse("<script>location.reload();</script>")
+                    )
             return render(
                 request,
                 "leave/leave_request/user_cancel_form.html",
@@ -1338,11 +1360,17 @@ def user_leave_cancel(request, id):
             leave_request.status = "cancelled"
             leave_request.save()
             messages.success(request, _("Leave request cancelled successfully.."))
-            return HttpResponse("<script>location.reload();</script>")
+            return _trigger_leave_stats_refresh(
+                HttpResponse("<script>location.reload();</script>")
+            )
         messages.error(request, _("You can't cancel this leave request."))
-        return HttpResponse("<script>location.reload();</script>")
+        return _trigger_leave_stats_refresh(
+            HttpResponse("<script>location.reload();</script>")
+        )
     messages.error(request, _("You don't have the permission."))
-    return HttpResponse("<script>location.reload();</script>")
+    return _trigger_leave_stats_refresh(
+        HttpResponse("<script>location.reload();</script>")
+    )
 
 
 @login_required
@@ -2351,9 +2379,16 @@ def user_leave_request(request, id):
                 ) == 1 or request.META.get("HTTP_REFERER").endswith(
                     "employee-profile/"
                 ):
-                    return HttpResponse("<script>window.location.reload();</script>")
+                    return _trigger_leave_stats_refresh(
+                        HttpResponse("<script>window.location.reload();</script>")
+                    )
+                _leave_saved = True
+            else:
+                _leave_saved = False
+        else:
+            _leave_saved = False
 
-        return render(
+        response = render(
             request,
             "leave/user_leave/user_request_form.html",
             {
@@ -2363,6 +2398,9 @@ def user_leave_request(request, id):
                 "pd": previous_data,
             },
         )
+        if _leave_saved:
+            _trigger_leave_stats_refresh(response)
+        return response
     form.fields["leave_type_id"].queryset = LeaveType.objects.filter(id=id)
     return render(
         request,
@@ -2815,28 +2853,16 @@ def dashboard(request):
     GET : return Admin dasboard template.
     """
     today = date.today()
-    requested = LeaveRequest.objects.filter(start_date__gte=today, status="requested")
-    approved = LeaveRequest.objects.filter(
-        status="approved", start_date__month=today.month
-    )
-    rejected = LeaveRequest.objects.filter(
-        status="rejected", start_date__month=today.month
-    )
     holidays = Holidays.objects.filter(start_date__gte=today)
     next_holiday = holidays.order_by("start_date").first() if holidays else None
 
-    context = {
-        "requested": requested,
-        "approved": approved,
-        "rejected": rejected,
-        "next_holiday": next_holiday,
-        "dashboard": "dashboard",
-        "today": today.strftime("%Y-%m-%d"),
-        "first_day": today.replace(day=1).strftime("%Y-%m-%d"),
-        "last_day": date(
-            today.year, today.month, calendar.monthrange(today.year, today.month)[1]
-        ).strftime("%Y-%m-%d"),
-    }
+    context = _admin_leave_stats_context()
+    context.update(
+        {
+            "next_holiday": next_holiday,
+            "dashboard": "dashboard",
+        }
+    )
     return render(request, "leave/dashboard.html", context)
 
 
@@ -2854,24 +2880,97 @@ def employee_dashboard(request):
     today = date.today()
     user = Employee.objects.get(employee_user_id=request.user)
     leave_requests = LeaveRequest.objects.filter(employee_id=user)
-    requested = leave_requests.filter(status="requested")
-    approved = leave_requests.filter(status="approved")
-    rejected = leave_requests.filter(status="rejected")
 
     holidays = Holidays.objects.filter(start_date__gte=today)
     next_holiday = (
         holidays.order_by("start_date").first() if holidays.exists() else None
     )
 
-    context = {
-        "leave_requests": leave_requests,
+    context = _employee_leave_stats_context(request)
+    context.update(
+        {
+            "leave_requests": leave_requests,
+            "next_holiday": next_holiday,
+            "dashboard": "dashboard",
+        }
+    )
+    return render(request, "leave/employee_dashboard.html", context)
+
+
+# ---------------------------------------------------------------------------
+# Leave statistics auto-refresh helpers
+# ---------------------------------------------------------------------------
+# A single HTMX trigger event is broadcast from leave action endpoints
+# (apply / approve / reject / cancel) so that the leave dashboard statistic
+# cards (and the available-leaves chart) re-render automatically without a
+# full page reload.
+LEAVE_STATS_TRIGGER = "leaveStatsRefresh"
+
+
+def _trigger_leave_stats_refresh(response):
+    """Attach the HX-Trigger header used to auto-refresh leave dashboard stats."""
+    if response is None:
+        return response
+    existing = response.get("HX-Trigger", "")
+    events = [e.strip() for e in existing.split(",") if e.strip()]
+    if LEAVE_STATS_TRIGGER not in events:
+        events.append(LEAVE_STATS_TRIGGER)
+    response["HX-Trigger"] = ", ".join(events)
+    return response
+
+
+def _admin_leave_stats_context():
+    """Compute the admin leave dashboard statistic context."""
+    today = date.today()
+    requested = LeaveRequest.objects.filter(start_date__gte=today, status="requested")
+    approved = LeaveRequest.objects.filter(
+        status="approved", start_date__month=today.month
+    )
+    rejected = LeaveRequest.objects.filter(
+        status="rejected", start_date__month=today.month
+    )
+    return {
         "requested": requested,
         "approved": approved,
         "rejected": rejected,
-        "next_holiday": next_holiday,
-        "dashboard": "dashboard",
+        "today": today.strftime("%Y-%m-%d"),
+        "first_day": today.replace(day=1).strftime("%Y-%m-%d"),
+        "last_day": date(
+            today.year, today.month, calendar.monthrange(today.year, today.month)[1]
+        ).strftime("%Y-%m-%d"),
     }
-    return render(request, "leave/employee_dashboard.html", context)
+
+
+def _employee_leave_stats_context(request):
+    """Compute the personal leave dashboard statistic context for the user."""
+    user = Employee.objects.get(employee_user_id=request.user)
+    leave_requests = LeaveRequest.objects.filter(employee_id=user)
+    return {
+        "requested": leave_requests.filter(status="requested"),
+        "approved": leave_requests.filter(status="approved"),
+        "rejected": leave_requests.filter(status="rejected"),
+    }
+
+
+@login_required
+@permission_required("leave.delete_leaverequest")
+def dashboard_stats(request):
+    """Return the admin leave dashboard statistic cards (HTMX partial)."""
+    return render(
+        request,
+        "leave/dashboard/leave_stats.html",
+        _admin_leave_stats_context(),
+    )
+
+
+@login_required
+def employee_dashboard_stats(request):
+    """Return the personal leave dashboard statistic cards (HTMX partial)."""
+    return render(
+        request,
+        "leave/dashboard/employee_leave_stats.html",
+        _employee_leave_stats_context(request),
+    )
 
 
 @login_required
@@ -3274,10 +3373,17 @@ def leave_request_create(request):
                     mail_thread.start()
                     form = UserLeaveRequestCreationForm(employee=emp)
                     if len(LeaveRequest.objects.filter(employee_id=emp_id)) == 1:
-                        return HttpResponse(
-                            "<script>window.location.reload();</script>"
+                        return _trigger_leave_stats_refresh(
+                            HttpResponse(
+                                "<script>window.location.reload();</script>"
+                            )
                         )
-            return render(
+                    _leave_saved = True
+                else:
+                    _leave_saved = False
+            else:
+                _leave_saved = False
+            response = render(
                 request,
                 "leave/user_leave/request_form.html",
                 {
@@ -3285,13 +3391,19 @@ def leave_request_create(request):
                     "pd": previous_data,
                 },
             )
+            if _leave_saved:
+                _trigger_leave_stats_refresh(response)
+            return response
         else:
             messages.error(request, _("You don't have permission"))
             response = render(
                 request, "leave/user_leave/request_form.html", {"form": form}
             )
-            return HttpResponse(
-                response.content.decode("utf-8") + "<script>location.reload();</script>"
+            return _trigger_leave_stats_refresh(
+                HttpResponse(
+                    response.content.decode("utf-8")
+                    + "<script>location.reload();</script>"
+                )
             )
     return render(
         request,

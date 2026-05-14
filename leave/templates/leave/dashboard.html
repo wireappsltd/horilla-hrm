@@ -42,50 +42,12 @@
     </div>
     <div class="oh-dashboard row" id="dashboard">
         <div class="oh-dashboard__left col-12 col-sm-12 col-md-12 col-lg-9">
-            <div class="oh-dashboard__cards row">
-                <div class="col-12 col-sm-12 col-md-6 col-lg-4">
-                    <div class="oh-card-dashboard oh-card-dashboard oh-card-dashboard--neutral filter pointer dash-card"
-                        id="requestedLeaves">
-                        <div class="oh-card-dashboard__header">
-                            <span class="oh-card-dashboard__title">{% trans "Requests to Approve" %}</span>
-                            <div onmouseover="helptextView(event, 'Leave requests in &quot;Requested&quot; status from today.')" class="d-inline position-relative">
-                                <ion-icon name="help-circle-outline" id="offerhelptext"></ion-icon>
-                                <div id="tooltip" class="tooltip-text d-none"></div>
-                            </div>
-                        </div>
-                        <div class="oh-card-dashboard__body">
-                            <div class="oh-card-dashboard__counts">
-                                <span class="oh-card-dashboard__count">{{requested|length}}</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-12 col-sm-12 col-md-6 col-lg-4">
-                    <div class="oh-card-dashboard oh-card-dashboard--success filter pointer dash-card"
-                        id="approvedLeaves">
-                        <div class="oh-card-dashboard__header">
-                            <span class="oh-card-dashboard__title">{% trans "Approved Leaves In This Month" %}</span>
-                        </div>
-                        <div class="oh-card-dashboard__body">
-                            <div class="oh-card-dashboard__counts">
-                                <span class="oh-card-dashboard__count">{{approved|length}}</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-12 col-sm-12 col-md-6 col-lg-4">
-                    <div class="oh-card-dashboard oh-card-dashboard--danger filter pointer dash-card"
-                        id="rejectedLeaves">
-                        <div class="oh-card-dashboard__header">
-                            <span class="oh-card-dashboard__title">{% trans "Rejected Leaves In This Month" %}</span>
-                        </div>
-                        <div class="oh-card-dashboard__body">
-                            <div class="oh-card-dashboard__counts">
-                                <span class="oh-card-dashboard__count">{{rejected|length}}</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+            <div class="oh-dashboard__cards row"
+                id="leaveStatsCards"
+                hx-get="{% url 'leave-dashboard-stats' %}"
+                hx-trigger="leaveStatsRefresh from:body"
+                hx-swap="innerHTML">
+                {% include 'leave/dashboard/leave_stats.html' %}
             </div>
 
             <div class="oh-dashboard__movable-cards row mt-4">
@@ -113,7 +75,7 @@
                         <div class="oh-card-dashboard__header oh-card-dashboard__header--divider">
                             <span class="oh-card-dashboard__title">{% trans "On Leave" %}</span>
                         </div>
-                        <div class="oh-card-dashboard__body" hx-get="{% url 'employee-leave' %}" hx-trigger="load"
+                        <div class="oh-card-dashboard__body" hx-get="{% url 'employee-leave' %}" hx-trigger="load, leaveStatsRefresh from:body"
                             id="onLeaveListCard">
                             <div class="animated-background"></div>
                         </div>
@@ -229,15 +191,14 @@
 <script src="{% static 'dashboard/dashboard.js' %}"></script>
 <script>
     $(document).ready(function () {
-        $("#requestedLeaves").on("click", function () {
-            window.location.href = '{% url "request-view" %}?status=requested&from_date={{today}}'
-        })
-        $("#approvedLeaves").on("click", function () {
-            window.location.href = '{% url "request-view" %}?status=approved&from_date={{first_day}}&to_date={{last_day}}'
-        })
-        $("#rejectedLeaves").on("click", function () {
-            window.location.href = '{% url "request-view" %}?status=rejected&from_date={{first_day}}&to_date={{last_day}}'
-        })
+        // Use event delegation so handlers survive HTMX swaps that replace
+        // the stat cards when leaveStatsRefresh fires.
+        $(document).on("click", "#requestedLeaves, #approvedLeaves, #rejectedLeaves", function () {
+            var href = $(this).data("href");
+            if (href) {
+                window.location.href = href;
+            }
+        });
     })
 
     function helptextView(event,text) {
