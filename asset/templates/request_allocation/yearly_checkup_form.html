@@ -50,7 +50,7 @@
             </div>
             <div class="oh-input__group">
                 <label class="oh-input__label" for="{{ yearly_checkup_form.checkup_image.id_for_label }}">
-                    {{ yearly_checkup_form.checkup_image.label }} *
+                    {{ yearly_checkup_form.checkup_image.label }}
                 </label>
                 {{ yearly_checkup_form.checkup_image }}
                 <span class="oh-input__help text-muted">
@@ -90,7 +90,7 @@
             if (hasImage) {
                 imageOk = imageInput.files[0].size <= maxBytes;
             }
-            confirmBtn.disabled = !(hasDate && hasDesc && hasImage && imageOk);
+            confirmBtn.disabled = !(hasDate && hasDesc && imageOk);
         }
 
         if (dateInput) dateInput.addEventListener("input", updateConfirmState);
