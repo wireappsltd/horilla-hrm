@@ -297,6 +297,11 @@ class AssetAssignment(HorillaModel):
         blank=True,
         verbose_name=_("Last Overdue Notification Date"),
     )
+    last_upcoming_notification_date = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name=_("Last Upcoming Notification Date"),
+    )
     objects = HorillaCompanyManager(
         "assigned_to_employee_id__employee_work_info__company_id"
     )
