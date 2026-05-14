@@ -203,6 +203,10 @@ def notify_upcoming_checkups():
         )
 
         # Notify the assigned employee
+        logger.info(
+            "[notify_upcoming_checkups] in-app notify assigned_employee user_id=%s",
+            getattr(employee.employee_user_id, "pk", None),
+        )
         notify.send(
             bot,
             recipient=employee.employee_user_id,
@@ -218,6 +222,11 @@ def notify_upcoming_checkups():
 
         # Notify HR/Ops (users with asset view permission)
         permed_users = horilla_users_with_perms("asset.view_assetassignment")
+        logger.info(
+            "[notify_upcoming_checkups] permed users (asset.view_assetassignment) count=%s ids=%s",
+            permed_users.count(),
+            list(permed_users.values_list("pk", flat=True)),
+        )
         if permed_users.exists():
             notify.send(
                 bot,
@@ -240,6 +249,11 @@ def notify_upcoming_checkups():
             try:
                 group = Group.objects.get(name=group_name)
                 group_users = group.user_set.exclude(pk__in=notified_pks)
+                logger.info(
+                    "[notify_upcoming_checkups] group=%s additional user_ids=%s",
+                    group_name,
+                    list(group_users.values_list("pk", flat=True)),
+                )
                 if group_users.exists():
                     notify.send(
                         bot,
@@ -255,7 +269,10 @@ def notify_upcoming_checkups():
                     )
                     notified_pks.update(group_users.values_list("pk", flat=True))
             except Group.DoesNotExist:
-                pass
+                logger.info(
+                    "[notify_upcoming_checkups] group=%s does not exist; skipping",
+                    group_name,
+                )
 
         # Send email notifications
         from asset.threading import CheckupMailThread
@@ -278,10 +295,22 @@ def notify_upcoming_checkups():
                 employee_user_id__in=all_notified_users
             )
             email_recipients.extend(list(extra_employees))
+        logger.info(
+            "[notify_upcoming_checkups] dispatching email thread assignment=%s "
+            "recipient_employees=%s emails=%s",
+            assignment.pk,
+            [str(e) for e in email_recipients],
+            [e.get_mail() for e in email_recipients],
+        )
         CheckupMailThread(email_recipients, email_context, is_overdue=False).start()
 
         assignment.last_upcoming_notification_date = today
         assignment.save(update_fields=["last_upcoming_notification_date"])
+        logger.info(
+            "[notify_upcoming_checkups] flag set last_upcoming_notification_date=%s assignment=%s",
+            today,
+            assignment.pk,
+        )
 
 
 def notify_overdue_checkups():
@@ -364,6 +393,10 @@ def notify_overdue_checkups():
         )
 
         # Notify the assigned employee
+        logger.info(
+            "[notify_overdue_checkups] in-app notify assigned_employee user_id=%s",
+            getattr(employee.employee_user_id, "pk", None),
+        )
         notify.send(
             bot,
             recipient=employee.employee_user_id,
@@ -379,6 +412,11 @@ def notify_overdue_checkups():
 
         # Notify HR/Ops
         permed_users = horilla_users_with_perms("asset.view_assetassignment")
+        logger.info(
+            "[notify_overdue_checkups] permed users (asset.view_assetassignment) count=%s ids=%s",
+            permed_users.count(),
+            list(permed_users.values_list("pk", flat=True)),
+        )
         if permed_users.exists():
             notify.send(
                 bot,
@@ -401,6 +439,11 @@ def notify_overdue_checkups():
             try:
                 group = Group.objects.get(name=group_name)
                 group_users = group.user_set.exclude(pk__in=notified_pks)
+                logger.info(
+                    "[notify_overdue_checkups] group=%s additional user_ids=%s",
+                    group_name,
+                    list(group_users.values_list("pk", flat=True)),
+                )
                 if group_users.exists():
                     notify.send(
                         bot,
@@ -416,7 +459,10 @@ def notify_overdue_checkups():
                     )
                     notified_pks.update(group_users.values_list("pk", flat=True))
             except Group.DoesNotExist:
-                pass
+                logger.info(
+                    "[notify_overdue_checkups] group=%s does not exist; skipping",
+                    group_name,
+                )
 
         # Send email notifications
         from asset.threading import CheckupMailThread
@@ -439,10 +485,22 @@ def notify_overdue_checkups():
                 employee_user_id__in=all_notified_users
             )
             email_recipients.extend(list(extra_employees))
+        logger.info(
+            "[notify_overdue_checkups] dispatching email thread assignment=%s "
+            "recipient_employees=%s emails=%s",
+            assignment.pk,
+            [str(e) for e in email_recipients],
+            [e.get_mail() for e in email_recipients],
+        )
         CheckupMailThread(email_recipients, email_context, is_overdue=True).start()
 
         assignment.last_overdue_notification_date = today
         assignment.save(update_fields=["last_overdue_notification_date"])
+        logger.info(
+            "[notify_overdue_checkups] flag set last_overdue_notification_date=%s assignment=%s",
+            today,
+            assignment.pk,
+        )
 
 
 def notify_overdue_checkups_recurring():

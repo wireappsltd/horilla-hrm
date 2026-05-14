@@ -40,29 +40,84 @@ class CheckupMailThread(Thread):
         self.is_completed = notification_type == "completed"
 
     def run(self):
-        email_backend = ConfiguredEmailBackend()
+        logger.info(
+            "[CheckupMailThread] START type=%s recipients=%s asset=%s",
+            self.notification_type,
+            len(self.recipients),
+            self.context.get("asset_name"),
+        )
+
+        try:
+            email_backend = ConfiguredEmailBackend()
+        except Exception:
+            logger.exception(
+                "[CheckupMailThread] failed to initialise ConfiguredEmailBackend"
+            )
+            return
+
         from_email = email_backend.dynamic_from_email_with_display_name
+        logger.info(
+            "[CheckupMailThread] SMTP host=%s port=%s username=%s use_tls=%s from=%s",
+            getattr(email_backend, "dynamic_host", None),
+            getattr(email_backend, "dynamic_port", None),
+            getattr(email_backend, "dynamic_username", None),
+            getattr(email_backend, "dynamic_use_tls", None),
+            from_email,
+        )
+        if not from_email:
+            logger.error(
+                "[CheckupMailThread] no from_email configured "
+                "(check DynamicEmailConfiguration or EMAIL_HOST_USER / DEFAULT_FROM_EMAIL in .env); aborting"
+            )
+            return
+
         subject_prefix = self.SUBJECT_PREFIXES.get(self.notification_type, "")
         subject = (
             f"{subject_prefix}Asset Yearly Check-up - "
             f"{self.context['asset_name']}"
         )
+        logger.info("[CheckupMailThread] subject=%r", subject)
+
+        sent_count = 0
+        skipped_no_email = 0
+        failed_count = 0
 
         for employee in self.recipients:
+            employee_label = (
+                getattr(employee, "get_full_name", lambda: str(employee))()
+            )
             recipient_email = employee.get_mail()
+            logger.info(
+                "[CheckupMailThread] recipient candidate employee=%s email=%r",
+                employee_label,
+                recipient_email,
+            )
             if not recipient_email:
+                logger.warning(
+                    "[CheckupMailThread] skipping employee=%s — get_mail() returned empty",
+                    employee_label,
+                )
+                skipped_no_email += 1
                 continue
 
-            html_message = render_to_string(
-                "asset/mail_templates/checkup_notification.html",
-                {
-                    **self.context,
-                    "recipient_name": employee.get_full_name(),
-                    "is_overdue": self.is_overdue,
-                    "is_completed": self.is_completed,
-                    "notification_type": self.notification_type,
-                },
-            )
+            try:
+                html_message = render_to_string(
+                    "asset/mail_templates/checkup_notification.html",
+                    {
+                        **self.context,
+                        "recipient_name": employee_label,
+                        "is_overdue": self.is_overdue,
+                        "is_completed": self.is_completed,
+                        "notification_type": self.notification_type,
+                    },
+                )
+            except Exception:
+                logger.exception(
+                    "[CheckupMailThread] template render failed for employee=%s",
+                    employee_label,
+                )
+                failed_count += 1
+                continue
 
             email = EmailMessage(
                 subject=subject,
@@ -73,16 +128,28 @@ class CheckupMailThread(Thread):
             )
             email.content_subtype = "html"
             try:
-                email.send()
+                send_result = email.send()
                 logger.info(
-                    "Checkup %s email sent to %s for asset %s",
+                    "[CheckupMailThread] SENT type=%s to=%s asset=%s send_result=%s",
                     self.notification_type,
                     recipient_email,
-                    self.context["asset_name"],
+                    self.context.get("asset_name"),
+                    send_result,
                 )
-            except Exception as e:
+                sent_count += 1
+            except Exception:
                 logger.exception(
-                    "Failed to send checkup email to %s: %s",
+                    "[CheckupMailThread] SMTP send failed type=%s to=%s asset=%s",
+                    self.notification_type,
                     recipient_email,
-                    e,
+                    self.context.get("asset_name"),
                 )
+                failed_count += 1
+
+        logger.info(
+            "[CheckupMailThread] DONE type=%s sent=%s skipped_no_email=%s failed=%s",
+            self.notification_type,
+            sent_count,
+            skipped_no_email,
+            failed_count,
+        )
