@@ -29,6 +29,10 @@ SUBMENUS = [
         "redirect": reverse("asset-request-allocation-view"),
     },
     {
+        "menu": _("Yearly Check-up Submissions"),
+        "redirect": reverse("asset-yearly-checkup-submissions"),
+    },
+    {
         "menu": _("Asset History"),
         "redirect": reverse("asset-history"),
         "accessibility": "asset.sidebar.history_accessibility",

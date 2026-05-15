@@ -286,10 +286,21 @@ class AssetAssignment(HorillaModel):
         blank=True,
         verbose_name=_("Check-up Image"),
     )
+    checkup_images = models.ManyToManyField(
+        ReturnImages,
+        blank=True,
+        related_name="checkup_images",
+        verbose_name=_("Check-up Images"),
+    )
     last_overdue_notification_date = models.DateField(
         null=True,
         blank=True,
         verbose_name=_("Last Overdue Notification Date"),
+    )
+    last_upcoming_notification_date = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name=_("Last Upcoming Notification Date"),
     )
     objects = HorillaCompanyManager(
         "assigned_to_employee_id__employee_work_info__company_id"
@@ -319,7 +330,7 @@ class AssetAssignment(HorillaModel):
 
     @property
     def yearly_checkup_status(self):
-        """Returns one of: "Complete", "Overdue", "N/A"."""
+        """Returns one of: "Complete", "Overdue", "Pending"."""
         from django.utils import timezone
 
         if self.checkup_completed:
@@ -330,7 +341,71 @@ class AssetAssignment(HorillaModel):
             and self.yearly_checkup_date <= timezone.localdate()
         ):
             return "Overdue"
-        return "N/A"
+        return "Pending"
+
+    @property
+    def is_checkup_button_enabled(self):
+        """The Yearly Check-up button is enabled within 30 days of the
+        scheduled date, and only if no log entry has been recorded for the
+        current cycle."""
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        if self.return_date is not None:
+            return False
+        if not self.yearly_checkup_date:
+            return False
+        today = timezone.localdate()
+        window_start = self.yearly_checkup_date - timedelta(days=30)
+        if today < window_start:
+            return False
+        if self.checkup_logs.filter(checkup_date__gte=window_start).exists():
+            return False
+        return True
+
+
+class YearlyCheckupLog(HorillaModel):
+    """
+    Records a single yearly check-up submission for an AssetAssignment.
+
+    Each row captures who performed the check-up, when, the description, and
+    any uploaded images, so the assignment carries a full year-over-year
+    audit trail.
+    """
+
+    asset_assignment = models.ForeignKey(
+        AssetAssignment,
+        on_delete=models.CASCADE,
+        related_name="checkup_logs",
+        verbose_name=_("Asset Assignment"),
+    )
+    checkup_date = models.DateField(verbose_name=_("Check-up Date"))
+    description = models.TextField(
+        blank=True, null=True, verbose_name=_("Description")
+    )
+    images = models.ManyToManyField(
+        ReturnImages,
+        blank=True,
+        related_name="yearly_checkup_log_images",
+        verbose_name=_("Images"),
+    )
+    submitted_by = models.ForeignKey(
+        Employee,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="submitted_checkup_logs",
+        verbose_name=_("Submitted By"),
+    )
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        verbose_name = _("Yearly Check-up Log")
+        verbose_name_plural = _("Yearly Check-up Logs")
+
+    def __str__(self):
+        return f"{self.asset_assignment} --- {self.checkup_date}"
 
 
 class AssetRequest(HorillaModel):

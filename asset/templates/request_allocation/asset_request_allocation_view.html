@@ -249,14 +249,14 @@
 					{# TODO: Remove before production — temporary QA testing buttons #}
 					<a class="oh-btn oh-btn--info-outline ml-2" role="button"
 						onclick="event.stopPropagation()"
-						href="{% url 'trigger-checkup-notifications' %}?type=upcoming"
+						href="{% url 'trigger-checkup-notifications' %}?type=upcoming&reset=1"
 						title="Test: Trigger upcoming checkup notifications">
 						<ion-icon name="calendar-outline" class="mr-1"></ion-icon>
 						Test Upcoming
 					</a>
 					<a class="oh-btn oh-btn--warning-outline ml-1" role="button"
 						onclick="event.stopPropagation()"
-						href="{% url 'trigger-checkup-notifications' %}?type=overdue"
+						href="{% url 'trigger-checkup-notifications' %}?type=overdue&reset=1"
 						title="Test: Trigger overdue checkup notifications">
 						<ion-icon name="alert-circle-outline" class="mr-1"></ion-icon>
 						Test Overdue

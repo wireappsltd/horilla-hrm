@@ -215,4 +215,14 @@ urlpatterns = [
         views.asset_yearly_checkup_submit,
         name="asset-yearly-checkup-submit",
     ),
+    path(
+        "asset-yearly-checkup-submissions/",
+        views.asset_yearly_checkup_list,
+        name="asset-yearly-checkup-submissions",
+    ),
+    path(
+        "asset-yearly-checkup-detail/<int:allocation_id>/",
+        views.asset_yearly_checkup_detail,
+        name="asset-yearly-checkup-detail",
+    ),
 ]
