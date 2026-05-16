@@ -11,6 +11,7 @@ import os
 import uuid
 from datetime import date, timedelta
 from typing import Any
+import re as _re_password_strength
 
 from django import forms
 from django.apps import apps
@@ -1867,9 +1868,6 @@ class WorkTypeRequestForm(ModelForm):
                 if self.instance.is_permanent_work_type:
                     self.instance.requested_till = None
         return super().save(commit)
-
-
-import re as _re_password_strength
 
 
 def validate_password_strength(password):
