@@ -398,7 +398,7 @@
                     </span>
                 </div>
                 <div class="oh-card-dashboard__body" id="leaveApproveCardBody" style="height:80%"
-                    hx-get="{% url 'leave-request-and-approve' %}" hx-trigger="load">
+                    hx-get="{% url 'leave-request-and-approve' %}" hx-trigger="load, leaveStatsRefresh from:body">
                     <div class="animated-background"></div>
                 </div>
             </div>
@@ -419,7 +419,7 @@
                     </span>
                 </div>
                 <div class="oh-card-dashboard__body" id="leaveAllocationApproveBody" style="height:80%"
-                    hx-get="{% url 'leave-allocation-approve' %}" hx-trigger="load">
+                    hx-get="{% url 'leave-allocation-approve' %}" hx-trigger="load, leaveStatsRefresh from:body">
                     <div class="animated-background"></div>
                 </div>
             </div>

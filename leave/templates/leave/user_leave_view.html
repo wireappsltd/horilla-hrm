@@ -53,7 +53,10 @@
     </div>
 </section>
 
-<div class="oh-wrapper" id="userLeaves">
+<div class="oh-wrapper" id="userLeaves"
+    hx-get="{% url 'user-leave-filter' %}"
+    hx-trigger="leaveStatsRefresh from:body"
+    hx-swap="innerHTML">
     {% include 'leave/user_leave/user_leave.html' %}
 </div>
 
