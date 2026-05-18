@@ -204,25 +204,35 @@ class NoteForm(ModelForm):
 class TaskForm(ModelForm):
     """
     TaskForm model form — only creates task, no employee assignment.
+
+    On create, picking a stage title fans the task out to every flow that has
+    a stage with that title (one OffboardingTask row per matching stage). On
+    edit, the form updates only the single record the user opened.
     """
 
     verbose_name = "Offboarding Task"
 
+    stage_title = forms.ChoiceField(required=False, label="Stage")
+
     class Meta:
         model = OffboardingTask
         fields = "__all__"
-        exclude = ["status", "is_active" , "is_fine"]
+        exclude = ["status", "is_active", "is_fine", "stage_id"]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["stage_id"].empty_label = "All Stages in Offboarding"
-        # When multiple offboarding flows exist, several stages share the same
-        # title ("Notice Period", "FNF", ...). Prefix each option with its
-        # flow so admins can pick the correct one.
-        self.fields["stage_id"].label_from_instance = (
-            lambda obj: f"{obj.offboarding_id.title} — {obj.title}"
+        distinct_titles = list(
+            OffboardingStage.objects.order_by("title")
+            .values_list("title", flat=True)
+            .distinct()
         )
+        self.fields["stage_title"].choices = [
+            ("", "All Stages in Offboarding")
+        ] + [(t, t) for t in distinct_titles]
         self.fields["managers"].required = False
+
+        if self.instance.pk and self.instance.stage_id_id:
+            self.initial["stage_title"] = self.instance.stage_id.title
 
     def as_p(self):
         """
@@ -230,6 +240,45 @@ class TaskForm(ModelForm):
         """
         context = {"form": self}
         return render_to_string("common_form.html", context)
+
+    def save(self, commit=True):
+        title = self.cleaned_data.get("title")
+        stage_title = self.cleaned_data.get("stage_title") or None
+        managers = self.cleaned_data.get("managers") or []
+
+        if self.instance.pk:
+            instance = self.instance
+            instance.title = title
+            if stage_title:
+                instance.stage_id = OffboardingStage.objects.filter(
+                    title=stage_title
+                ).first()
+            else:
+                instance.stage_id = None
+            if commit:
+                instance.save()
+                instance.managers.set(managers)
+            return instance
+
+        if not stage_title:
+            instance, _ = OffboardingTask.objects.get_or_create(
+                title=title, stage_id=None
+            )
+            instance.managers.set(managers)
+            self.instance = instance
+            return instance
+
+        first = None
+        for stage in OffboardingStage.objects.filter(title=stage_title):
+            obj, _ = OffboardingTask.objects.get_or_create(
+                title=title, stage_id=stage
+            )
+            obj.managers.set(managers)
+            if first is None:
+                first = obj
+        if first is not None:
+            self.instance = first
+        return self.instance
 
 class EmployeeTaskForm(ModelForm):
     """
@@ -250,19 +299,26 @@ class EmployeeTaskForm(ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["stage_id"].empty_label = "All Stages in Offboarding"
-        self.fields["stage_id"].label_from_instance = (
-            lambda obj: f"{obj.offboarding_id.title} — {obj.title}"
-        )
         self.fields["managers"].empty_label = None
-        if not self.instance.pk:
-            queryset = OffboardingEmployee.objects.filter(
-                stage_id__offboarding_id=OffboardingStage.objects.filter(
-                    id=self.initial.get("stage_id")
-                )
-                .first()
-                .offboarding_id
+
+        offboarding = None
+        if self.instance.pk and self.instance.stage_id_id:
+            offboarding = self.instance.stage_id.offboarding_id
+        else:
+            initial_stage = OffboardingStage.objects.filter(
+                id=self.initial.get("stage_id")
+            ).first()
+            if initial_stage:
+                offboarding = initial_stage.offboarding_id
+
+        if offboarding is not None:
+            self.fields["stage_id"].queryset = OffboardingStage.objects.filter(
+                offboarding_id=offboarding
             )
-            self.fields["tasks_to"].queryset = queryset
+            if not self.instance.pk:
+                self.fields["tasks_to"].queryset = OffboardingEmployee.objects.filter(
+                    stage_id__offboarding_id=offboarding
+                )
 
     def as_p(self):
         """

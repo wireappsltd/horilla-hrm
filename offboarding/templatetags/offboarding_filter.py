@@ -71,11 +71,18 @@ def any_manager(employee: Employee):
     This method is used to check the employee is in managers
     employee: Employee model instance
     """
-    return (
+    if employee is None:
+        return False
+    cached = getattr(employee, "_any_manager_cached", None)
+    if cached is not None:
+        return cached
+    result = (
         Offboarding.objects.filter(managers=employee).exists()
         | OffboardingStage.objects.filter(managers=employee).exists()
         | OffboardingTask.objects.filter(managers=employee).exists()
     )
+    employee._any_manager_cached = result
+    return result
 
 
 @register.filter(name="is_offboarding_manager")
@@ -83,7 +90,14 @@ def is_offboarding_manager(employee: Employee):
     """
     This method is used to check the employee is manager of any offboarding
     """
-    return Offboarding.objects.filter(managers=employee).exists()
+    if employee is None:
+        return False
+    cached = getattr(employee, "_is_offboarding_manager_cached", None)
+    if cached is not None:
+        return cached
+    result = Offboarding.objects.filter(managers=employee).exists()
+    employee._is_offboarding_manager_cached = result
+    return result
 
 
 @register.filter(name="is_offboarding_employee")
@@ -99,14 +113,22 @@ def is_in_managers(employee: Employee, instance: object):
     """
     This method is used to check the employee in the managers or not
     """
-    is_in_managers = False
+    if employee is None or instance is None:
+        return False
+    cache_key = (type(instance).__name__, getattr(instance, "id", None))
+    cache = getattr(employee, "_is_in_managers_cached", None)
+    if cache is None:
+        cache = {}
+        employee._is_in_managers_cached = cache
+    if cache_key in cache:
+        return cache[cache_key]
+    is_in = False
     if isinstance(instance, (Offboarding, OffboardingStage)):
-        # checking in offboarding managers
-        is_in_managers = instance.managers.filter(employee_id=employee).exists()
+        is_in = instance.managers.filter(employee_id=employee).exists()
     if isinstance(instance, OffboardingEmployee):
-        # also checking in the offboarding employee
-        is_in_managers = is_in_managers | (employee == instance.employee_id)
-    return is_in_managers
+        is_in = is_in | (employee == instance.employee_id)
+    cache[cache_key] = is_in
+    return is_in
 
 
 @register.filter("is_in_offboarding")
@@ -114,7 +136,15 @@ def is_in_offboarding(employee: Employee, offboarding: Offboarding):
     """
     This method is used to check the employee in the offboarding or not
     """
-    return (
+    if employee is None or offboarding is None:
+        return False
+    cache = getattr(employee, "_is_in_offboarding_cached", None)
+    if cache is None:
+        cache = {}
+        employee._is_in_offboarding_cached = cache
+    if offboarding.id in cache:
+        return cache[offboarding.id]
+    result = (
         (employee in offboarding.managers.all())
         or OffboardingStage.objects.filter(
             offboarding_id=offboarding, managers=employee
@@ -123,6 +153,8 @@ def is_in_offboarding(employee: Employee, offboarding: Offboarding):
             stage_id__offboarding_id=offboarding, employee_id=employee
         ).exists()
     )
+    cache[offboarding.id] = result
+    return result
 
 
 @register.filter("is_any_stage_manager")
@@ -130,10 +162,17 @@ def is_any_stage_manager(employee):
     """
     This method is used to to check any stage manager
     """
-    return (
+    if employee is None:
+        return False
+    cached = getattr(employee, "_is_any_stage_manager_cached", None)
+    if cached is not None:
+        return cached
+    result = (
         OffboardingStage.objects.filter(managers=employee).exists()
         | Offboarding.objects.filter(managers=employee).exists()
     )
+    employee._is_any_stage_manager_cached = result
+    return result
 
 
 @register.filter("is_stage_manager")
