@@ -312,6 +312,7 @@ class AssetAllocationForm(ModelForm):
             "return_images",
             "is_active",
             "checkup_completed",
+            "checkup_images",
         ]
         widgets = {
             "asset_id": forms.Select(attrs={"class": "oh-select oh-select-2 "}),
@@ -400,6 +401,65 @@ class AssetReturnForm(ModelForm):
             raise forms.ValidationError(_("Return date cannot be in the future."))
 
         return return_date
+
+
+YEARLY_CHECKUP_MAX_IMAGE_BYTES = 5 * 1024 * 1024
+
+
+class YearlyCheckupForm(ModelForm):
+    """ModelForm for submitting an asset's yearly check-up."""
+
+    class Meta:
+        model = AssetAssignment
+        fields = ["yearly_checkup_date", "checkup_description"]
+        widgets = {
+            "yearly_checkup_date": forms.DateInput(
+                attrs={
+                    "type": "date",
+                    "class": "oh-input w-100",
+                    "required": "true",
+                }
+            ),
+            "checkup_description": forms.Textarea(
+                attrs={
+                    "class": "oh-input oh-input--textarea oh-input--block",
+                    "rows": 3,
+                    "required": "true",
+                    "placeholder": _("Describe the check-up performed."),
+                }
+            ),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["yearly_checkup_date"].required = True
+        self.fields["checkup_description"].required = True
+        self.fields["yearly_checkup_date"].label = _("Check-up Date")
+        self.fields["checkup_description"].label = _("Description")
+
+        self.fields["checkup_images"] = MultipleFileField(label=_("Images"))
+        self.fields["checkup_images"].required = False
+        self.fields["checkup_images"].widget.attrs.update(
+            {"class": "oh-input w-100", "accept": "image/*"}
+        )
+
+    def clean_yearly_checkup_date(self):
+        checkup_date = self.cleaned_data.get("yearly_checkup_date")
+        if checkup_date and checkup_date > date.today():
+            raise forms.ValidationError(_("Check-up date cannot be in the future."))
+        return checkup_date
+
+    def clean_checkup_images(self):
+        images = self.files.getlist("checkup_images") if self.files else []
+        for image in images:
+            if getattr(image, "size", 0) > YEARLY_CHECKUP_MAX_IMAGE_BYTES:
+                raise forms.ValidationError(
+                    _(
+                        "One or more image files exceed the 5 MB limit. "
+                        "Please upload smaller images."
+                    )
+                )
+        return images
 
 
 class AssetBatchForm(ModelForm):

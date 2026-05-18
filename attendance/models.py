@@ -288,6 +288,22 @@ class Attendance(HorillaModel):
         )
         return {"query": activities, "count": activities.count()}
 
+    def compensatory_leave_request(self):
+        """
+        Returns the latest compensatory LeaveAllocationRequest linked to this
+        attendance, or None if no compensation has been requested.
+        """
+        try:
+            return (
+                self.leave_allocation.filter(
+                    leave_type_id__is_compensatory_leave=True
+                )
+                .order_by("-id")
+                .first()
+            )
+        except Exception:
+            return None
+
     def requested_fields(self):
         """
         This method will returns the value difference fields

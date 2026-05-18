@@ -349,7 +349,16 @@ def attendance_request_changes(request, attendance_id):
     if request.GET.get("previous_url"):
         form = AttendanceRequestForm(initial=request.GET.dict())
     else:
-        form = AttendanceRequestForm(instance=attendance)
+        initial = {}
+        if attendance.request_type != "create_request" and attendance.requested_data:
+            try:
+                initial = json.loads(attendance.requested_data)
+            except (TypeError, ValueError):
+                initial = {}
+        initial.setdefault(
+            "is_get_compensation_leave", attendance.is_get_compensation_leave
+        )
+        form = AttendanceRequestForm(instance=attendance, initial=initial)
         # form.fields["work_type_id"].widget.attrs.update(
         #     {
         #         "class": "w-100",
@@ -424,10 +433,24 @@ def attendance_request_changes(request, attendance_id):
                 ).content.decode("utf-8")
                 + "<script>location.reload();</script>"
             )
+    show_compensation = attendance.is_mercantile_holiday
+    if request.method == "POST":
+        attendance_date_str = request.POST.get("attendance_date")
+        if attendance_date_str:
+            try:
+                parsed_date = datetime.strptime(attendance_date_str, "%Y-%m-%d").date()
+                result = is_mercantile_or_poya_holiday(parsed_date)
+                show_compensation = result.get("is_mercantile_holiday", False)
+            except (ValueError, TypeError):
+                pass
     return render(
         request,
         "requests/attendance/form.html",
-        {"form": form, "attendance_id": attendance_id},
+        {
+            "form": form,
+            "attendance_id": attendance_id,
+            "show_compensation": show_compensation,
+        },
     )
 
 
@@ -488,6 +511,14 @@ def approve_validate_attendance_request(request, attendance_id):
     This method is used to validate the attendance requests
     """
     attendance = Attendance.objects.get(id=attendance_id)
+    # Prevent managers from approving their own attendance requests.
+    # Approval must be performed by a higher authority or another authorized manager.
+    if attendance.employee_id.employee_user_id_id == request.user.id:
+        messages.error(
+            request,
+            _("You cannot approve your own attendance request."),
+        )
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
     prev_attendance_date = attendance.attendance_date
     prev_attendance_clock_in_date = attendance.attendance_clock_in_date
     prev_attendance_clock_in = attendance.attendance_clock_in
@@ -688,8 +719,13 @@ def bulk_approve_attendance_request(request):
     """
     ids = request.POST["ids"]
     ids = json.loads(ids)
+    skipped_self = 0
     for attendance_id in ids:
         attendance = Attendance.objects.get(id=attendance_id)
+        # Skip approval of own attendance requests; users cannot self-approve.
+        if attendance.employee_id.employee_user_id_id == request.user.id:
+            skipped_self += 1
+            continue
         prev_attendance_date = attendance.attendance_date
         prev_attendance_clock_in_date = attendance.attendance_clock_in_date
         prev_attendance_clock_in = attendance.attendance_clock_in
@@ -806,6 +842,11 @@ def bulk_approve_attendance_request(request):
                 redirect=reverse("request-attendance-view") + f"?id={attendance.id}",
                 icon="checkmark-circle-outline",
             )
+    if skipped_self:
+        messages.warning(
+            request,
+            _("You cannot approve your own attendance request(s); they were skipped."),
+        )
     return HttpResponse("success")
 
 

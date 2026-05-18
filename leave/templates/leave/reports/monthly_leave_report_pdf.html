@@ -100,7 +100,6 @@
         }
     </style>
 </head>
-
 <body>
 <div class="report-header">
     <div class="report-title">{% trans "Leave Details Report" %}</div>
@@ -142,12 +141,11 @@
             <td style="width: 140px">{{ leave.start_date }} - {{ leave.end_date }}</td>
             <td style="width: 190px" class="text-center">
                 {% with s=leave.start_date_breakdown|default:"full_day" e=leave.end_date_breakdown|default:"full_day" %}
-
                     {% if leave.start_date == leave.end_date %}
                         {% if s == "first_half" %}
-                            Same Day: First Half ({{ leave.requested_days }} Days)
+                            Half Day: First Half ({{ leave.requested_days }} Days)
                         {% elif s == "second_half" %}
-                            Same Day: Second Half ({{ leave.requested_days }} Days)
+                            Half Day: Second Half ({{ leave.requested_days }} Days)
                         {% else %}
                             Full Day ({{ leave.requested_days }} Days)
                         {% endif %}
@@ -172,13 +170,15 @@
                         {% endif %}
                         ({{ leave.requested_days }} Days)
                     {% endif %}
-
                 {% endwith %}
             </td>
             <td style="width:150px">
-                {{ leave.status|capfirst }} by {{ leave.modified_by_name }}
+                {% if leave.status == "requested" or leave.status == "cancelled" %}
+                    &mdash;
+                {% else %}
+                    {{ leave.status|capfirst }} by {{ leave.modified_by_name }}
+                {% endif %}
             </td>
-
             <td style="width: 150px">{{ leave.reject_reason|default:"" }}</td>
         </tr>
     {% empty %}
@@ -190,6 +190,5 @@
     {% endfor %}
     </tbody>
 </table>
-
 </body>
 </html>

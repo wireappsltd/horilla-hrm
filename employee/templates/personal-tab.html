@@ -143,7 +143,7 @@
               <ion-icon name="people-circle-outline"></ion-icon>
               <span>{% trans "Emergency Contact Name" %}</span>
             </span>
-            <span class="oh-profile__info-value">
+            <span class="oh-profile__info-value" style="word-break: break-word; overflow-wrap: anywhere; white-space: normal;">
               {{employee.emergency_contact_name}}
             </span>
           </li>
@@ -152,7 +152,7 @@
               <ion-icon name="finger-print-outline"></ion-icon>
               <span>{% trans "Emergency Contact Relation" %}</span>
             </span>
-            <span class="oh-profile__info-value">
+            <span class="oh-profile__info-value" style="word-break: break-word; overflow-wrap: anywhere; white-space: normal;">
               {{employee.emergency_contact_relation}}
             </span>
           </li>
@@ -225,7 +225,7 @@
                 </span>
                 <span class="oh-profile__info-value">{{employee.employee_work_info.job_role_id}}</span>
               </li>
-              {% if employee.employee_work_info.employee_type_id.employee_type == "Intern" %}
+              {% if employee.employee_work_info.employee_type_id.employee_type|lower == "intern" %}
               <li class="oh-profile__card-info-item">
                 <span class="oh-profile__info-label mb-1">
                   <ion-icon name="cash-outline"></ion-icon>
@@ -239,6 +239,13 @@
                   <span>{% trans "Salary Per Hour" %}</span>
                 </span>
                 <span class="oh-profile__info-value">{{employee.employee_work_info.salary_hour}}</span>
+              </li>
+              <li class="oh-profile__card-info-item">
+                <span class="oh-profile__info-label mb-1">
+                  <ion-icon name="calendar-outline"></ion-icon>
+                  <span>{% trans "Intern Period End Date" %}</span>
+                </span>
+                <span class="oh-profile__info-value">{{employee.employee_work_info.intern_period_end_date|default_if_none:""}}</span>
               </li>
               {% endif %}
               <li class="oh-profile__card-info-item">

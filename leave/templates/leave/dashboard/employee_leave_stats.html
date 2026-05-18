@@ -1,0 +1,44 @@
+{% load i18n %}
+<div class="col-12 col-sm-12 col-md-6 col-lg-4">
+    <div class="oh-card-dashboard oh-card-dashboard oh-card-dashboard--neutral filter pointer dash-card"
+        id="requestedLeaves"
+        data-href="{% url 'user-request-view' %}?status=requested">
+        <div class="oh-card-dashboard__header">
+            <span class="oh-card-dashboard__title">{% trans "New Requests" %}</span>
+        </div>
+        <div class="oh-card-dashboard__body">
+            <div class="oh-card-dashboard__counts">
+                <span class="oh-card-dashboard__count">{{requested|length}}</span>
+            </div>
+        </div>
+    </div>
+</div>
+<div class="col-12 col-sm-12 col-md-6 col-lg-4">
+    <div class="oh-card-dashboard oh-card-dashboard--success filter pointer dash-card"
+        id="approvedLeaves"
+        data-href="{% url 'user-request-view' %}?status=approved">
+        <div class="oh-card-dashboard__header">
+            <span class="oh-card-dashboard__title">{% trans "Approved Requests" %}</span>
+        </div>
+        <div class="oh-card-dashboard__body">
+            <div class="oh-card-dashboard__counts">
+                <span class="oh-card-dashboard__count">{{approved|length}}</span>
+            </div>
+        </div>
+    </div>
+</div>
+<div class="col-12 col-sm-12 col-md-6 col-lg-4">
+    <div class="oh-card-dashboard oh-card-dashboard--danger filter pointer dash-card"
+        id="rejectedLeaves"
+        data-href="{% url 'user-request-view' %}?status=rejected">
+        <div class="oh-card-dashboard__header">
+            <span class="oh-card-dashboard__title">{% trans "Rejected Requests" %}</span>
+        </div>
+        <div class="oh-card-dashboard__body">
+            <div class="oh-card-dashboard__counts">
+                <span class="oh-card-dashboard__count">{{rejected|length}}</span>
+            </div>
+        </div>
+    </div>
+</div>
+

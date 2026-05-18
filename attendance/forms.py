@@ -864,6 +864,10 @@ class AttendanceRequestForm(BaseModelForm):
         self.fields["attendance_date"].widget.attrs.update(
             {
                 "onchange": "attendanceDateChange($(this))",
+                "hx-get": reverse("check-compensation"),
+                "hx-trigger": "change delay:400ms",
+                "hx-target": "#compensation-field-container",
+                "hx-include": "#attendanceRequestForm",
             }
         )
 

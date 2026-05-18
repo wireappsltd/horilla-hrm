@@ -225,6 +225,23 @@ class LeaveRequestCreationForm(BaseModelForm):
                 "hx-get": "/leave/get-employee-leave-types?form=LeaveRequestCreationForm",
             }
         )
+        # Exclude the selected employee (if any) from covering person choices
+        employee_id_val = None
+        if self.is_bound:
+            employee_id_val = self.data.get("employee_id")
+        elif getattr(self.instance, "pk", None):
+            employee_id_val = getattr(self.instance, "employee_id_id", None)
+        else:
+            # Unbound form rendered with initial={'employee_id': ...}
+            # (e.g. the create view pre-fills the current employee).
+            # Accept either a Model instance or a raw pk.
+            initial_emp = self.initial.get("employee_id")
+            if initial_emp:
+                employee_id_val = getattr(initial_emp, "pk", initial_emp)
+        if employee_id_val:
+            self.fields["manager"].queryset = self.fields["manager"].queryset.exclude(
+                id=employee_id_val
+            )
         self.fields["start_date"].widget.attrs.update(
             {
                 "hx-include": "#leaveRequestCreateForm",
@@ -299,6 +316,19 @@ class LeaveRequestUpdationForm(BaseModelForm):
             }
         )
         self.fields["attachment"].widget.attrs["accept"] = ".jpg, .jpeg, .png, .pdf"
+
+        # Exclude the requesting employee from covering person choices
+        employee_id_val = None
+        if self.is_bound:
+            employee_id_val = self.data.get("employee_id")
+        if not employee_id_val and employee is not None:
+            employee_id_val = getattr(employee, "id", None)
+        if not employee_id_val and getattr(self.instance, "pk", None):
+            employee_id_val = getattr(self.instance, "employee_id_id", None)
+        if employee_id_val:
+            self.fields["manager"].queryset = self.fields["manager"].queryset.exclude(
+                id=employee_id_val
+            )
 
         self.fields["start_date"].widget.attrs.update(
             {
@@ -429,6 +459,10 @@ class UserLeaveRequestForm(BaseModelForm):
         employee = kwargs.pop("employee", None)
         super(UserLeaveRequestForm, self).__init__(*args, **kwargs)
         self.fields["attachment"].widget.attrs["accept"] = ".jpg, .jpeg, .png, .pdf"
+        # Disable selection of past dates in the calendar/date picker
+        today_str = date.today().strftime("%Y-%m-%d")
+        self.fields["start_date"].widget.attrs["min"] = today_str
+        self.fields["end_date"].widget.attrs["min"] = today_str
         if employee:
             available_leaves = employee.available_leave.all()
             assigned_leave_types = LeaveType.objects.filter(
@@ -471,6 +505,27 @@ class UserLeaveRequestForm(BaseModelForm):
             is_required = (str(val).strip().lower() in ("yes", "true", "1"))
 
         self.fields["attachment"].required = is_required
+
+        # Exclude the requesting employee from covering person choices
+        emp_id_val = None
+        if self.is_bound:
+            emp_id_val = self.data.get("employee_id")
+        if not emp_id_val and employee is not None:
+            emp_id_val = getattr(employee, "id", None)
+        if not emp_id_val and getattr(self.instance, "pk", None):
+            emp_id_val = getattr(self.instance, "employee_id_id", None)
+        if not emp_id_val and isinstance(leave_type, dict):
+            # The view may pass the requesting employee via the popped
+            # `initial` kwarg (e.g. initial={'employee_id': employee, ...})
+            # without supplying an `employee=` kwarg. Read it from there
+            # so the dropdown filters self out at render time.
+            initial_emp = leave_type.get("employee_id")
+            if initial_emp:
+                emp_id_val = getattr(initial_emp, "pk", initial_emp)
+        if emp_id_val and "manager" in self.fields:
+            self.fields["manager"].queryset = self.fields["manager"].queryset.exclude(
+                id=emp_id_val
+            )
 
         if getattr(self.instance, "pk", None):
             self.fields["leave_type_id"].widget.attrs.update({
@@ -600,6 +655,10 @@ class UserLeaveRequestCreationForm(BaseModelForm):
         employee = kwargs.pop("employee", None)
         super().__init__(*args, **kwargs)
         self.fields["attachment"].widget.attrs["accept"] = ".jpg, .jpeg, .png, .pdf"
+        # Disable selection of past dates in the calendar/date picker
+        today_str = date.today().strftime("%Y-%m-%d")
+        self.fields["start_date"].widget.attrs["min"] = today_str
+        self.fields["end_date"].widget.attrs["min"] = today_str
         if employee:
             available_leaves = employee.available_leave.all()
             assigned_leave_types = LeaveType.objects.filter(

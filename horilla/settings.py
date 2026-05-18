@@ -267,6 +267,30 @@ TIME_ZONE = env("TIME_ZONE", default="Asia/Kolkata")
 
 NOTIFICATION_BOT_USERNAME = env("NOTIFICATION_BOT_USERNAME", default="Horilla Bot")
 
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "asset_step": {
+            "format": "[%(asctime)s] %(levelname)s %(name)s: %(message)s",
+            "datefmt": "%H:%M:%S",
+        },
+    },
+    "handlers": {
+        "asset_console": {
+            "class": "logging.StreamHandler",
+            "formatter": "asset_step",
+        },
+    },
+    "loggers": {
+        "asset": {
+            "handlers": ["asset_console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+    },
+}
+
 USE_I18N = True
 
 USE_L10N = True

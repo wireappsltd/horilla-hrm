@@ -17,6 +17,32 @@ from notifications.signals import notify
 logger = logging.getLogger(__name__)
 
 
+def _resolve_notification_bot():
+    """Return a User suitable for use as the `actor` on notify.send().
+
+    Looks up `settings.NOTIFICATION_BOT_USERNAME` first; if that user doesn't
+    exist, falls back to the first active superuser. Returning a non-None user
+    is required by notify.send(), so without this fallback every job aborts
+    silently on installs where the bot account was never seeded.
+    """
+    from django.conf import settings
+    from django.contrib.auth.models import User
+
+    bot_username = getattr(settings, "NOTIFICATION_BOT_USERNAME", None)
+    bot = None
+    if bot_username:
+        bot = User.objects.filter(username=bot_username).first()
+    if bot is None:
+        bot = User.objects.filter(is_superuser=True, is_active=True).order_by("pk").first()
+        if bot is not None:
+            logger.info(
+                "[asset.scheduler] notification bot user '%s' missing; falling back to superuser '%s'",
+                bot_username,
+                bot.username,
+            )
+    return bot
+
+
 def notify_expiring_assets():
     """
     Finds all Expiring Assets and send a notification on the notify_before date.
@@ -100,9 +126,14 @@ def notify_expiring_documents():
 
 def notify_upcoming_checkups():
     """
-    Sends a notification 30 days before a yearly check-up is due for an
-    assigned asset. Notifies the assigned employee and all users with
+    Sends a notification once when a yearly check-up enters the 30-day
+    upcoming window. Notifies the assigned employee and all users with
     asset.view_assetassignment permission (HR/Ops).
+
+    Idempotency: an assignment is only picked up while
+    `last_upcoming_notification_date` is NULL. The flag is set after the
+    first fire and cleared again when the check-up is marked Complete, so
+    the next yearly cycle will re-trigger.
     """
     logger.info("[notify_upcoming_checkups] job started")
 
@@ -112,30 +143,25 @@ def notify_upcoming_checkups():
     from horilla.methods import horilla_users_with_perms
 
     today = date.today()
-    notify_date = today + timedelta(days=30)
-    from django.conf import settings
-    logger.info(
-        "[notify_upcoming_checkups] today=%s notify_date=%s bot_username=%s",
-        today,
-        notify_date,
-        getattr(settings, "NOTIFICATION_BOT_USERNAME", None),
-    )
-    bot = User.objects.filter(username=settings.NOTIFICATION_BOT_USERNAME).first()
+    window_end = today + timedelta(days=30)
+    bot = _resolve_notification_bot()
     if not bot:
         logger.warning(
-            "[notify_upcoming_checkups] notification bot user '%s' not found; aborting",
-            getattr(settings, "NOTIFICATION_BOT_USERNAME", None),
+            "[notify_upcoming_checkups] no usable bot/superuser found; aborting"
         )
         return
     assignments = AssetAssignment.objects.filter(
-        yearly_checkup_date=notify_date,
+        yearly_checkup_date__gt=today,
+        yearly_checkup_date__lte=window_end,
         checkup_completed=False,
         return_date__isnull=True,
+        last_upcoming_notification_date__isnull=True,
     )
     logger.info(
-        "[notify_upcoming_checkups] matched %s assignment(s) for notify_date=%s",
+        "[notify_upcoming_checkups] matched %s assignment(s) in window today=%s..%s",
         assignments.count(),
-        notify_date,
+        today,
+        window_end,
     )
     for assignment in assignments:
         logger.info(
@@ -177,6 +203,10 @@ def notify_upcoming_checkups():
         )
 
         # Notify the assigned employee
+        logger.info(
+            "[notify_upcoming_checkups] in-app notify assigned_employee user_id=%s",
+            getattr(employee.employee_user_id, "pk", None),
+        )
         notify.send(
             bot,
             recipient=employee.employee_user_id,
@@ -192,6 +222,11 @@ def notify_upcoming_checkups():
 
         # Notify HR/Ops (users with asset view permission)
         permed_users = horilla_users_with_perms("asset.view_assetassignment")
+        logger.info(
+            "[notify_upcoming_checkups] permed users (asset.view_assetassignment) count=%s ids=%s",
+            permed_users.count(),
+            list(permed_users.values_list("pk", flat=True)),
+        )
         if permed_users.exists():
             notify.send(
                 bot,
@@ -214,6 +249,11 @@ def notify_upcoming_checkups():
             try:
                 group = Group.objects.get(name=group_name)
                 group_users = group.user_set.exclude(pk__in=notified_pks)
+                logger.info(
+                    "[notify_upcoming_checkups] group=%s additional user_ids=%s",
+                    group_name,
+                    list(group_users.values_list("pk", flat=True)),
+                )
                 if group_users.exists():
                     notify.send(
                         bot,
@@ -229,7 +269,10 @@ def notify_upcoming_checkups():
                     )
                     notified_pks.update(group_users.values_list("pk", flat=True))
             except Group.DoesNotExist:
-                pass
+                logger.info(
+                    "[notify_upcoming_checkups] group=%s does not exist; skipping",
+                    group_name,
+                )
 
         # Send email notifications
         from asset.threading import CheckupMailThread
@@ -252,14 +295,37 @@ def notify_upcoming_checkups():
                 employee_user_id__in=all_notified_users
             )
             email_recipients.extend(list(extra_employees))
+        logger.info(
+            "[notify_upcoming_checkups] dispatching email thread assignment=%s "
+            "recipient_employees=%s emails=%s",
+            assignment.pk,
+            [str(e) for e in email_recipients],
+            [e.get_mail() for e in email_recipients],
+        )
         CheckupMailThread(email_recipients, email_context, is_overdue=False).start()
+
+        assignment.last_upcoming_notification_date = today
+        assignment.save(update_fields=["last_upcoming_notification_date"])
+        logger.info(
+            "[notify_upcoming_checkups] flag set last_upcoming_notification_date=%s assignment=%s",
+            today,
+            assignment.pk,
+        )
 
 
 def notify_overdue_checkups():
     """
-    Sends a follow-up notification when a yearly check-up date has passed
-    without being marked as completed. Notifies the assigned employee and
-    all users with asset.view_assetassignment permission (HR/Ops).
+    Sends a first overdue notification once when a yearly check-up has
+    passed its due date without being marked as completed. Notifies the
+    assigned employee and all users with asset.view_assetassignment
+    permission (HR/Ops).
+
+    Idempotency: an assignment is only picked up while
+    `last_overdue_notification_date` is NULL, so the 4h scheduler tick
+    fires it once and not 6×/day. Catches up missed days even if the
+    scheduler was down on the exact day the check-up became overdue.
+    The flag is cleared again when the check-up is marked Complete, so
+    the next yearly cycle's overdue state will re-trigger.
     """
     logger.info("[notify_overdue_checkups] job started")
 
@@ -269,32 +335,23 @@ def notify_overdue_checkups():
     from horilla.methods import horilla_users_with_perms
 
     today = date.today()
-    from django.conf import settings
-    logger.info(
-        "[notify_overdue_checkups] today=%s bot_username=%s",
-        today,
-        getattr(settings, "NOTIFICATION_BOT_USERNAME", None),
-    )
-    bot = User.objects.filter(username=settings.NOTIFICATION_BOT_USERNAME).first()
+    bot = _resolve_notification_bot()
     if not bot:
         logger.warning(
-            "[notify_overdue_checkups] notification bot user '%s' not found; aborting",
-            getattr(settings, "NOTIFICATION_BOT_USERNAME", None),
+            "[notify_overdue_checkups] no usable bot/superuser found; aborting"
         )
         return
 
-    # Only notify on the day after the checkup was due, to avoid
-    # sending duplicate overdue notifications every 4 hours forever.
-    yesterday = today - timedelta(days=1)
     overdue_assignments = AssetAssignment.objects.filter(
-        yearly_checkup_date=yesterday,
+        yearly_checkup_date__lt=today,
         checkup_completed=False,
         return_date__isnull=True,
+        last_overdue_notification_date__isnull=True,
     )
     logger.info(
-        "[notify_overdue_checkups] matched %s assignment(s) for yesterday=%s",
+        "[notify_overdue_checkups] matched %s assignment(s) overdue as of %s",
         overdue_assignments.count(),
-        yesterday,
+        today,
     )
     for assignment in overdue_assignments:
         logger.info(
@@ -336,6 +393,10 @@ def notify_overdue_checkups():
         )
 
         # Notify the assigned employee
+        logger.info(
+            "[notify_overdue_checkups] in-app notify assigned_employee user_id=%s",
+            getattr(employee.employee_user_id, "pk", None),
+        )
         notify.send(
             bot,
             recipient=employee.employee_user_id,
@@ -351,6 +412,11 @@ def notify_overdue_checkups():
 
         # Notify HR/Ops
         permed_users = horilla_users_with_perms("asset.view_assetassignment")
+        logger.info(
+            "[notify_overdue_checkups] permed users (asset.view_assetassignment) count=%s ids=%s",
+            permed_users.count(),
+            list(permed_users.values_list("pk", flat=True)),
+        )
         if permed_users.exists():
             notify.send(
                 bot,
@@ -373,6 +439,11 @@ def notify_overdue_checkups():
             try:
                 group = Group.objects.get(name=group_name)
                 group_users = group.user_set.exclude(pk__in=notified_pks)
+                logger.info(
+                    "[notify_overdue_checkups] group=%s additional user_ids=%s",
+                    group_name,
+                    list(group_users.values_list("pk", flat=True)),
+                )
                 if group_users.exists():
                     notify.send(
                         bot,
@@ -388,7 +459,10 @@ def notify_overdue_checkups():
                     )
                     notified_pks.update(group_users.values_list("pk", flat=True))
             except Group.DoesNotExist:
-                pass
+                logger.info(
+                    "[notify_overdue_checkups] group=%s does not exist; skipping",
+                    group_name,
+                )
 
         # Send email notifications
         from asset.threading import CheckupMailThread
@@ -411,7 +485,122 @@ def notify_overdue_checkups():
                 employee_user_id__in=all_notified_users
             )
             email_recipients.extend(list(extra_employees))
+        logger.info(
+            "[notify_overdue_checkups] dispatching email thread assignment=%s "
+            "recipient_employees=%s emails=%s",
+            assignment.pk,
+            [str(e) for e in email_recipients],
+            [e.get_mail() for e in email_recipients],
+        )
         CheckupMailThread(email_recipients, email_context, is_overdue=True).start()
+
+        assignment.last_overdue_notification_date = today
+        assignment.save(update_fields=["last_overdue_notification_date"])
+        logger.info(
+            "[notify_overdue_checkups] flag set last_overdue_notification_date=%s assignment=%s",
+            today,
+            assignment.pk,
+        )
+
+
+def notify_overdue_checkups_recurring():
+    """
+    Sends a recurring 3-month follow-up notification for any asset assignment
+    whose yearly check-up is overdue and has not been marked complete.
+
+    A record receives the next reminder once 90 days have elapsed since its
+    last reminder (or its check-up due date, if never reminded). The job
+    stops sending reminders for an assignment as soon as it is marked
+    Complete or returned.
+    """
+    logger.info("[notify_overdue_checkups_recurring] job started")
+
+    from django.contrib.auth.models import User
+
+    from asset.models import AssetAssignment
+    from horilla.methods import horilla_users_with_perms
+
+    today = date.today()
+    threshold = today - timedelta(days=90)
+    bot = _resolve_notification_bot()
+    if not bot:
+        logger.warning(
+            "[notify_overdue_checkups_recurring] no usable bot/superuser found; aborting"
+        )
+        return
+
+    from django.db.models import Q
+
+    overdue_assignments = AssetAssignment.objects.filter(
+        yearly_checkup_date__lte=today,
+        checkup_completed=False,
+        return_date__isnull=True,
+    ).filter(
+        Q(last_overdue_notification_date__isnull=True)
+        | Q(last_overdue_notification_date__lte=threshold)
+    )
+
+    logger.info(
+        "[notify_overdue_checkups_recurring] matched %s assignment(s)",
+        overdue_assignments.count(),
+    )
+
+    for assignment in overdue_assignments:
+        asset = assignment.asset_id
+        employee = assignment.assigned_to_employee_id
+        shop = assignment.service_shop_name or "N/A"
+        checkup_date = assignment.yearly_checkup_date.strftime("%Y-%m-%d")
+
+        message = (
+            f"REMINDER: Yearly check-up for asset '{asset.asset_name}' "
+            f"({asset.asset_tracking_id}) was due on {checkup_date} and is "
+            f"still overdue. Service shop: {shop}."
+        )
+
+        notify.send(
+            bot,
+            recipient=employee.employee_user_id,
+            verb=message,
+            redirect=reverse("asset-request-allocation-view"),
+            label="System",
+            icon="alert-circle",
+        )
+
+        permed_users = horilla_users_with_perms("asset.view_assetassignment")
+        if permed_users.exists():
+            notify.send(
+                bot,
+                recipient=permed_users,
+                verb=message,
+                redirect=reverse("asset-request-allocation-view"),
+                label="System",
+                icon="alert-circle",
+            )
+
+        notified_pks = set(permed_users.values_list("pk", flat=True))
+        notified_pks.add(employee.employee_user_id.pk)
+
+        for group_name in ("HR", "OPS"):
+            try:
+                group = Group.objects.get(name=group_name)
+                group_users = group.user_set.exclude(pk__in=notified_pks)
+                if group_users.exists():
+                    notify.send(
+                        bot,
+                        recipient=group_users,
+                        verb=message,
+                        redirect=reverse("asset-request-allocation-view"),
+                        label="System",
+                        icon="alert-circle",
+                    )
+                    notified_pks.update(
+                        group_users.values_list("pk", flat=True)
+                    )
+            except Group.DoesNotExist:
+                pass
+
+        assignment.last_overdue_notification_date = today
+        assignment.save(update_fields=["last_overdue_notification_date"])
 
 
 if not any(
@@ -427,6 +616,7 @@ if not any(
         scheduler.add_job(notify_expiring_documents, "interval", hours=4)
         scheduler.add_job(notify_upcoming_checkups, "interval", hours=4)
         scheduler.add_job(notify_overdue_checkups, "interval", hours=4)
+        scheduler.add_job(notify_overdue_checkups_recurring, "interval", hours=24)
         scheduler.start()
         logger.info(
             "[asset.scheduler] BackgroundScheduler started with %s job(s): %s",

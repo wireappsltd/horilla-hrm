@@ -188,6 +188,7 @@ class EmployeeForm(ModelForm):
             }),
             "experience": forms.NumberInput(attrs={
                 "step": "0.1",
+                "onwheel": "this.blur()",
             }),
         }
 
@@ -205,6 +206,10 @@ class EmployeeForm(ModelForm):
             "style": "text-transform:none;"
         })
         self.fields["badge_id"].required = False
+
+        for _field_name in ("children", "experience"):
+            if _field_name in self.fields:
+                self.fields[_field_name].widget.attrs["onwheel"] = "this.blur()"
 
         if instance := kwargs.get("instance"):
             # ----
@@ -425,6 +430,7 @@ class EmployeeWorkInformationForm(ModelForm):
         widgets = {
             "date_joining": DateInput(attrs={"type": "date"}),
             "probation_end_date": DateInput(attrs={"type": "date"}),
+            "intern_period_end_date": DateInput(attrs={"type": "date"}),
         }
 
     def __init__(self, *args, disable=False, **kwargs):
@@ -531,6 +537,34 @@ class EmployeeWorkInformationForm(ModelForm):
                 _("Probation end date cannot be earlier than date of joining.")
             )
 
+        # Intern Period End Date validation
+        intern_end_date = self.cleaned_data.get("intern_period_end_date")
+        employee_type_value = self.cleaned_data.get("employee_type_id")
+        is_intern = False
+        if employee_type_value:
+            try:
+                et_id = (
+                    employee_type_value.id
+                    if hasattr(employee_type_value, "id")
+                    else int(employee_type_value)
+                )
+                et_obj = EmployeeType.objects.filter(id=et_id).first()
+                if et_obj and (et_obj.employee_type or "").strip().lower() == "intern":
+                    is_intern = True
+            except (TypeError, ValueError):
+                is_intern = False
+        if is_intern:
+            if not intern_end_date:
+                self.add_error(
+                    "intern_period_end_date",
+                    _("This field is required.")
+                )
+            elif date_joining and intern_end_date <= date_joining:
+                self.add_error(
+                    "intern_period_end_date",
+                    _("Intern period end date must be after the joining date.")
+                )
+
         if not email and not self.has_error("email"):
             self.add_error(
                 "email",
@@ -570,11 +604,22 @@ class EmployeeWorkInformationUpdateForm(ModelForm):
 
         model = EmployeeWorkInformation
         fields = "__all__"
-        exclude = ("employee_id","contract_end_date","shift_id","work_type_id")
+        exclude = (
+            "employee_id",
+            "contract_end_date",
+            "shift_id",
+            "work_type_id",
+            # ``additional_info`` and ``experience`` are surfaced on the
+            # personal info section; excluding them here prevents the
+            # work info edit view from rendering duplicate columns.
+            "additional_info",
+            "experience",
+        )
 
         widgets = {
             "date_joining": DateInput(attrs={"type": "date"}),
             "probation_end_date": DateInput(attrs={"type": "date"}),
+            "intern_period_end_date": DateInput(attrs={"type": "date"}),
         }
 
     def __init__(self, *args, **kwargs):
@@ -646,6 +691,34 @@ class EmployeeWorkInformationUpdateForm(ModelForm):
                 "probation_end_date",
                 _("Probation end date cannot be earlier than date of joining.")
             )
+
+        # Intern Period End Date validation
+        intern_end_date = self.cleaned_data.get("intern_period_end_date")
+        employee_type_value = self.cleaned_data.get("employee_type_id")
+        is_intern = False
+        if employee_type_value:
+            try:
+                et_id = (
+                    employee_type_value.id
+                    if hasattr(employee_type_value, "id")
+                    else int(employee_type_value)
+                )
+                et_obj = EmployeeType.objects.filter(id=et_id).first()
+                if et_obj and (et_obj.employee_type or "").strip().lower() == "intern":
+                    is_intern = True
+            except (TypeError, ValueError):
+                is_intern = False
+        if is_intern:
+            if not intern_end_date:
+                self.add_error(
+                    "intern_period_end_date",
+                    _("This field is required.")
+                )
+            elif date_joining and intern_end_date <= date_joining:
+                self.add_error(
+                    "intern_period_end_date",
+                    _("Intern period end date must be after the joining date.")
+                )
 
 
         if work_phone:
