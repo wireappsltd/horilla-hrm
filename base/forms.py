@@ -1961,12 +1961,10 @@ class ChangePasswordForm(forms.Form):
                 "New password must be different from the old password."
             )
 
-        # Bypass strength enforcement for the very first password set by a
-        # brand-new employee (the forced initial password change). For every
-        # other case (existing users changing their password) enforce the
-        # password strength policy.
-        if not getattr(self.user, "is_new_employee", False):
-            validate_password_strength(new_password)
+        # Always enforce the password strength policy, including for
+        # brand-new employees performing their forced initial password
+        # change on first login.
+        validate_password_strength(new_password)
 
         return new_password
 
