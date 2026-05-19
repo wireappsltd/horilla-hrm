@@ -41,6 +41,41 @@ CHOICES = [("yes", _("Yes")), ("no", _("No"))]
 LEAVE_MAX_LIMIT = 1e5
 
 
+def _validate_covering_person_not_self(cleaned_data):
+
+    if not cleaned_data:
+        return cleaned_data
+    employee = cleaned_data.get("employee_id")
+    manager = cleaned_data.get("manager")
+    if employee and manager:
+        emp_pk = getattr(employee, "pk", employee)
+        mgr_pk = getattr(manager, "pk", manager)
+        if emp_pk and mgr_pk and str(emp_pk) == str(mgr_pk):
+            raise ValidationError(
+                {
+                    "manager": _(
+                        "You cannot select yourself as the covering person."
+                    )
+                }
+            )
+    return cleaned_data
+
+
+def _exclude_self_from_manager_queryset(form, employee_pk):
+    """
+    Remove the requesting employee from the ``manager`` (covering person)
+    field's queryset so they cannot pick themselves from the dropdown.
+    """
+    if not employee_pk:
+        return
+    if "manager" not in form.fields:
+        return
+    qs = form.fields["manager"].queryset
+    if qs is None:
+        return
+    form.fields["manager"].queryset = qs.exclude(pk=employee_pk)
+
+
 class ConditionForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -238,10 +273,7 @@ class LeaveRequestCreationForm(BaseModelForm):
             initial_emp = self.initial.get("employee_id")
             if initial_emp:
                 employee_id_val = getattr(initial_emp, "pk", initial_emp)
-        if employee_id_val:
-            self.fields["manager"].queryset = self.fields["manager"].queryset.exclude(
-                id=employee_id_val
-            )
+        _exclude_self_from_manager_queryset(self, employee_id_val)
         self.fields["start_date"].widget.attrs.update(
             {
                 "hx-include": "#leaveRequestCreateForm",
@@ -259,6 +291,10 @@ class LeaveRequestCreationForm(BaseModelForm):
         context = {"form": self}
         table_html = render_to_string("horilla_form.html", context)
         return table_html
+
+    def clean(self):
+        cleaned_data = super().clean()
+        return _validate_covering_person_not_self(cleaned_data)
 
     class Meta:
         model = LeaveRequest
@@ -325,10 +361,7 @@ class LeaveRequestUpdationForm(BaseModelForm):
             employee_id_val = getattr(employee, "id", None)
         if not employee_id_val and getattr(self.instance, "pk", None):
             employee_id_val = getattr(self.instance, "employee_id_id", None)
-        if employee_id_val:
-            self.fields["manager"].queryset = self.fields["manager"].queryset.exclude(
-                id=employee_id_val
-            )
+        _exclude_self_from_manager_queryset(self, employee_id_val)
 
         self.fields["start_date"].widget.attrs.update(
             {
@@ -347,6 +380,10 @@ class LeaveRequestUpdationForm(BaseModelForm):
         context = {"form": self}
         table_html = render_to_string("horilla_form.html", context)
         return table_html
+
+    def clean(self):
+        cleaned_data = super().clean()
+        return _validate_covering_person_not_self(cleaned_data)
 
     class Meta:
         model = LeaveRequest
@@ -544,6 +581,10 @@ class UserLeaveRequestForm(BaseModelForm):
         table_html = render_to_string("horilla_form.html", context)
         return table_html
 
+    def clean(self):
+        cleaned_data = super().clean()
+        return _validate_covering_person_not_self(cleaned_data)
+
     class Meta:
         """
         Meta class for additional options
@@ -690,6 +731,16 @@ class UserLeaveRequestCreationForm(BaseModelForm):
                      self.fields["leave_type_id"].queryset = self.fields["leave_type_id"].queryset.filter(name__icontains="Annual Leave")
         except Exception:
             pass
+
+
+        if not employee and self.is_bound:
+            _exclude_self_from_manager_queryset(
+                self, self.data.get("employee_id")
+            )
+
+    def clean(self):
+        cleaned_data = super().clean()
+        return _validate_covering_person_not_self(cleaned_data)
 
     class Meta:
         """

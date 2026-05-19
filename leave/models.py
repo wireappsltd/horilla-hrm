@@ -1010,10 +1010,11 @@ class LeaveRequest(HorillaModel):
 
     def clean(self):
         cleaned_data = super().clean()
-        # Prevent selecting self as covering person
-        manager = getattr(self, "manager", None)
-        emp = getattr(self, "employee_id", None)
-        if manager and emp and manager.pk and emp.pk and manager.pk == emp.pk:
+        # Prevent selecting self as covering person. Compare by FK ids so the
+        # check works even if related instances aren't fully loaded.
+        manager_pk = getattr(self, "manager_id", None)
+        employee_pk = getattr(self, "employee_id_id", None)
+        if manager_pk and employee_pk and str(manager_pk) == str(employee_pk):
             raise ValidationError(
                 {"manager": _("You cannot select yourself as the covering person.")}
             )
