@@ -66,6 +66,33 @@ def get_intern_employee_type_id():
     return str(intern_id) if intern_id else ""
 
 
+def _resolve_is_intern(form):
+    """
+    Determine whether the form's currently selected (bound / initial / instance)
+    employee_type corresponds to an "Intern".
+    """
+    intern_id = get_intern_employee_type_id()
+    candidates = []
+    if form.is_bound:
+        candidates.append(form.data.get(form.add_prefix("employee_type_id")))
+    candidates.append(form.initial.get("employee_type_id"))
+    instance = getattr(form, "instance", None)
+    if instance is not None:
+        candidates.append(getattr(instance, "employee_type_id_id", None))
+    for value in candidates:
+        if value in (None, ""):
+            continue
+        if intern_id and str(value) == intern_id:
+            return True
+        try:
+            et_obj = EmployeeType.objects.filter(id=int(value)).first()
+            if et_obj and (et_obj.employee_type or "").strip().lower() == "intern":
+                return True
+        except (TypeError, ValueError):
+            continue
+    return False
+
+
 class ModelForm(forms.ModelForm):
     """
     Overriding django default model form to apply some styles
@@ -438,9 +465,17 @@ class EmployeeWorkInformationForm(ModelForm):
         intern_employee_type_id = get_intern_employee_type_id()
         self.fields["email"].widget.attrs["autocomplete"] = "email"
 
-        for required_field in ("email", "date_joining", "probation_end_date"):
+        is_intern = _resolve_is_intern(self)
+        for required_field in ("email", "date_joining"):
             if required_field in self.fields:
                 self.fields[required_field].required = True
+        if "probation_end_date" in self.fields:
+            # Probation end date is not applicable for interns.
+            self.fields["probation_end_date"].required = not is_intern
+        if "intern_period_end_date" in self.fields:
+            # Intern period end date is mandatory only for interns; this drives
+            # the `*` asterisk rendering in the template label.
+            self.fields["intern_period_end_date"].required = is_intern
 
         self.fields["job_position_id"].widget.attrs.update(
             {
@@ -526,17 +561,6 @@ class EmployeeWorkInformationForm(ModelForm):
                 "date_joining",
                 _("This field is required.")
             )
-        if not probation_period_end and not self.has_error("probation_end_date"):
-            self.add_error(
-                "probation_end_date",
-                _("This field is required.")
-            )
-        if date_joining and probation_period_end and probation_period_end < date_joining:
-            self.add_error(
-                "probation_end_date",
-                _("Probation end date cannot be earlier than date of joining.")
-            )
-
         # Intern Period End Date validation
         intern_end_date = self.cleaned_data.get("intern_period_end_date")
         employee_type_value = self.cleaned_data.get("employee_type_id")
@@ -553,7 +577,13 @@ class EmployeeWorkInformationForm(ModelForm):
                     is_intern = True
             except (TypeError, ValueError):
                 is_intern = False
+
         if is_intern:
+            # Probation end date is not applicable for interns; clear any value
+            # that may have been persisted previously so we don't keep stale data.
+            self.cleaned_data["probation_end_date"] = None
+            if "probation_end_date" in self.errors:
+                del self.errors["probation_end_date"]
             if not intern_end_date:
                 self.add_error(
                     "intern_period_end_date",
@@ -563,6 +593,17 @@ class EmployeeWorkInformationForm(ModelForm):
                 self.add_error(
                     "intern_period_end_date",
                     _("Intern period end date must be after the joining date.")
+                )
+        else:
+            if not probation_period_end and not self.has_error("probation_end_date"):
+                self.add_error(
+                    "probation_end_date",
+                    _("This field is required.")
+                )
+            if date_joining and probation_period_end and probation_period_end < date_joining:
+                self.add_error(
+                    "probation_end_date",
+                    _("Probation end date cannot be earlier than date of joining.")
                 )
 
         if not email and not self.has_error("email"):
@@ -625,9 +666,14 @@ class EmployeeWorkInformationUpdateForm(ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        for required_field in ("email", "date_joining", "probation_end_date"):
+        is_intern = _resolve_is_intern(self)
+        for required_field in ("email", "date_joining"):
             if required_field in self.fields:
                 self.fields[required_field].required = True
+        if "probation_end_date" in self.fields:
+            self.fields["probation_end_date"].required = not is_intern
+        if "intern_period_end_date" in self.fields:
+            self.fields["intern_period_end_date"].required = is_intern
 
         if "employee_type_id" in self.fields:
             self.fields["employee_type_id"].widget.attrs["data-intern-type-id"] = (
@@ -681,16 +727,6 @@ class EmployeeWorkInformationUpdateForm(ModelForm):
                 "date_joining",
                 _("This field is required.")
             )
-        if not probation_period_end and not self.has_error("probation_end_date"):
-            self.add_error(
-                "probation_end_date",
-                _("This field is required.")
-            )
-        if date_joining and probation_period_end and probation_period_end < date_joining:
-            self.add_error(
-                "probation_end_date",
-                _("Probation end date cannot be earlier than date of joining.")
-            )
 
         # Intern Period End Date validation
         intern_end_date = self.cleaned_data.get("intern_period_end_date")
@@ -708,7 +744,12 @@ class EmployeeWorkInformationUpdateForm(ModelForm):
                     is_intern = True
             except (TypeError, ValueError):
                 is_intern = False
+
         if is_intern:
+            # Probation end date is not applicable for interns.
+            self.cleaned_data["probation_end_date"] = None
+            if "probation_end_date" in self.errors:
+                del self.errors["probation_end_date"]
             if not intern_end_date:
                 self.add_error(
                     "intern_period_end_date",
@@ -718,6 +759,17 @@ class EmployeeWorkInformationUpdateForm(ModelForm):
                 self.add_error(
                     "intern_period_end_date",
                     _("Intern period end date must be after the joining date.")
+                )
+        else:
+            if not probation_period_end and not self.has_error("probation_end_date"):
+                self.add_error(
+                    "probation_end_date",
+                    _("This field is required.")
+                )
+            if date_joining and probation_period_end and probation_period_end < date_joining:
+                self.add_error(
+                    "probation_end_date",
+                    _("Probation end date cannot be earlier than date of joining.")
                 )
 
 
