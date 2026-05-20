@@ -245,7 +245,12 @@ class ResignationLetter(HorillaModel):
 
 class OffboardingTask(HorillaModel):
     """
-    OffboardingTask model
+    OffboardingTask model.
+
+    Stage targeting:
+    - stage_id set    -> applies only to that one stage (in-flow tasks).
+    - stage_title set -> applies to any stage whose title matches, in any flow.
+    - both null       -> applies to every stage.
     """
 
     title = models.CharField(max_length=100)
@@ -256,6 +261,12 @@ class OffboardingTask(HorillaModel):
         verbose_name="Stage",
         null=True,
         blank=True,
+    )
+    stage_title = models.CharField(
+        max_length=20,
+        null=True,
+        blank=True,
+        verbose_name="Stage Title",
     )
     is_fine = models.BooleanField(default=False)
 

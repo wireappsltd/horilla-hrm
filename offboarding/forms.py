@@ -203,11 +203,12 @@ class NoteForm(ModelForm):
 
 class TaskForm(ModelForm):
     """
-    TaskForm model form — only creates task, no employee assignment.
+    Common (cross-flow) offboarding task form.
 
-    On create, picking a stage title fans the task out to every flow that has
-    a stage with that title (one OffboardingTask row per matching stage). On
-    edit, the form updates only the single record the user opened.
+    Picking a stage title here stores it in `stage_title` and leaves
+    `stage_id` NULL — one row applies to every flow that has a stage with
+    that title (see `assign_task_to_stage_employees` and `add_employee`
+    for the matching logic).
     """
 
     verbose_name = "Offboarding Task"
@@ -231,8 +232,11 @@ class TaskForm(ModelForm):
         ] + [(t, t) for t in distinct_titles]
         self.fields["managers"].required = False
 
-        if self.instance.pk and self.instance.stage_id_id:
-            self.initial["stage_title"] = self.instance.stage_id.title
+        if self.instance.pk:
+            current = self.instance.stage_title or (
+                self.instance.stage_id.title if self.instance.stage_id_id else ""
+            )
+            self.initial["stage_title"] = current
 
     def as_p(self):
         """
@@ -242,43 +246,13 @@ class TaskForm(ModelForm):
         return render_to_string("common_form.html", context)
 
     def save(self, commit=True):
-        title = self.cleaned_data.get("title")
-        stage_title = self.cleaned_data.get("stage_title") or None
-        managers = self.cleaned_data.get("managers") or []
-
-        if self.instance.pk:
-            instance = self.instance
-            instance.title = title
-            if stage_title:
-                instance.stage_id = OffboardingStage.objects.filter(
-                    title=stage_title
-                ).first()
-            else:
-                instance.stage_id = None
-            if commit:
-                instance.save()
-                instance.managers.set(managers)
-            return instance
-
-        if not stage_title:
-            instance, _ = OffboardingTask.objects.get_or_create(
-                title=title, stage_id=None
-            )
-            instance.managers.set(managers)
-            self.instance = instance
-            return instance
-
-        first = None
-        for stage in OffboardingStage.objects.filter(title=stage_title):
-            obj, _ = OffboardingTask.objects.get_or_create(
-                title=title, stage_id=stage
-            )
-            obj.managers.set(managers)
-            if first is None:
-                first = obj
-        if first is not None:
-            self.instance = first
-        return self.instance
+        instance = super().save(commit=False)
+        instance.stage_id = None
+        instance.stage_title = self.cleaned_data.get("stage_title") or None
+        if commit:
+            instance.save()
+            self.save_m2m()
+        return instance
 
 class EmployeeTaskForm(ModelForm):
     """
