@@ -115,9 +115,11 @@
 {#                <span class="oh-timeoff-modal__stat-count">{{attendance_request.batch_attendance_id}}</span>#}
 {#            </div>#}
 {#        </div>#}
-{# Compensation Requested / Not Requested section intentionally removed from
-   the attendance request details view. The Mercantile Holiday — Compensation
-   Type section below already conveys the relevant compensation information. #}
+{% comment %}
+Compensation Requested / Not Requested section intentionally removed from
+the attendance request details view. The Mercantile Holiday — Compensation
+Type section below already conveys the relevant compensation information.
+{% endcomment %}
         <div class="oh-timeoff-modal__stats-container mt-3 mb-3">
             <div class="oh-timeoff-modal__stat" style="cursor: pointer;">
                 <span class="oh-timeoff-modal__stat-title">{% trans "Activities" %}</span>
