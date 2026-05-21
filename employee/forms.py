@@ -584,12 +584,12 @@ class EmployeeWorkInformationForm(ModelForm):
             self.cleaned_data["probation_end_date"] = None
             if "probation_end_date" in self.errors:
                 del self.errors["probation_end_date"]
-            if not intern_end_date:
+            if not intern_end_date and not self.has_error("intern_period_end_date"):
                 self.add_error(
                     "intern_period_end_date",
                     _("This field is required.")
                 )
-            elif date_joining and intern_end_date <= date_joining:
+            elif intern_end_date and date_joining and intern_end_date <= date_joining:
                 self.add_error(
                     "intern_period_end_date",
                     _("Intern period end date must be after the joining date.")
@@ -750,12 +750,12 @@ class EmployeeWorkInformationUpdateForm(ModelForm):
             self.cleaned_data["probation_end_date"] = None
             if "probation_end_date" in self.errors:
                 del self.errors["probation_end_date"]
-            if not intern_end_date:
+            if not intern_end_date and not self.has_error("intern_period_end_date"):
                 self.add_error(
                     "intern_period_end_date",
                     _("This field is required.")
                 )
-            elif date_joining and intern_end_date <= date_joining:
+            elif intern_end_date and date_joining and intern_end_date <= date_joining:
                 self.add_error(
                     "intern_period_end_date",
                     _("Intern period end date must be after the joining date.")
