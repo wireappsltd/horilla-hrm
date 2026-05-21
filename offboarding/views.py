@@ -442,7 +442,11 @@ def add_employee(request):
 
             from django.db.models import Q
             tasks_for_stage = OffboardingTask.objects.filter(
-                Q(stage_id=stage) | Q(stage_id__isnull=True),
+                Q(stage_id=stage)
+                | (
+                    Q(stage_id__isnull=True)
+                    & (Q(stage_title=stage.title) | Q(stage_title__isnull=True))
+                ),
                 is_active=True,
                 is_fine=False,
             )

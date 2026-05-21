@@ -47,7 +47,13 @@
 
                         <td class="align-middle">
                             <span class="badge px-2 py-1">
-                                {{ task.stage_id.title }}
+                                {% if task.stage_id %}
+                                    {{ task.stage_id.title }}
+                                {% elif task.stage_title %}
+                                    {{ task.stage_title }}
+                                {% else %}
+                                    {% trans "All Stages" %}
+                                {% endif %}
                             </span>
                         </td>
 
