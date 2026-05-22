@@ -41,6 +41,7 @@ openpyxl
 oscrypto
 pandas
 pdfkit
+weasyprint
 pillow
 pycparser
 pyHanko

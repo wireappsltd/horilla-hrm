@@ -625,7 +625,92 @@ def view_payslip_pdf(request, payslip_id):
             data["protocol"] = "https" if request.is_secure() else "http"
             data["company"] = company
 
-            return render(request, "payroll/payslip/payslip_pdf.html", context=data)
+            template_path = "payroll/payslip/payslip_pdf.html"
+            pdf_bytes = None
+
+            # Build a safe filename for the downloaded PDF
+            employee_name = (
+                getattr(payslip.employee_id, "get_full_name", lambda: "employee")()
+                or "employee"
+            )
+            safe_employee_name = "_".join(str(employee_name).split())
+            filename = (
+                f"Payslip_{safe_employee_name}_"
+                f"{start_date.strftime('%Y%m%d')}_"
+                f"{end_date.strftime('%Y%m%d')}.pdf"
+            )
+
+            # Primary engine: WeasyPrint. It honours modern CSS (the @media
+            # print rules and @page sizing in payslip_pdf.html) so the PDF
+            # layout matches the browser preview exactly.
+            try:
+                from weasyprint import HTML  # type: ignore
+
+                html_content = render_to_string(template_path, data)
+                base_url = f"{data['protocol']}://{data['host']}"
+                pdf_bytes = HTML(
+                    string=html_content, base_url=base_url
+                ).write_pdf()
+            except Exception as e:
+                logger.error(
+                    "WeasyPrint failed for payslip %s, falling back: %s",
+                    payslip_id,
+                    e,
+                )
+                pdf_bytes = None
+
+            # Fallback 1: pdfkit (wkhtmltopdf) if WeasyPrint is unavailable.
+            if not pdf_bytes:
+                pdf_bytes = generate_payslip_pdf(template_path, context=data)
+
+            if pdf_bytes:
+                response = HttpResponse(pdf_bytes, content_type="application/pdf")
+                response["Content-Disposition"] = (
+                    f'attachment; filename="{filename}"'
+                )
+                return response
+
+            # Fallback 2: pure-Python xhtml2pdf so the file still downloads
+            # as a PDF even when no system PDF engine is available.
+            try:
+                import io
+
+                from xhtml2pdf import pisa
+
+                from base.methods import link_callback
+
+                html_content = render_to_string(template_path, data)
+                result = io.BytesIO()
+                pisa_status = pisa.CreatePDF(
+                    html_content, dest=result, link_callback=link_callback
+                )
+                if not pisa_status.err:
+                    response = HttpResponse(
+                        result.getvalue(), content_type="application/pdf"
+                    )
+                    response["Content-Disposition"] = (
+                        f'attachment; filename="{filename}"'
+                    )
+                    return response
+            except Exception as e:
+                logger.error(
+                    "xhtml2pdf fallback failed for payslip %s: %s",
+                    payslip_id,
+                    e,
+                )
+
+            # Fallback 3: if every PDF engine fails, still force a download
+            # by serving the rendered HTML as an attachment rather than
+            # opening it inline in a new browser tab.
+            html_content = render_to_string(
+                "payroll/payslip/payslip_pdf.html", data
+            )
+            response = HttpResponse(html_content, content_type="text/html")
+            html_filename = filename.rsplit(".", 1)[0] + ".html"
+            response["Content-Disposition"] = (
+                f'attachment; filename="{html_filename}"'
+            )
+            return response
         return redirect(filter_payslip)
     return render(request, "405.html")
 
