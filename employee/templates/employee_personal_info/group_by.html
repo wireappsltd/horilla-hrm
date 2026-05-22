@@ -80,7 +80,6 @@
                       <div class="oh-sticky-table__th">{% trans "Shift" %}</div>
                       <div class="oh-sticky-table__th">{% trans "Work Type" %}</div>
                       <div class="oh-sticky-table__th">{% trans "Job Role" %}</div>
-                      <div class="oh-sticky-table__th" hx-target="#view-container" hx-get="{% url 'employee-filter-view' %}?{{pd}}&orderby=employee_work_info__reporting_manager_id">{% trans "Reporting Manager" %}</div>
                       <div class="oh-sticky-table__th">{% trans "Company" %}</div>
                       <div class="oh-sticky-table__th">{% trans "Work Email" %}</div>
                       <div class="oh-sticky-table__th" hx-target="#view-container" hx-get="{% url 'employee-filter-view' %}?{{pd}}&orderby=date_joining">{% trans "Date of Joining" %}</div>
@@ -161,12 +160,6 @@
                         style="color: inherit; text-decoration: none"
                         class="oh-sticky-table__td"
                         >{{emp.employee_work_info.job_role_id}}</a
-                      >
-                      <a
-                        href="{% url 'employee-view-individual' emp.id %}"
-                        style="color: inherit; text-decoration: none"
-                        class="oh-sticky-table__td"
-                        >{{emp.employee_work_info.reporting_manager_id}}</a
                       >
                       <a
                         href="{% url 'employee-view-individual' emp.id %}"
