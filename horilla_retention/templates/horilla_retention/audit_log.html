@@ -20,19 +20,25 @@
     <div class="oh-sticky-table__table">
         <div class="oh-sticky-table__thead">
             <div class="oh-sticky-table__tr">
-                <div class="oh-sticky-table__th">{% trans "Timestamp" %}</div>
+                <div class="oh-sticky-table__th">{% trans "When / Who" %}</div>
                 <div class="oh-sticky-table__th">{% trans "Event" %}</div>
-                <div class="oh-sticky-table__th">{% trans "Actor" %}</div>
-                <div class="oh-sticky-table__th retention-cell-emp">{% trans "Employee" %}</div>
-                <div class="oh-sticky-table__th">{% trans "Category" %}</div>
-                <div class="oh-sticky-table__th retention-cell-num">{% trans "Run" %}</div>
+                <div class="oh-sticky-table__th retention-cell-emp">{% trans "Context" %}</div>
                 <div class="oh-sticky-table__th retention-cell-wide">{% trans "Message" %}</div>
             </div>
         </div>
         <div class="oh-sticky-table__tbody">
             {% for e in entries %}
             <div class="oh-sticky-table__tr">
-                <div class="oh-sticky-table__td retention-mono">{{ e.timestamp|date:"Y-m-d H:i:s" }}</div>
+                <div class="oh-sticky-table__td">
+                    <div class="retention-mono">{{ e.timestamp|date:"Y-m-d H:i:s" }}</div>
+                    <div style="font-size:.75rem;color:#6b7280;margin-top:.15rem;">
+                        {% if e.actor %}
+                            <ion-icon name="person-circle-outline"></ion-icon> {{ e.actor }}
+                        {% else %}
+                            <ion-icon name="cog-outline"></ion-icon> {% trans "system" %}
+                        {% endif %}
+                    </div>
+                </div>
                 <div class="oh-sticky-table__td">
                     <span class="retention-pill
                         {% if 'error' in e.event %}retention-pill--failed
@@ -44,28 +50,30 @@
                         {{ e.get_event_display }}
                     </span>
                 </div>
-                <div class="oh-sticky-table__td">
-                    {% if e.actor %}
-                        <ion-icon name="person-circle-outline"></ion-icon> {{ e.actor }}
-                    {% else %}
-                        <span class="text-muted"><ion-icon name="cog-outline"></ion-icon> {% trans "system" %}</span>
-                    {% endif %}
-                </div>
                 <div class="oh-sticky-table__td retention-cell-emp">
                     {% if e.employee_id %}
                         <div class="retention-emp">
                             <span class="retention-emp__badge">{{ e.employee_id.badge_id }}</span>
                             <span class="retention-emp__name">{{ e.employee_id.get_full_name }}</span>
                         </div>
-                    {% else %}<span class="text-muted">—</span>{% endif %}
-                </div>
-                <div class="oh-sticky-table__td">
+                    {% endif %}
                     {% if e.category %}
-                        {% category_pill e.category e.get_category_display %}
-                    {% else %}<span class="text-muted">—</span>{% endif %}
+                        <div style="margin-top:.25rem;">
+                            {% category_pill e.category e.get_category_display %}
+                        </div>
+                    {% endif %}
+                    {% if e.run_id %}
+                        <div class="retention-mono" style="margin-top:.25rem;font-size:.7rem;color:#9ca3af;">
+                            {% trans "Run" %} #{{ e.run_id }}
+                        </div>
+                    {% endif %}
+                    {% if not e.employee_id and not e.category and not e.run_id %}
+                        <span class="text-muted">—</span>
+                    {% endif %}
                 </div>
-                <div class="oh-sticky-table__td retention-mono retention-cell-num">{% if e.run_id %}#{{ e.run_id }}{% else %}—{% endif %}</div>
-                <div class="oh-sticky-table__td retention-cell-wide" style="font-size:.85rem;">{{ e.message }}</div>
+                <div class="oh-sticky-table__td retention-cell-wide" style="font-size:.82rem;line-height:1.4;">
+                    {{ e.message }}
+                </div>
             </div>
             {% endfor %}
         </div>

@@ -28,9 +28,7 @@
                 <div class="oh-sticky-table__th retention-cell-emp">{% trans "Employee" %}</div>
                 <div class="oh-sticky-table__th">{% trans "Category" %}</div>
                 <div class="oh-sticky-table__th">{% trans "Status" %}</div>
-                <div class="oh-sticky-table__th">{% trans "Flagged" %}</div>
-                <div class="oh-sticky-table__th">{% trans "Auto-anonymize on" %}</div>
-                <div class="oh-sticky-table__th">{% trans "Deferred until" %}</div>
+                <div class="oh-sticky-table__th retention-cell-timeline">{% trans "Timeline" %}</div>
                 <div class="oh-sticky-table__th retention-cell-num">{% trans "Records" %}</div>
                 {% if can_approve %}
                     <div class="oh-sticky-table__th retention-cell-actions">{% trans "Actions" %}</div>
@@ -52,52 +50,70 @@
                 <div class="oh-sticky-table__td">
                     {% status_pill a.status a.get_status_display %}
                     {% if a.last_error %}
-                        <details style="margin-top:.35rem;">
-                            <summary style="cursor:pointer;color:#dc2626;font-size:.75rem;">{% trans "Error details" %}</summary>
-                            <div style="font-size:.75rem;color:#991b1b;margin-top:.25rem;max-width:18rem;">{{ a.last_error }}</div>
-                        </details>
+                        <div class="retention-error-snippet" title="{{ a.last_error }}">
+                            <ion-icon name="warning-outline"></ion-icon>
+                            <span>{{ a.last_error|truncatechars:60 }}</span>
+                        </div>
                     {% endif %}
                 </div>
-                <div class="oh-sticky-table__td retention-mono">{{ a.flagged_on|date:"Y-m-d" }}</div>
-                <div class="oh-sticky-table__td">
-                    {% if a.status == 'pending_review' and a.auto_anonymize_after <= today %}
-                        <span class="retention-mono retention-overdue">
-                            <ion-icon name="alert-circle"></ion-icon> {{ a.auto_anonymize_after|date:"Y-m-d" }}
-                        </span>
-                    {% else %}
-                        <span class="retention-mono">{{ a.auto_anonymize_after|date:"Y-m-d" }}</span>
-                    {% endif %}
+                <div class="oh-sticky-table__td retention-cell-timeline">
+                    <div class="retention-timeline">
+                        <div class="retention-timeline__row">
+                            <span class="retention-timeline__label">{% trans "Flagged" %}</span>
+                            <span class="retention-mono">{{ a.flagged_on|date:"Y-m-d" }}</span>
+                        </div>
+                        {% if a.status == 'deferred' and a.deferred_until %}
+                            <div class="retention-timeline__row">
+                                <span class="retention-timeline__label">{% trans "Deferred until" %}</span>
+                                <span class="retention-mono">{{ a.deferred_until|date:"Y-m-d" }}</span>
+                            </div>
+                        {% elif a.status == 'anonymized' or a.status == 'failed' or a.status == 'cancelled' %}
+                            <div class="retention-timeline__row">
+                                <span class="retention-timeline__label">{% trans "Actioned" %}</span>
+                                <span class="retention-mono">{{ a.actioned_on|date:"Y-m-d H:i"|default:"—" }}</span>
+                            </div>
+                        {% else %}
+                            <div class="retention-timeline__row">
+                                <span class="retention-timeline__label">{% trans "Auto-anonymize" %}</span>
+                                {% if a.auto_anonymize_after <= today %}
+                                    <span class="retention-mono retention-overdue">
+                                        <ion-icon name="alert-circle"></ion-icon>{{ a.auto_anonymize_after|date:"Y-m-d" }}
+                                    </span>
+                                {% else %}
+                                    <span class="retention-mono">{{ a.auto_anonymize_after|date:"Y-m-d" }}</span>
+                                {% endif %}
+                            </div>
+                        {% endif %}
+                    </div>
                 </div>
-                <div class="oh-sticky-table__td retention-mono">{{ a.deferred_until|date:"Y-m-d"|default:"—" }}</div>
                 <div class="oh-sticky-table__td retention-cell-num">{{ a.records_affected }}</div>
                 {% if can_approve %}
                 <div class="oh-sticky-table__td retention-cell-actions">
                     {% if a.status in pending_statuses %}
-                    <div class="retention-row-actions">
-                        <form method="post" action="{% url 'retention-action-approve' a.id %}"
-                              onsubmit="return confirm('{% trans "Anonymize records for this employee now? This is irreversible." %}');">
-                            {% csrf_token %}
-                            <button type="submit" class="oh-btn oh-btn--danger-outline oh-btn--light-bkg"
-                                    title="{% trans 'Anonymize now' %}">
-                                <ion-icon name="shield-checkmark-outline"></ion-icon>
-                            </button>
-                        </form>
-                        <a href="{% url 'retention-action-defer' a.id %}"
-                           class="oh-btn oh-btn--light-bkg" title="{% trans 'Defer' %}">
-                            <ion-icon name="time-outline"></ion-icon>
-                        </a>
-                        <form method="post" action="{% url 'retention-action-cancel' a.id %}"
-                              onsubmit="return confirm('{% trans "Cancel this action?" %}');">
-                            {% csrf_token %}
-                            <button type="submit" class="oh-btn oh-btn--light-bkg" title="{% trans 'Cancel' %}">
-                                <ion-icon name="close-outline"></ion-icon>
-                            </button>
-                        </form>
-                    </div>
+                        <div class="retention-row-actions">
+                            <form method="post" action="{% url 'retention-action-approve' a.id %}"
+                                  onsubmit="return confirm('{% trans "Anonymize records for this employee now? This is irreversible." %}');">
+                                {% csrf_token %}
+                                <button type="submit" class="oh-btn oh-btn--danger-outline oh-btn--light-bkg"
+                                        title="{% trans 'Anonymize now' %}">
+                                    <ion-icon name="shield-checkmark-outline"></ion-icon>
+                                </button>
+                            </form>
+                            <a href="{% url 'retention-action-defer' a.id %}"
+                               class="oh-btn oh-btn--light-bkg" title="{% trans 'Defer' %}">
+                                <ion-icon name="time-outline"></ion-icon>
+                            </a>
+                            <form method="post" action="{% url 'retention-action-cancel' a.id %}"
+                                  onsubmit="return confirm('{% trans "Cancel this action?" %}');">
+                                {% csrf_token %}
+                                <button type="submit" class="oh-btn oh-btn--light-bkg" title="{% trans 'Cancel' %}">
+                                    <ion-icon name="close-outline"></ion-icon>
+                                </button>
+                            </form>
+                        </div>
                     {% else %}
-                        <span class="text-muted" style="font-size:.8rem;">
-                            {% if a.actioned_on %}{{ a.actioned_on|date:"Y-m-d H:i" }}{% endif %}
-                            {% if a.actioned_by %}<br><small>by {{ a.actioned_by }}</small>{% endif %}
+                        <span class="text-muted" style="font-size:.75rem;white-space:nowrap;">
+                            {% if a.actioned_by %}by {{ a.actioned_by }}{% else %}—{% endif %}
                         </span>
                     {% endif %}
                 </div>

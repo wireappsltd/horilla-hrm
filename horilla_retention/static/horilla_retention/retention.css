@@ -112,6 +112,13 @@
     font-size: .9rem;
 }
 
+/* Category pill in tables should never blow out a column. */
+.retention-table .retention-pill--cat {
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 /* Filter tabs */
 .retention-filter-tabs {
     display: inline-flex;
@@ -326,7 +333,8 @@ select.retention-select:focus {
    --------------------------------------------------------------------------- */
 .retention-table.oh-sticky-table {
     max-height: none;
-    overflow: visible;
+    overflow-x: auto;
+    overflow-y: visible;
     border-radius: 8px;
     margin-top: .5rem;
 }
@@ -388,6 +396,128 @@ select.retention-select:focus {
 
 /* Employee cell — fixed minimum so badge + name don't crush */
 .retention-cell-emp { min-width: 180px; }
+
+/* Timeline cell — stacked label/value rows used in action list */
+.retention-cell-timeline { min-width: 220px; }
+.retention-timeline {
+    display: flex;
+    flex-direction: column;
+    gap: .15rem;
+    font-size: .8rem;
+}
+.retention-timeline__row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: .75rem;
+}
+.retention-timeline__label {
+    color: #6b7280;
+    font-size: .7rem;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    font-weight: 600;
+    flex-shrink: 0;
+}
+.retention-timeline .retention-mono {
+    white-space: nowrap;
+}
+
+/* Inline error snippet under status pill */
+.retention-error-snippet {
+    display: flex;
+    align-items: flex-start;
+    gap: .25rem;
+    margin-top: .4rem;
+    padding: .35rem .5rem;
+    background: #fef2f2;
+    border-left: 2px solid #dc2626;
+    border-radius: 0 4px 4px 0;
+    font-size: .72rem;
+    color: #991b1b;
+    line-height: 1.3;
+    max-width: 260px;
+}
+.retention-error-snippet ion-icon {
+    font-size: .85rem;
+    flex-shrink: 0;
+    margin-top: 1px;
+}
+.retention-error-snippet span {
+    word-break: break-word;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+/* Compact 2x2 count grid used in run log */
+.retention-cell-counts { min-width: 180px; }
+.retention-counts {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: .25rem .75rem;
+}
+.retention-counts__item {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.1;
+}
+.retention-counts__label {
+    font-size: .65rem;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+    color: #9ca3af;
+    font-weight: 600;
+}
+.retention-counts__value {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #374151;
+    font-variant-numeric: tabular-nums;
+}
+.retention-counts__value--good { color: #16a34a; }
+.retention-counts__value--bad  { color: #dc2626; }
+
+/* Expandable error details inside cells */
+.retention-error-snippet-details {
+    font-size: .75rem;
+}
+.retention-error-snippet-details summary {
+    cursor: pointer;
+    color: #dc2626;
+    font-weight: 500;
+    user-select: none;
+    list-style: none;
+    display: inline-flex;
+    align-items: center;
+    gap: .25rem;
+}
+.retention-error-snippet-details summary::before {
+    content: "▸";
+    font-size: .7rem;
+}
+.retention-error-snippet-details[open] summary::before { content: "▾"; }
+.retention-error-snippet-details pre {
+    white-space: pre-wrap;
+    background: #fef2f2;
+    border-left: 2px solid #dc2626;
+    padding: .5rem .65rem;
+    border-radius: 0 4px 4px 0;
+    font-size: .72rem;
+    color: #991b1b;
+    margin: .4rem 0 0;
+    max-width: 28rem;
+    max-height: 8rem;
+    overflow: auto;
+}
+
+/* Make row heights consistent regardless of cell content so mixed statuses
+   on the "All" filter don't produce a jagged or overlapping table. For
+   display:table-cell elements, `height` behaves as a min-height. */
+.retention-table .oh-sticky-table__td {
+    height: 64px;
+}
 
 /* Run-now bar — used on dashboard and run log */
 .retention-runbar {
