@@ -65,10 +65,18 @@ def _exclude_self_from_manager_queryset(form, employee_pk):
     """
     Remove the requesting employee from the ``manager`` (covering person)
     field's queryset so they cannot pick themselves from the dropdown.
+
+    Only applied to unbound forms (initial render). On bound submissions we
+    leave the queryset untouched so the cross-field ``clean()`` validator can
+    raise the friendly "You cannot select yourself as the covering person"
+    message instead of the generic ModelChoiceField "Select a valid choice"
+    error that would otherwise be triggered by the exclusion.
     """
     if not employee_pk:
         return
     if "manager" not in form.fields:
+        return
+    if getattr(form, "is_bound", False):
         return
     qs = form.fields["manager"].queryset
     if qs is None:
