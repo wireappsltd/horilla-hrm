@@ -1,0 +1,100 @@
+{% extends "settings.html" %}
+{% load static i18n retention_tags %}
+
+{% block settings %}
+<link rel="stylesheet" href="{% static 'horilla_retention/retention.css' %}">
+
+<div class="retention-page-header">
+    <div>
+        <h2><ion-icon name="document-text-outline" class="me-2"></ion-icon>{% trans "Retention Policies" %}</h2>
+        <p>{% trans "Defines how long records of each category are kept after an employee's last working date." %}</p>
+    </div>
+    {% if perms.horilla_retention.approve_retention_action %}
+        <a href="{% url 'retention-policy-create' %}" class="oh-btn oh-btn--primary">
+            <ion-icon name="add-outline" class="me-1"></ion-icon>{% trans "New policy" %}
+        </a>
+    {% endif %}
+</div>
+
+{% if policies %}
+<div class="oh-sticky-table retention-table">
+    <div class="oh-sticky-table__table">
+        <div class="oh-sticky-table__thead">
+            <div class="oh-sticky-table__tr">
+                <div class="oh-sticky-table__th">{% trans "Company" %}</div>
+                <div class="oh-sticky-table__th">{% trans "Category" %}</div>
+                <div class="oh-sticky-table__th retention-cell-num">{% trans "Retention" %}</div>
+                <div class="oh-sticky-table__th retention-cell-num">{% trans "Grace" %}</div>
+                <div class="oh-sticky-table__th retention-cell-num">{% trans "Enabled" %}</div>
+                <div class="oh-sticky-table__th retention-cell-wide">{% trans "Notes" %}</div>
+                {% if perms.horilla_retention.approve_retention_action %}
+                    <div class="oh-sticky-table__th retention-cell-actions">{% trans "Actions" %}</div>
+                {% endif %}
+            </div>
+        </div>
+        <div class="oh-sticky-table__tbody">
+            {% for p in policies %}
+            <div class="oh-sticky-table__tr">
+                <div class="oh-sticky-table__td">
+                    <strong>{{ p.company_id }}</strong>
+                </div>
+                <div class="oh-sticky-table__td">
+                    {% category_pill p.category p.get_category_display %}
+                </div>
+                <div class="oh-sticky-table__td retention-cell-num">
+                    <strong style="font-size:1rem;">{{ p.retention_years }}</strong>
+                    <span class="text-muted" style="font-size:.8rem;">{% trans "yrs" %}</span>
+                </div>
+                <div class="oh-sticky-table__td retention-cell-num">
+                    {{ p.grace_period_days }}
+                    <span class="text-muted" style="font-size:.8rem;">{% trans "days" %}</span>
+                </div>
+                <div class="oh-sticky-table__td retention-cell-num">
+                    {% if p.is_enabled %}
+                        <span class="retention-pill retention-pill--anonymized">
+                            <ion-icon name="checkmark-circle"></ion-icon>{% trans "Active" %}
+                        </span>
+                    {% else %}
+                        <span class="retention-pill retention-pill--cancelled">
+                            <ion-icon name="pause-circle-outline"></ion-icon>{% trans "Disabled" %}
+                        </span>
+                    {% endif %}
+                </div>
+                <div class="oh-sticky-table__td retention-cell-wide" style="color:#6b7280;font-size:.85rem;">
+                    {{ p.notes|default:"—" }}
+                </div>
+                {% if perms.horilla_retention.approve_retention_action %}
+                <div class="oh-sticky-table__td retention-cell-actions">
+                    <div class="retention-row-actions">
+                        <a href="{% url 'retention-policy-update' p.id %}"
+                           class="oh-btn oh-btn--light-bkg" title="{% trans 'Edit' %}">
+                            <ion-icon name="create-outline"></ion-icon>
+                        </a>
+                        <form method="post" action="{% url 'retention-policy-delete' p.id %}"
+                              onsubmit="return confirm('{% trans "Delete this policy? Existing flagged actions will be preserved." %}');">
+                            {% csrf_token %}
+                            <button type="submit" class="oh-btn oh-btn--danger-outline oh-btn--light-bkg" title="{% trans 'Delete' %}">
+                                <ion-icon name="trash-outline"></ion-icon>
+                            </button>
+                        </form>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="retention-empty">
+    <ion-icon name="document-text-outline"></ion-icon>
+    <h3>{% trans "No policies yet" %}</h3>
+    <p>{% trans "Retention policies define how long records of each category (general HR, attendance/leave, payroll, EPF/ETF/PAYE) are kept after an employee leaves. The engine remains inactive until at least one enabled policy exists per company." %}</p>
+    {% if perms.horilla_retention.approve_retention_action %}
+        <a href="{% url 'retention-policy-create' %}" class="oh-btn oh-btn--primary">
+            <ion-icon name="add-outline" class="me-1"></ion-icon>{% trans "Create your first policy" %}
+        </a>
+    {% endif %}
+</div>
+{% endif %}
+{% endblock settings %}
