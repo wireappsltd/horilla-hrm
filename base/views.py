@@ -690,7 +690,9 @@ def include_employee_instance(request, form):
 
 
 def reset_send_success(request):
-    return render(request, "reset_send.html")
+    company = Company.objects.filter(hq=True).last() or Company.objects.first()
+    company_name = company.company if company else "Horilla"
+    return render(request, "reset_send.html", {"company_name": company_name})
 
 
 class HorillaPasswordResetView(PasswordResetView):
