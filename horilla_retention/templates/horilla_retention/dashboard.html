@@ -1,0 +1,139 @@
+{% extends "settings.html" %}
+{% load static i18n %}
+
+{% block settings %}
+<link rel="stylesheet" href="{% static 'horilla_retention/retention.css' %}">
+
+<div class="retention-page-header">
+    <div>
+        <h2><ion-icon name="shield-checkmark-outline" class="me-2"></ion-icon>{% trans "Data Retention Overview" %}</h2>
+        <p>{% trans "Configurable retention periods and automated anonymization." %}</p>
+    </div>
+    <div class="d-flex gap-2">
+        {% if can_approve %}
+            <a href="{% url 'retention-policies' %}" class="oh-btn oh-btn--light-bkg">
+                <ion-icon name="document-text-outline" class="me-1"></ion-icon>{% trans "Manage policies" %}
+            </a>
+        {% endif %}
+        <a href="{% url 'retention-actions' %}" class="oh-btn oh-btn--light-bkg">
+            <ion-icon name="list-outline" class="me-1"></ion-icon>{% trans "Pending actions" %}
+        </a>
+    </div>
+</div>
+
+{% if policy_count == 0 %}
+<div class="oh-alert oh-alert--warning mb-4" style="display:flex;align-items:flex-start;gap:.85rem;">
+    <ion-icon name="warning-outline" style="font-size:1.5rem;flex-shrink:0;margin-top:2px;"></ion-icon>
+    <div>
+        <strong>{% trans "No retention policies are configured." %}</strong><br>
+        <span class="text-muted">{% trans "The engine will stay dormant until at least one enabled policy exists per company." %}</span>
+        {% if can_approve %}
+            <div class="mt-2">
+                <a href="{% url 'retention-policy-create' %}" class="oh-btn oh-btn--primary oh-btn--small">
+                    + {% trans "Create your first policy" %}
+                </a>
+            </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+<div class="retention-stat-grid">
+    <div class="retention-stat retention-stat--info">
+        <ion-icon name="document-text-outline" class="retention-stat__icon"></ion-icon>
+        <span class="retention-stat__title">{% trans "Enabled policies" %}</span>
+        <span class="retention-stat__count">{{ policy_count }}</span>
+        <span class="retention-stat__sub">{% trans "across all companies" %}</span>
+    </div>
+
+    <div class="retention-stat retention-stat--warning">
+        <ion-icon name="hourglass-outline" class="retention-stat__icon"></ion-icon>
+        <span class="retention-stat__title">{% trans "Pending review" %}</span>
+        <span class="retention-stat__count">{{ pending_count }}</span>
+        {% if overdue_count %}
+            <span class="retention-pill retention-pill--failed" style="align-self:flex-start;">
+                <ion-icon name="alert-circle-outline"></ion-icon>{{ overdue_count }} {% trans "overdue" %}
+            </span>
+        {% else %}
+            <span class="retention-stat__sub">{% trans "awaiting admin action" %}</span>
+        {% endif %}
+    </div>
+
+    <div class="retention-stat retention-stat--danger">
+        <ion-icon name="alert-circle-outline" class="retention-stat__icon"></ion-icon>
+        <span class="retention-stat__title">{% trans "Failed actions" %}</span>
+        <span class="retention-stat__count">{{ failed_count }}</span>
+        <span class="retention-stat__sub">
+            {% if failed_count %}
+                <a href="{% url 'retention-actions' %}?status=failed">{% trans "Investigate" %} →</a>
+            {% else %}
+                {% trans "no failures" %}
+            {% endif %}
+        </span>
+    </div>
+
+    <div class="retention-stat retention-stat--success">
+        <ion-icon name="time-outline" class="retention-stat__icon"></ion-icon>
+        <span class="retention-stat__title">{% trans "Last engine run" %}</span>
+        {% if last_run %}
+            <span class="retention-stat__count" style="font-size:1.1rem;">{{ last_run.started_at|date:"M j, Y" }}</span>
+            <span class="retention-stat__sub">{{ last_run.started_at|date:"H:i" }} —
+                {% if last_run.outcome == 'success' %}
+                    <span class="retention-pill retention-pill--anonymized">{% trans "Success" %}</span>
+                {% elif last_run.outcome == 'partial' %}
+                    <span class="retention-pill retention-pill--deferred">{% trans "Partial" %}</span>
+                {% elif last_run.outcome == 'failed' %}
+                    <span class="retention-pill retention-pill--failed">{% trans "Failed" %}</span>
+                {% else %}
+                    —
+                {% endif %}
+            </span>
+        {% else %}
+            <span class="retention-stat__count" style="font-size:1.1rem;color:#9ca3af;">{% trans "Never" %}</span>
+            <span class="retention-stat__sub">{% trans "scheduled daily at 02:00" %}</span>
+        {% endif %}
+    </div>
+</div>
+
+{% if last_run %}
+<div class="retention-detail-card">
+    <h3 style="margin:0 0 1rem;font-size:.95rem;color:#374151;">
+        <ion-icon name="analytics-outline" class="me-1"></ion-icon>{% trans "Last run breakdown" %}
+        <span class="text-muted" style="font-weight:400;font-size:.825rem;margin-left:.5rem;">
+            #{{ last_run.id }} · {{ last_run.started_at|date:"Y-m-d H:i" }}
+        </span>
+    </h3>
+    <dl>
+        <dt>{% trans "Employees scanned" %}</dt><dd>{{ last_run.employees_scanned }}</dd>
+        <dt>{% trans "Records flagged" %}</dt><dd>{{ last_run.actions_flagged }}</dd>
+        <dt>{% trans "Records anonymized" %}</dt><dd>{{ last_run.actions_anonymized }}</dd>
+        <dt>{% trans "Failures" %}</dt><dd>{{ last_run.actions_failed }}</dd>
+        <dt>{% trans "Triggered by" %}</dt><dd>{{ last_run.triggered_by|default:"system" }}{% if last_run.is_dry_run %} <span class="retention-pill retention-pill--deferred">{% trans "dry run" %}</span>{% endif %}</dd>
+    </dl>
+    {% if last_run.error_summary %}
+        <details class="mt-3">
+            <summary style="cursor:pointer;color:#dc2626;font-weight:500;">
+                <ion-icon name="bug-outline"></ion-icon> {% trans "View error details" %}
+            </summary>
+            <pre style="white-space:pre-wrap;background:#fee2e2;padding:.75rem;border-radius:6px;font-size:.8rem;margin-top:.5rem;">{{ last_run.error_summary }}</pre>
+        </details>
+    {% endif %}
+</div>
+{% endif %}
+
+{% if can_run %}
+<div class="retention-runbar">
+    <div class="retention-runbar__text">
+        <strong>{% trans "Run the engine manually" %}</strong><br>
+        {% trans "Useful for audit evidence or testing a new policy. The daily scheduled run executes at 02:00." %}
+    </div>
+  <form method="post" action="{% url 'retention-trigger-run' %}" class="d-flex align-items-center gap-2">
+    {% csrf_token %}
+    <label class="mb-0"><input type="checkbox" name="dry_run"> {% trans "Dry run" %}</label>
+    <button type="submit" class="oh-btn oh-btn--primary">
+        <ion-icon name="play-outline" class="me-1"></ion-icon>{% trans "Run now" %}
+    </button>
+</form>
+</div>
+{% endif %}
+{% endblock settings %}
