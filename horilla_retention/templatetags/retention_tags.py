@@ -13,6 +13,15 @@ _CATEGORY_ICONS = {
     "tax_epf_etf": "receipt-outline",
 }
 
+# Short labels for table pills. The full descriptive labels in constants.py
+# are great for dropdowns / config screens but blow out table column widths.
+_CATEGORY_SHORT = {
+    "general_hr": "General HR",
+    "attendance_leave": "Attendance",
+    "payroll": "Payroll",
+    "tax_epf_etf": "Tax / EPF",
+}
+
 _STATUS_CLASS = {
     "pending_review": "pending",
     "deferred": "deferred",
@@ -30,11 +39,16 @@ _OUTCOME_CLASS = {
 
 @register.simple_tag
 def category_pill(category, label):
-    """Render a category pill with an icon."""
+    """Render a compact category pill with an icon.
+
+    Uses a short label optimised for table cells; the verbose `label`
+    arg is exposed via the title attribute for hover/accessibility.
+    """
     icon = _CATEGORY_ICONS.get(category, "ellipse-outline")
+    short = _CATEGORY_SHORT.get(category, label)
     return mark_safe(
-        f'<span class="retention-pill retention-pill--cat">'
-        f'<ion-icon name="{icon}"></ion-icon>{label}</span>'
+        f'<span class="retention-pill retention-pill--cat" title="{label}">'
+        f'<ion-icon name="{icon}"></ion-icon>{short}</span>'
     )
 
 
