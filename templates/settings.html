@@ -604,6 +604,44 @@
 							<hr>
 						{% endif %}
 
+						{% if perms.horilla_retention.view_retention_dashboard %}
+						<li class="oh-inner-sidebar__item">
+							<div class="oh-accordion ms-2">
+								<div class="oh-accordion-header" style="font-size:16px;">
+									<ion-icon name="shield-checkmark-outline" class="me-2"></ion-icon>
+									{% trans "Data Retention" %}
+								</div>
+								<div class="oh-accordion-body">
+									<div class="row">
+										<div class="col-sm-12 col-md-12 col-lg-12">
+											<div class="oh-input-group">
+												<a id="retentionDashboard" href="{% url 'retention-dashboard' %}"
+													class="oh-inner-sidebar__link oh-dropdown__link">{% trans "Overview" %}</a>
+											</div>
+											<div class="oh-input-group">
+												<a id="retentionPolicies" href="{% url 'retention-policies' %}"
+													class="oh-inner-sidebar__link oh-dropdown__link">{% trans "Retention Policies" %}</a>
+											</div>
+											<div class="oh-input-group">
+												<a id="retentionActions" href="{% url 'retention-actions' %}"
+													class="oh-inner-sidebar__link oh-dropdown__link">{% trans "Pending Actions" %}</a>
+											</div>
+											<div class="oh-input-group">
+												<a id="retentionRunLog" href="{% url 'retention-run-log' %}"
+													class="oh-inner-sidebar__link oh-dropdown__link">{% trans "Engine Run Log" %}</a>
+											</div>
+											<div class="oh-input-group">
+												<a id="retentionAuditLog" href="{% url 'retention-audit-log' %}"
+													class="oh-inner-sidebar__link oh-dropdown__link">{% trans "Audit Trail" %}</a>
+											</div>
+										</div>
+									</div>
+								</div>
+							</div>
+						</li>
+						<hr>
+						{% endif %}
+
 					</ul>
 				</div>
 			</div>
