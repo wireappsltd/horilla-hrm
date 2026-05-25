@@ -1,0 +1,77 @@
+{% extends "settings.html" %}
+{% load static i18n %}
+
+{% block settings %}
+<link rel="stylesheet" href="{% static 'horilla_retention/retention.css' %}">
+
+<div class="retention-page-header">
+    <div>
+        <h2>
+            <a href="{% url 'retention-policies' %}" class="text-muted me-2" style="text-decoration:none;">
+                <ion-icon name="chevron-back-outline"></ion-icon>
+            </a>
+            {{ title }}
+        </h2>
+        <p>{% trans "Set how long records of a given category are kept after an employee's last working date, and how many days of grace before auto-anonymization." %}</p>
+    </div>
+</div>
+
+<form method="post">
+    {% csrf_token %}
+    <div class="oh-card-dashboard p-4">
+        <div class="retention-form-grid">
+            <div class="full">
+                <label for="{{ form.company_id.id_for_label }}">{{ form.company_id.label }}</label>
+                {{ form.company_id }}
+                {% if form.company_id.errors %}{{ form.company_id.errors }}{% endif %}
+                <div class="help-text">{% trans "Policies are scoped per company so each entity can satisfy its own legal regime." %}</div>
+            </div>
+
+            <div class="full">
+                <label for="{{ form.category.id_for_label }}">{{ form.category.label }}</label>
+                {{ form.category }}
+                {% if form.category.errors %}{{ form.category.errors }}{% endif %}
+                <div class="help-text">
+                    <strong>{% trans "Sri Lanka guidance:" %}</strong>
+                    {% trans "General HR / Payroll: 3 yrs · EPF/ETF: 5–6 yrs · PAYE: 5 yrs." %}
+                </div>
+            </div>
+
+            <div>
+                <label for="{{ form.retention_years.id_for_label }}">{{ form.retention_years.label }}</label>
+                {{ form.retention_years }}
+                {% if form.retention_years.errors %}{{ form.retention_years.errors }}{% endif %}
+                <div class="help-text">{% trans "Counted from the employee's last working date." %}</div>
+            </div>
+
+            <div>
+                <label for="{{ form.grace_period_days.id_for_label }}">{{ form.grace_period_days.label }}</label>
+                {{ form.grace_period_days }}
+                {% if form.grace_period_days.errors %}{{ form.grace_period_days.errors }}{% endif %}
+                <div class="help-text">{% trans "Days between flagging and auto-anonymization." %}</div>
+            </div>
+
+            <div class="full">
+                <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;">
+                    {{ form.is_enabled }}
+                    <span>{{ form.is_enabled.label }}</span>
+                </label>
+                <div class="help-text">{% trans "Disabled policies are ignored by the engine but kept for audit history." %}</div>
+            </div>
+
+            <div class="full">
+                <label for="{{ form.notes.id_for_label }}">{{ form.notes.label }}</label>
+                {{ form.notes }}
+                <div class="help-text">{% trans "Optional legal basis or audit reference (e.g., 'EPF Act §5 — 6-year retention')." %}</div>
+            </div>
+        </div>
+
+        <div class="retention-actions-row">
+            <a href="{% url 'retention-policies' %}" class="oh-btn oh-btn--light-bkg">{% trans "Cancel" %}</a>
+            <button type="submit" class="oh-btn oh-btn--primary">
+                <ion-icon name="save-outline" class="me-1"></ion-icon>{% trans "Save policy" %}
+            </button>
+        </div>
+    </div>
+</form>
+{% endblock settings %}
