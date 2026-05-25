@@ -4192,12 +4192,15 @@ def employee_available_leave_count(request):
         #                 = balance_leaves() + pending_leaves()
         # The pending subtraction below leaves balance_leaves() — same
         # number as the stats tab.
-        total_leave_days = (
-            (leave_type.total_days or 0)
-            + available_leave.carryforward_days
-            + available_leave.used_carryforward_days()
-            - available_leave.leave_taken()
-        )
+        if getattr(leave_type, "is_compensatory_leave", False):
+            total_leave_days = (available_leave.available_days or 0)
+        else:
+            total_leave_days = (
+                (leave_type.total_days or 0)
+                + available_leave.carryforward_days
+                + available_leave.used_carryforward_days()
+                - available_leave.leave_taken()
+            )
 
         if leave_type:
             require_attachment = leave_type.require_attachment == "yes"
