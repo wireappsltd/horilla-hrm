@@ -2,14 +2,14 @@
 {% load static i18n retention_tags %}
 
 {% block settings %}
-<link rel="stylesheet" href="{% static 'horilla_retention/retention.css' %}">
+<link rel="stylesheet" href="{% static 'horilla_retention/retention.css' %}?v=20260526">
 
 <div class="retention-page-header">
     <div>
         <h2><ion-icon name="document-text-outline" class="me-2"></ion-icon>{% trans "Retention Policies" %}</h2>
         <p>{% trans "Defines how long records of each category are kept after an employee's last working date." %}</p>
     </div>
-    {% if perms.horilla_retention.approve_retention_action %}
+    {% if perms.horilla_retention.approve_retention_action and policies %}
         <a href="{% url 'retention-policy-create' %}" class="oh-btn oh-btn--primary">
             <ion-icon name="add-outline" class="me-1"></ion-icon>{% trans "New policy" %}
         </a>
