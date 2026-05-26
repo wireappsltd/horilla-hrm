@@ -9,7 +9,7 @@
         <h2><ion-icon name="document-text-outline" class="me-2"></ion-icon>{% trans "Retention Policies" %}</h2>
         <p>{% trans "Defines how long records of each category are kept after an employee's last working date." %}</p>
     </div>
-    {% if perms.horilla_retention.approve_retention_action %}
+    {% if perms.horilla_retention.approve_retention_action and policies %}
         <a href="{% url 'retention-policy-create' %}" class="oh-btn oh-btn--primary">
             <ion-icon name="add-outline" class="me-1"></ion-icon>{% trans "New policy" %}
         </a>
