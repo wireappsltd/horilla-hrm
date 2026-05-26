@@ -167,6 +167,125 @@
     margin: 0 auto 1rem;
 }
 
+/* ---------------------------------------------------------------------------
+   Onboarding-style hero fallbacks — used on every retention page when there
+   is no data yet. Replaces the flat "small icon + text" empty look so QA on
+   a fresh environment sees a guided first-run view instead of zero-filled
+   widgets.
+   --------------------------------------------------------------------------- */
+.retention-hero {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 3rem 2rem;
+    text-align: center;
+    margin: 1rem 0 1.5rem;
+    box-shadow: 0 1px 2px rgba(0,0,0,.03);
+}
+.retention-hero__badge {
+    width: 88px;
+    height: 88px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #fff7ed 0%, #fed7aa 100%);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 1.25rem;
+    box-shadow: inset 0 -2px 6px rgba(234, 88, 12, .12);
+}
+.retention-hero__badge ion-icon {
+    font-size: 2.75rem;
+    color: #ea580c;
+}
+.retention-hero__badge--info {
+    background: linear-gradient(135deg, #eff6ff 0%, #bfdbfe 100%);
+    box-shadow: inset 0 -2px 6px rgba(37, 99, 235, .12);
+}
+.retention-hero__badge--info ion-icon { color: #2563eb; }
+.retention-hero__badge--neutral {
+    background: linear-gradient(135deg, #f9fafb 0%, #e5e7eb 100%);
+    box-shadow: inset 0 -2px 6px rgba(75, 85, 99, .10);
+}
+.retention-hero__badge--neutral ion-icon { color: #4b5563; }
+.retention-hero__badge--success {
+    background: linear-gradient(135deg, #f0fdf4 0%, #bbf7d0 100%);
+    box-shadow: inset 0 -2px 6px rgba(22, 163, 74, .12);
+}
+.retention-hero__badge--success ion-icon { color: #16a34a; }
+
+.retention-hero h3 {
+    font-size: 1.35rem;
+    font-weight: 600;
+    color: #111827;
+    margin: 0 0 .5rem;
+}
+.retention-hero__lead {
+    font-size: .925rem;
+    color: #4b5563;
+    max-width: 44rem;
+    margin: 0 auto 1.5rem;
+    line-height: 1.6;
+}
+.retention-hero__actions {
+    display: flex;
+    justify-content: center;
+    gap: .75rem;
+    flex-wrap: wrap;
+    margin-bottom: .5rem;
+}
+.retention-hero__hint {
+    font-size: .825rem;
+    color: #6b7280;
+    margin-top: .75rem;
+}
+.retention-hero__hint ion-icon { vertical-align: -2px; margin-right: .15rem; }
+
+/* Three-step onboarding cards under the hero (dashboard only) */
+.retention-hero__steps {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 1rem;
+    max-width: 880px;
+    margin: 2rem auto 0;
+    text-align: left;
+}
+.retention-hero__step {
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    padding: 1rem 1.1rem;
+    display: flex;
+    gap: .85rem;
+    align-items: flex-start;
+}
+.retention-hero__step-num {
+    flex-shrink: 0;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: #fff7ed;
+    color: #ea580c;
+    font-weight: 700;
+    font-size: .9rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid #fed7aa;
+}
+.retention-hero__step-body {
+    line-height: 1.4;
+}
+.retention-hero__step-body strong {
+    font-size: .9rem;
+    color: #111827;
+    display: block;
+    margin-bottom: .2rem;
+}
+.retention-hero__step-body span {
+    font-size: .82rem;
+    color: #6b7280;
+}
+
 /* Employee cell in tables */
 .retention-emp {
     display: flex;
