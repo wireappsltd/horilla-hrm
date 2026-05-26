@@ -106,10 +106,35 @@
     </div>
 </div>
 {% else %}
-<div class="retention-empty">
-    <ion-icon name="time-outline"></ion-icon>
-    <h3>{% trans "No runs recorded yet" %}</h3>
-    <p>{% trans "The engine runs automatically at 02:00 each day. You can also trigger a run manually above." %}</p>
+<div class="retention-hero">
+    <div class="retention-hero__badge">
+        <ion-icon name="time-outline"></ion-icon>
+    </div>
+    <h3>{% trans "No engine runs yet" %}</h3>
+    <p class="retention-hero__lead">
+        {% trans "The retention engine runs automatically every day at 02:00 server time. Each run scans all employees against your active policies, creates a log entry here, and flags eligible records for review. You can also trigger a run on demand — use dry-run mode to preview what would change without writing anything." %}
+    </p>
+    {% if can_run %}
+        <div class="retention-hero__actions">
+            <form method="post" action="{% url 'retention-trigger-run' %}" style="display:inline;">
+                {% csrf_token %}
+                <input type="hidden" name="dry_run" value="on">
+                <button type="submit" class="oh-btn oh-btn--light-bkg">
+                    <ion-icon name="eye-outline" class="me-1"></ion-icon>{% trans "Dry run" %}
+                </button>
+            </form>
+            <form method="post" action="{% url 'retention-trigger-run' %}" style="display:inline;">
+                {% csrf_token %}
+                <button type="submit" class="oh-btn oh-btn--primary">
+                    <ion-icon name="play-outline" class="me-1"></ion-icon>{% trans "Run engine now" %}
+                </button>
+            </form>
+        </div>
+    {% endif %}
+    <p class="retention-hero__hint">
+        <ion-icon name="information-circle-outline"></ion-icon>
+        {% trans "Runs are recorded permanently for audit evidence — they cannot be deleted." %}
+    </p>
 </div>
 {% endif %}
 {% endblock settings %}
