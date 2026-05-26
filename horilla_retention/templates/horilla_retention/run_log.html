@@ -11,7 +11,7 @@
     </div>
 </div>
 
-{% if can_run %}
+{% if can_run and runs %}
 <div class="retention-runbar">
     <div class="retention-runbar__text">
         <strong>{% trans "Trigger a run" %}</strong> — {% trans "use dry run mode to preview what would change without writing." %}
