@@ -1,0 +1,141 @@
+{% extends "settings.html" %}
+{% load static i18n retention_tags %}
+
+{% block settings %}
+<link rel="stylesheet" href="{% static 'horilla_retention/retention.css' %}">
+
+<div class="retention-page-header">
+    <div>
+        <h2><ion-icon name="list-outline" class="me-2"></ion-icon>{% trans "Pending Retention Actions" %}</h2>
+        <p>{% trans "Records flagged by the engine. Review and either approve immediate anonymization, defer with a reason, or cancel the action." %}</p>
+    </div>
+</div>
+
+<div class="retention-filter-tabs">
+    <a href="?status=pending_review" class="{% if status == 'pending_review' %}active{% endif %}">{% trans "Pending" %}</a>
+    <a href="?status=deferred" class="{% if status == 'deferred' %}active{% endif %}">{% trans "Deferred" %}</a>
+    <a href="?status=anonymized" class="{% if status == 'anonymized' %}active{% endif %}">{% trans "Anonymized" %}</a>
+    <a href="?status=failed" class="{% if status == 'failed' %}active{% endif %}">{% trans "Failed" %}</a>
+    <a href="?status=cancelled" class="{% if status == 'cancelled' %}active{% endif %}">{% trans "Cancelled" %}</a>
+    <a href="?status=all" class="{% if status == 'all' %}active{% endif %}">{% trans "All" %}</a>
+</div>
+
+{% if actions %}
+<div class="oh-sticky-table retention-table">
+    <div class="oh-sticky-table__table">
+        <div class="oh-sticky-table__thead">
+            <div class="oh-sticky-table__tr">
+                <div class="oh-sticky-table__th retention-cell-emp">{% trans "Employee" %}</div>
+                <div class="oh-sticky-table__th">{% trans "Category" %}</div>
+                <div class="oh-sticky-table__th">{% trans "Status" %}</div>
+                <div class="oh-sticky-table__th retention-cell-timeline">{% trans "Timeline" %}</div>
+                <div class="oh-sticky-table__th retention-cell-num">{% trans "Records" %}</div>
+                {% if can_approve %}
+                    <div class="oh-sticky-table__th retention-cell-actions">{% trans "Actions" %}</div>
+                {% endif %}
+            </div>
+        </div>
+        <div class="oh-sticky-table__tbody">
+            {% for a in actions %}
+            <div class="oh-sticky-table__tr">
+                <div class="oh-sticky-table__td retention-cell-emp">
+                    <div class="retention-emp">
+                        <span class="retention-emp__badge">{{ a.employee_id.badge_id }}</span>
+                        <span class="retention-emp__name">{{ a.employee_id.get_full_name }}</span>
+                    </div>
+                </div>
+                <div class="oh-sticky-table__td">
+                    {% category_pill a.category a.get_category_display %}
+                </div>
+                <div class="oh-sticky-table__td">
+                    {% status_pill a.status a.get_status_display %}
+                    {% if a.last_error %}
+                        <div class="retention-error-snippet" title="{{ a.last_error }}">
+                            <ion-icon name="warning-outline"></ion-icon>
+                            <span>{{ a.last_error|truncatechars:60 }}</span>
+                        </div>
+                    {% endif %}
+                </div>
+                <div class="oh-sticky-table__td retention-cell-timeline">
+                    <div class="retention-timeline">
+                        <div class="retention-timeline__row">
+                            <span class="retention-timeline__label">{% trans "Flagged" %}</span>
+                            <span class="retention-mono">{{ a.flagged_on|date:"Y-m-d" }}</span>
+                        </div>
+                        {% if a.status == 'deferred' and a.deferred_until %}
+                            <div class="retention-timeline__row">
+                                <span class="retention-timeline__label">{% trans "Deferred until" %}</span>
+                                <span class="retention-mono">{{ a.deferred_until|date:"Y-m-d" }}</span>
+                            </div>
+                        {% elif a.status == 'anonymized' or a.status == 'failed' or a.status == 'cancelled' %}
+                            <div class="retention-timeline__row">
+                                <span class="retention-timeline__label">{% trans "Actioned" %}</span>
+                                <span class="retention-mono">{{ a.actioned_on|date:"Y-m-d H:i"|default:"—" }}</span>
+                            </div>
+                        {% else %}
+                            <div class="retention-timeline__row">
+                                <span class="retention-timeline__label">{% trans "Auto-anonymize" %}</span>
+                                {% if a.auto_anonymize_after <= today %}
+                                    <span class="retention-mono retention-overdue">
+                                        <ion-icon name="alert-circle"></ion-icon>{{ a.auto_anonymize_after|date:"Y-m-d" }}
+                                    </span>
+                                {% else %}
+                                    <span class="retention-mono">{{ a.auto_anonymize_after|date:"Y-m-d" }}</span>
+                                {% endif %}
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="oh-sticky-table__td retention-cell-num">{{ a.records_affected }}</div>
+                {% if can_approve %}
+                <div class="oh-sticky-table__td retention-cell-actions">
+                    {% if a.status in pending_statuses %}
+                        <div class="retention-row-actions">
+                            <form method="post" action="{% url 'retention-action-approve' a.id %}"
+                                  onsubmit="return confirm('{% trans "Anonymize records for this employee now? This is irreversible." %}');">
+                                {% csrf_token %}
+                                <button type="submit" class="oh-btn oh-btn--danger-outline oh-btn--light-bkg"
+                                        title="{% trans 'Anonymize now' %}">
+                                    <ion-icon name="shield-checkmark-outline"></ion-icon>
+                                </button>
+                            </form>
+                            <a href="{% url 'retention-action-defer' a.id %}"
+                               class="oh-btn oh-btn--light-bkg" title="{% trans 'Defer' %}">
+                                <ion-icon name="time-outline"></ion-icon>
+                            </a>
+                            <form method="post" action="{% url 'retention-action-cancel' a.id %}"
+                                  onsubmit="return confirm('{% trans "Cancel this action?" %}');">
+                                {% csrf_token %}
+                                <button type="submit" class="oh-btn oh-btn--light-bkg" title="{% trans 'Cancel' %}">
+                                    <ion-icon name="close-outline"></ion-icon>
+                                </button>
+                            </form>
+                        </div>
+                    {% else %}
+                        <span class="text-muted" style="font-size:.75rem;white-space:nowrap;">
+                            {% if a.actioned_by %}by {{ a.actioned_by }}{% else %}—{% endif %}
+                        </span>
+                    {% endif %}
+                </div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="retention-empty">
+    <ion-icon name="checkmark-done-outline"></ion-icon>
+    <h3>{% trans "Nothing here" %}</h3>
+    <p>
+        {% if status == 'pending_review' %}
+            {% trans "No records are awaiting review. The engine will flag eligible records on its next daily run." %}
+        {% elif status == 'failed' %}
+            {% trans "No failed actions — the engine is healthy." %}
+        {% else %}
+            {% trans "No actions match this filter." %}
+        {% endif %}
+    </p>
+</div>
+{% endif %}
+{% endblock settings %}

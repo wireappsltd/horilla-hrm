@@ -1,0 +1,89 @@
+{% extends "settings.html" %}
+{% load static i18n retention_tags %}
+
+{% block settings %}
+<link rel="stylesheet" href="{% static 'horilla_retention/retention.css' %}">
+
+<div class="retention-page-header">
+    <div>
+        <h2><ion-icon name="document-lock-outline" class="me-2"></ion-icon>{% trans "Audit Trail" %}</h2>
+        <p>{% trans "Append-only record of every retention event — policy changes, flags, defers, anonymizations, errors, engine runs."%}</p>
+    </div>
+</div>
+
+{% if entries %}
+<div class="text-muted mb-2" style="font-size:.825rem;">
+    <ion-icon name="information-circle-outline"></ion-icon>
+    {% trans "Showing latest 500 entries." %}
+</div>
+<div class="oh-sticky-table retention-table">
+    <div class="oh-sticky-table__table">
+        <div class="oh-sticky-table__thead">
+            <div class="oh-sticky-table__tr">
+                <div class="oh-sticky-table__th">{% trans "When / Who" %}</div>
+                <div class="oh-sticky-table__th">{% trans "Event" %}</div>
+                <div class="oh-sticky-table__th retention-cell-emp">{% trans "Context" %}</div>
+                <div class="oh-sticky-table__th retention-cell-wide">{% trans "Message" %}</div>
+            </div>
+        </div>
+        <div class="oh-sticky-table__tbody">
+            {% for e in entries %}
+            <div class="oh-sticky-table__tr">
+                <div class="oh-sticky-table__td">
+                    <div class="retention-mono">{{ e.timestamp|date:"Y-m-d H:i:s" }}</div>
+                    <div style="font-size:.75rem;color:#6b7280;margin-top:.15rem;">
+                        {% if e.actor %}
+                            <ion-icon name="person-circle-outline"></ion-icon> {{ e.actor }}
+                        {% else %}
+                            <ion-icon name="cog-outline"></ion-icon> {% trans "system" %}
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="oh-sticky-table__td">
+                    <span class="retention-pill
+                        {% if 'error' in e.event %}retention-pill--failed
+                        {% elif 'anonymized' in e.event %}retention-pill--anonymized
+                        {% elif 'deferred' in e.event %}retention-pill--deferred
+                        {% elif 'cancelled' in e.event %}retention-pill--cancelled
+                        {% elif 'flagged' in e.event %}retention-pill--pending
+                        {% else %}retention-pill--cat{% endif %}">
+                        {{ e.get_event_display }}
+                    </span>
+                </div>
+                <div class="oh-sticky-table__td retention-cell-emp">
+                    {% if e.employee_id %}
+                        <div class="retention-emp">
+                            <span class="retention-emp__badge">{{ e.employee_id.badge_id }}</span>
+                            <span class="retention-emp__name">{{ e.employee_id.get_full_name }}</span>
+                        </div>
+                    {% endif %}
+                    {% if e.category %}
+                        <div style="margin-top:.25rem;">
+                            {% category_pill e.category e.get_category_display %}
+                        </div>
+                    {% endif %}
+                    {% if e.run_id %}
+                        <div class="retention-mono" style="margin-top:.25rem;font-size:.7rem;color:#9ca3af;">
+                            {% trans "Run" %} #{{ e.run_id }}
+                        </div>
+                    {% endif %}
+                    {% if not e.employee_id and not e.category and not e.run_id %}
+                        <span class="text-muted">—</span>
+                    {% endif %}
+                </div>
+                <div class="oh-sticky-table__td retention-cell-wide" style="font-size:.82rem;line-height:1.4;">
+                    {{ e.message }}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="retention-empty">
+    <ion-icon name="document-lock-outline"></ion-icon>
+    <h3>{% trans "Audit trail is empty" %}</h3>
+    <p>{% trans "Entries will appear here automatically as the retention engine runs and admins take action on flagged records." %}</p>
+</div>
+{% endif %}
+{% endblock settings %}
