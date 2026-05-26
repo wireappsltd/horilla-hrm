@@ -519,7 +519,7 @@ class UserLeaveRequestForm(BaseModelForm):
             if hasattr(employee, "offboardingemployee"):
                  offboarding_emp = employee.offboardingemployee
                  if offboarding_emp.stage_id and offboarding_emp.stage_id.type != "archived":
-                     self.fields["leave_type_id"].queryset = self.fields["leave_type_id"].queryset.filter(name__icontains="Annual Leave")
+                     self.fields["leave_type_id"].queryset = self.fields["leave_type_id"].queryset.filter(is_annual_leave=True)
         except Exception:
             pass
 
@@ -728,7 +728,7 @@ class UserLeaveRequestCreationForm(BaseModelForm):
             if hasattr(employee, "offboardingemployee"):
                  offboarding_emp = employee.offboardingemployee
                  if offboarding_emp.stage_id and offboarding_emp.stage_id.type != "archived":
-                     self.fields["leave_type_id"].queryset = self.fields["leave_type_id"].queryset.filter(name__icontains="Annual Leave")
+                     self.fields["leave_type_id"].queryset = self.fields["leave_type_id"].queryset.filter(is_annual_leave=True)
         except Exception:
             pass
 

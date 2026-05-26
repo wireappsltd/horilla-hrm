@@ -239,6 +239,15 @@ class LeaveType(HorillaModel):
         max_length=30, choices=CHOICES, default="no", verbose_name=_("Exclude Holidays")
     )
     is_compensatory_leave = models.BooleanField(default=False)
+    is_annual_leave = models.BooleanField(
+        default=False,
+        verbose_name=_("Is Annual Leave"),
+        help_text=_(
+            "Mark exactly one leave type as the organization's annual leave. "
+            "Carryforward statistics in employee profiles are shown only for "
+            "the leave type with this flag enabled."
+        ),
+    )
     company_id = models.ForeignKey(
         Company, null=True, editable=True, on_delete=models.PROTECT
     )
@@ -337,6 +346,15 @@ class LeaveType(HorillaModel):
             ):
                 raise ValidationError(
                     {"name": _("Compensatory Leave Request already exists.")}
+                )
+        if self.is_annual_leave:
+            if (
+                LeaveType.objects.filter(is_annual_leave=True)
+                .exclude(pk=self.pk)
+                .exists()
+            ):
+                raise ValidationError(
+                    {"is_annual_leave": _("Another leave type is already marked as Annual Leave.")}
                 )
 
     def save(self, *args, **kwargs):
