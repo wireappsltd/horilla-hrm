@@ -234,6 +234,41 @@ class EmployeeForm(ModelForm):
         })
         self.fields["badge_id"].required = False
 
+        # Friendly placeholders for the new statutory / initials fields
+        if "initials" in self.fields:
+            self.fields["initials"].widget.attrs.setdefault("placeholder", "K.P.S.")
+        if "names_denoted_by_initials" in self.fields:
+            self.fields["names_denoted_by_initials"].widget.attrs.setdefault(
+                "placeholder", "Kamal Perera Silva"
+            )
+        if "etf_epf_number" in self.fields:
+            self.fields["etf_epf_number"].widget.attrs.setdefault(
+                "placeholder", "ETF/EPF Number"
+            )
+        if "tin" in self.fields:
+            self.fields["tin"].widget.attrs.setdefault("placeholder", "123456789")
+            self.fields["tin"].widget.attrs.setdefault("maxlength", "9")
+            self.fields["tin"].widget.attrs.setdefault("pattern", r"\d{9}")
+
+        # ETF/EPF Number and TIN should only be editable by HR Admin users.
+        try:
+            from horilla.horilla_middlewares import _thread_locals
+            request = getattr(_thread_locals, "request", None)
+        except Exception:
+            request = None
+        user = getattr(request, "user", None)
+        is_hr_admin = False
+        if user is not None and getattr(user, "is_authenticated", False):
+            is_hr_admin = (
+                user.is_superuser
+                or user.has_perm("employee.change_employee")
+                or user.groups.filter(name__in=["HR Admin", "HR"]).exists()
+            )
+        if not is_hr_admin:
+            for restricted in ("etf_epf_number", "tin"):
+                if restricted in self.fields:
+                    self.fields.pop(restricted)
+
         for _field_name in ("children", "experience"):
             if _field_name in self.fields:
                 self.fields[_field_name].widget.attrs["onwheel"] = "this.blur()"
@@ -889,7 +924,7 @@ class EmployeeBankDetailsUpdateForm(ModelForm):
 
 excel_columns = [
     ("badge_id", trans("Badge ID")),
-    ("employee_first_name", trans("First Name")),
+    ("employee_first_name", trans("Preferred Name")),
     ("employee_last_name", trans("Last Name")),
     ("email", trans("Email")),
     ("phone", trans("Phone")),
