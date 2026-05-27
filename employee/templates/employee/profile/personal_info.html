@@ -23,7 +23,7 @@
                     </div>
 
                     <div class="col-12 col-sm-12 col-md-12 col-lg-6">
-                        <label class="oh-label" for="firstname">{% trans "First Name *" %}</label>
+                        <label class="oh-label" for="firstname">{% trans "Preferred Name *" %}</label>
                         {{ form.employee_first_name }}
                         {{ form.employee_first_name.errors }}
                     </div>
@@ -31,6 +31,18 @@
                         <label class="oh-label" for="lastname">{% trans "Last Name *" %}</label>
                         {{ form.employee_last_name }}
                         {{ form.employee_last_name.errors }}
+                    </div>
+                    <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                        <label class="oh-label" for="id_initials">{% trans "Initials" %}</label>
+                        {{ form.initials }}
+                        <small class="text-muted">{% trans "Dot-separated initials, e.g. K.P.S." %}</small>
+                        {{ form.initials.errors }}
+                    </div>
+                    <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                        <label class="oh-label" for="id_names_denoted_by_initials">{% trans "Names Denoted by Initials" %}</label>
+                        {{ form.names_denoted_by_initials }}
+                        <small class="text-muted">{% trans "Full names that the initials stand for, e.g. Kamal Perera Silva" %}</small>
+                        {{ form.names_denoted_by_initials.errors }}
                     </div>
                     <div class="col-12 col-sm-12 col-md-12 col-lg-6">
                         <label class="oh-label" for="nic">{% trans "NIC *" %}</label>
@@ -42,6 +54,18 @@
                         {{ form.passport }}
                         {{ form.passport.errors }}
                     </div>
+                    {% if perms.employee.change_employee %}
+                    <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                        <label class="oh-label" for="id_etf_epf_number">{% trans "ETF/EPF Number" %}</label>
+                        {{ form.etf_epf_number }}
+                        {{ form.etf_epf_number.errors }}
+                    </div>
+                    <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                        <label class="oh-label" for="id_tin">{% trans "TIN" %}</label>
+                        {{ form.tin }}
+                        {{ form.tin.errors }}
+                    </div>
+                    {% endif %}
                 </div>
                 <div class="row">
                     <div class="col-12 col-sm-12 col-md-12 col-lg-6">
