@@ -566,6 +566,27 @@ def initialize_job_position_delete(request, obj_id):
     )
 
 
+def _login_template_context(request):
+    """
+    Build the context for rendering login.html. When the session is marked as
+    locked out for a username and the cache still has an active lockout, expose
+    the remaining time so the template can render the form in a disabled state
+    with a visible countdown.
+    """
+    ctx = {"initialize_database": initialize_database_condition()}
+
+    locked_username = request.session.get("login_lockout_username")
+    if locked_username:
+        remaining = get_login_lockout_remaining(locked_username)
+        if remaining > 0:
+            ctx["is_locked_out"] = True
+            ctx["lockout_remaining_seconds"] = remaining
+            ctx["lockout_username"] = locked_username
+        else:
+            request.session.pop("login_lockout_username", None)
+    return ctx
+
+
 @never_cache
 def login_user(request):
     """
@@ -594,6 +615,23 @@ def login_user(request):
         query_params.pop("next", None)
         params = urlencode(query_params)
 
+        # Enforce the failed-login lockout before doing any password work so
+        # that locked accounts cannot be brute-forced and timing differences
+        # between locked and unlocked accounts are minimised.
+        login_lockout_remaining = get_login_lockout_remaining(username)
+        if login_lockout_remaining > 0:
+            request.session["login_lockout_username"] = username
+            minutes = int((login_lockout_remaining + 59) // 60)
+            messages.error(
+                request,
+                _(
+                    "Too many failed login attempts. Please try again after "
+                    "%(minutes)s minute(s)."
+                )
+                % {"minutes": minutes},
+            )
+            return redirect("login")
+
         user = authenticate(request, username=username, password=password)
 
         if not user:
@@ -602,12 +640,33 @@ def login_user(request):
                 user = authenticate(request, username=existing_user.username, password=password)
 
         if not user:
+            attempts = increment_login_attempts(username)
+            if attempts >= LOGIN_MAX_ATTEMPTS:
+                set_login_lockout(username)
+                request.session["login_lockout_username"] = username
+                messages.error(
+                    request,
+                    _(
+                        "Too many failed login attempts. This account has been "
+                        "temporarily locked. Please try again after "
+                        "%(minutes)s minute(s)."
+                    )
+                    % {"minutes": LOGIN_LOCKOUT_SECONDS // 60},
+                )
+                return redirect("login")
+
             user_object = User.objects.filter(username=username).first()
             if user_object and not user_object.is_active:
                 messages.warning(request, _("Access Denied: Your account is blocked."))
             else:
                 messages.error(request, _("Invalid username or password."))
             return redirect("login")
+
+        # Credentials verified — clear the failed-login counter so the next
+        # downstream policy failure (no employee, archived, no contract, OTP
+        # lockout) does not leave a stale counter behind.
+        reset_login_attempts(username)
+        request.session.pop("login_lockout_username", None)
 
         employee = getattr(user, "employee_get", None)
         if employee is None:
@@ -669,9 +728,7 @@ def login_user(request):
             next_url += f"?{params}"
         return redirect(next_url)
 
-    return render(
-        request, "login.html", {"initialize_database": initialize_database_condition()}
-    )
+    return render(request, "login.html", _login_template_context(request))
 
 
 def include_employee_instance(request, form):
@@ -863,6 +920,97 @@ OTP_LOCKOUT_SECONDS = 5 * 60  # 5 minutes cooldown
 # seconds after it is issued. After this window the OTP is rejected and the
 # user must request a new one.
 OTP_VALIDITY_SECONDS = 5 * 60  # 5 minutes
+
+# Login attempt limiting configuration. Overridable via Django settings so
+# operators can tune the policy without touching the codebase.
+LOGIN_MAX_ATTEMPTS = getattr(settings, "LOGIN_MAX_ATTEMPTS", 5)
+LOGIN_LOCKOUT_SECONDS = getattr(settings, "LOGIN_LOCKOUT_SECONDS", 15 * 60)
+
+
+def _normalize_login_identifier(username):
+    """
+    Normalize a submitted username for use as a cache key. We track failed
+    attempts even for non-existent users so the lockout does not leak which
+    accounts exist, and matching against a lower-cased/stripped form prevents
+    case-flip attempts from sidestepping the counter.
+    """
+    if username is None:
+        return ""
+    return str(username).strip().lower()
+
+
+def _login_attempts_cache_key(username):
+    """Return the cache key used to store the failed-login counter."""
+    return f"login_attempts:{_normalize_login_identifier(username)}"
+
+
+def _login_lockout_cache_key(username):
+    """Return the cache key used to store the login lockout expiry."""
+    return f"login_lockout:{_normalize_login_identifier(username)}"
+
+
+def get_login_lockout_remaining(username):
+    """
+    Return the seconds remaining on the login lockout for the given username,
+    or 0 if the identifier is not currently locked out.
+    """
+    from django.core.cache import cache
+
+    identifier = _normalize_login_identifier(username)
+    if not identifier:
+        return 0
+    expires_at = cache.get(_login_lockout_cache_key(identifier))
+    if not expires_at:
+        return 0
+    remaining = int(expires_at - timezone.now().timestamp())
+    return max(remaining, 0)
+
+
+def increment_login_attempts(username):
+    """
+    Increment and return the failed-login counter for the given username.
+    The counter is held at least as long as the lockout window so the lockout
+    cannot be reset by switching sessions or clearing cookies.
+    """
+    from django.core.cache import cache
+
+    identifier = _normalize_login_identifier(username)
+    if not identifier:
+        return 0
+    key = _login_attempts_cache_key(identifier)
+    attempts = int(cache.get(key) or 0) + 1
+    cache.set(key, attempts, timeout=LOGIN_LOCKOUT_SECONDS)
+    return attempts
+
+
+def reset_login_attempts(username):
+    """Clear the failed-login counter for the given username."""
+    from django.core.cache import cache
+
+    identifier = _normalize_login_identifier(username)
+    if not identifier:
+        return
+    cache.delete(_login_attempts_cache_key(identifier))
+
+
+def set_login_lockout(username):
+    """
+    Lock the given username out of login for the configured cooldown period
+    and clear the per-username attempt counter so it starts fresh after the
+    lockout expires.
+    """
+    from django.core.cache import cache
+
+    identifier = _normalize_login_identifier(username)
+    if not identifier:
+        return
+    expires_at = timezone.now().timestamp() + LOGIN_LOCKOUT_SECONDS
+    cache.set(
+        _login_lockout_cache_key(identifier),
+        expires_at,
+        timeout=LOGIN_LOCKOUT_SECONDS,
+    )
+    reset_login_attempts(identifier)
 
 
 def _otp_lockout_cache_key(user):
