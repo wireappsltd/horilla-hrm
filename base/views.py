@@ -1255,17 +1255,29 @@ def get_otp(request):
 
 def logout_user(request):
     """
-    This method used to logout the user
+    This method used to logout the user.
+
+    Sends explicit anti-cache headers on the logout response itself so the
+    browser cannot serve the post-logout page (or any prior authenticated
+    page) from its back-forward cache. The session is flushed by
+    django.contrib.auth.logout, and the body clears any client-side state
+    before redirecting to the login screen.
     """
     if request.user:
         logout(request)
-    response = HttpResponse()
-    response.content = """
+    response = HttpResponse(
+        """
         <script>
-            localStorage.clear();
+            try { localStorage.clear(); sessionStorage.clear(); } catch (e) {}
         </script>
         <meta http-equiv="refresh" content="0;url=/login">
-    """
+        """
+    )
+    response["Cache-Control"] = (
+        "no-store, no-cache, must-revalidate, max-age=0, private"
+    )
+    response["Pragma"] = "no-cache"
+    response["Expires"] = "0"
 
     return response
 
