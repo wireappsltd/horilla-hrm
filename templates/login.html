@@ -16,6 +16,45 @@
     <link rel="stylesheet" href="{% static '/build/css/style.min.css' %}" />
     <link rel="manifest" href="{% static 'build/manifest.json' %}" />
     <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+    <style>
+        .oh-turnstile {
+            margin-top: 1rem;
+            margin-bottom: .25rem;
+        }
+        .oh-turnstile__label {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: .35rem;
+            font-size: .78rem;
+            color: #6b7280;
+            margin-bottom: .55rem;
+            letter-spacing: .01em;
+        }
+        .oh-turnstile__label ion-icon {
+            font-size: 1rem;
+            color: #f97316;
+        }
+        .oh-turnstile__widget {
+            display: flex;
+            justify-content: center;
+            width: 100%;
+            min-height: 65px;
+        }
+        .oh-turnstile__widget .cf-turnstile {
+            width: 100%;
+            max-width: 300px;
+        }
+        .oh-turnstile__widget iframe {
+            max-width: 100% !important;
+        }
+        .oh-turnstile__hint {
+            text-align: center;
+            font-size: .7rem;
+            color: #9ca3af;
+            margin-top: .35rem;
+        }
+    </style>
 </head>
 
 <body>
@@ -56,8 +95,20 @@
                         </div>
                     </div>
                     {% if turnstile_sitekey %}
-                    <div class="oh-input-group d-flex justify-content-center">
-                        <div class="cf-turnstile" data-sitekey="{{ turnstile_sitekey }}"></div>
+                    <div class="oh-input-group oh-turnstile">
+                        <div class="oh-turnstile__label">
+                            <ion-icon name="shield-checkmark-outline"></ion-icon>
+                            {% trans "Verify you're human" %}
+                        </div>
+                        <div class="oh-turnstile__widget">
+                            <div class="cf-turnstile"
+                                 data-sitekey="{{ turnstile_sitekey }}"
+                                 data-theme="light"
+                                 data-size="flexible"></div>
+                        </div>
+                        <p class="oh-turnstile__hint">
+                            {% trans "Protected by Cloudflare Turnstile" %}
+                        </p>
                     </div>
                     {% endif %}
                     <button type="submit"
