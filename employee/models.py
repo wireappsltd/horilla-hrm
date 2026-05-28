@@ -74,12 +74,15 @@ def validate_tin_format(value):
 
 def validate_etf_epf_format(value):
     """
-    Validate ETF/EPF Number - alphanumeric only.
+    Validate ETF/EPF Number - allow alphanumeric characters along with
+    common statutory separators such as ``/`` and ``-`` (e.g. ``B/51115/32``).
     """
     if value in (None, ""):
         return
-    if not re.match(r"^[A-Za-z0-9]+$", value):
-        raise ValidationError(_("ETF/EPF Number must be alphanumeric."))
+    if not re.match(r"^[A-Za-z0-9/\-]+$", value):
+        raise ValidationError(
+            _("ETF/EPF Number may contain only letters, numbers, '/' and '-'.")
+        )
 
 
 class Employee(models.Model):

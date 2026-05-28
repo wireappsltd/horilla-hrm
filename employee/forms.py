@@ -242,11 +242,9 @@ class EmployeeForm(ModelForm):
                 "placeholder", "Kamal Perera Silva"
             )
         if "etf_epf_number" in self.fields:
-            self.fields["etf_epf_number"].widget.attrs.setdefault(
-                "placeholder", "ETF/EPF Number"
-            )
+            self.fields["etf_epf_number"].widget.attrs["placeholder"] = "ETF/EPF Number"
         if "tin" in self.fields:
-            self.fields["tin"].widget.attrs.setdefault("placeholder", "123456789")
+            self.fields["tin"].widget.attrs["placeholder"] = "TIN"
             self.fields["tin"].widget.attrs.setdefault("maxlength", "9")
             self.fields["tin"].widget.attrs.setdefault("pattern", r"\d{9}")
 

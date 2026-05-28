@@ -152,6 +152,22 @@
                         </span>
                         <span class="oh-profile__info-value" style="word-break: break-word; overflow-wrap: anywhere; white-space: normal;">{{employee.emergency_contact_relation|default:_("None")}}</span>
                     </li>
+
+                    <li class="oh-profile__card-info-item">
+                        <span class="oh-profile__info-label mb-1">
+                            <ion-icon name="wallet-outline"></ion-icon>
+                            <span>{% trans "ETF/EPF Number" %}</span>
+                        </span>
+                        <span class="oh-profile__info-value">{{employee.etf_epf_number|default:_("None")}}</span>
+                    </li>
+
+                    <li class="oh-profile__card-info-item">
+                        <span class="oh-profile__info-label mb-1">
+                            <ion-icon name="receipt-outline"></ion-icon>
+                            <span>{% trans "TIN" %}</span>
+                        </span>
+                        <span class="oh-profile__info-value">{{employee.tin|default:_("None")}}</span>
+                    </li>
                 </ul>
             </div>
         </div>
