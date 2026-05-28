@@ -2,14 +2,14 @@
 {% load static i18n retention_tags %}
 
 {% block settings %}
-<link rel="stylesheet" href="{% static 'horilla_retention/retention.css' %}">
+<link rel="stylesheet" href="{% static 'horilla_retention/retention.css' %}?v=20260526">
 
 <div class="retention-page-header">
     <div>
         <h2><ion-icon name="document-text-outline" class="me-2"></ion-icon>{% trans "Retention Policies" %}</h2>
         <p>{% trans "Defines how long records of each category are kept after an employee's last working date." %}</p>
     </div>
-    {% if perms.horilla_retention.approve_retention_action %}
+    {% if perms.horilla_retention.approve_retention_action and policies %}
         <a href="{% url 'retention-policy-create' %}" class="oh-btn oh-btn--primary">
             <ion-icon name="add-outline" class="me-1"></ion-icon>{% trans "New policy" %}
         </a>
@@ -86,14 +86,29 @@
     </div>
 </div>
 {% else %}
-<div class="retention-empty">
-    <ion-icon name="document-text-outline"></ion-icon>
-    <h3>{% trans "No policies yet" %}</h3>
-    <p>{% trans "Retention policies define how long records of each category (general HR, attendance/leave, payroll, EPF/ETF/PAYE) are kept after an employee leaves. The engine remains inactive until at least one enabled policy exists per company." %}</p>
+<div class="retention-hero">
+    <div class="retention-hero__badge retention-hero__badge--info">
+        <ion-icon name="document-text-outline"></ion-icon>
+    </div>
+    <h3>{% trans "No retention policies yet" %}</h3>
+    <p class="retention-hero__lead">
+        {% trans "Policies define how long records of each category — general HR, attendance & leave, payroll, EPF/ETF/PAYE — are kept after an employee leaves. The engine remains inactive until at least one enabled policy exists per company." %}
+    </p>
     {% if perms.horilla_retention.approve_retention_action %}
-        <a href="{% url 'retention-policy-create' %}" class="oh-btn oh-btn--primary">
-            <ion-icon name="add-outline" class="me-1"></ion-icon>{% trans "Create your first policy" %}
-        </a>
+        <div class="retention-hero__actions">
+            <a href="{% url 'retention-policy-create' %}" class="oh-btn oh-btn--primary">
+                <ion-icon name="add-outline" class="me-1"></ion-icon>{% trans "Create your first policy" %}
+            </a>
+        </div>
+        <p class="retention-hero__hint">
+            <ion-icon name="bulb-outline"></ion-icon>
+            {% trans "Tip: a common starting point is 7 years on general HR records and 10 years on payroll." %}
+        </p>
+    {% else %}
+        <p class="retention-hero__hint">
+            <ion-icon name="lock-closed-outline"></ion-icon>
+            {% trans "Only users with the 'approve retention action' permission can create policies." %}
+        </p>
     {% endif %}
 </div>
 {% endif %}

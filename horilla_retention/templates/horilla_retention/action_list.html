@@ -2,7 +2,7 @@
 {% load static i18n retention_tags %}
 
 {% block settings %}
-<link rel="stylesheet" href="{% static 'horilla_retention/retention.css' %}">
+<link rel="stylesheet" href="{% static 'horilla_retention/retention.css' %}?v=20260526">
 
 <div class="retention-page-header">
     <div>
@@ -124,18 +124,64 @@
     </div>
 </div>
 {% else %}
-<div class="retention-empty">
-    <ion-icon name="checkmark-done-outline"></ion-icon>
-    <h3>{% trans "Nothing here" %}</h3>
-    <p>
-        {% if status == 'pending_review' %}
-            {% trans "No records are awaiting review. The engine will flag eligible records on its next daily run." %}
-        {% elif status == 'failed' %}
-            {% trans "No failed actions — the engine is healthy." %}
-        {% else %}
-            {% trans "No actions match this filter." %}
-        {% endif %}
-    </p>
+<div class="retention-hero">
+    {% if status == 'failed' %}
+        <div class="retention-hero__badge retention-hero__badge--success">
+            <ion-icon name="shield-checkmark-outline"></ion-icon>
+        </div>
+        <h3>{% trans "No failed actions" %}</h3>
+        <p class="retention-hero__lead">
+            {% trans "The engine is healthy. Anonymization jobs run to completion without errors. If a future run fails — for example because a database constraint blocks a record — it will appear here for investigation." %}
+        </p>
+    {% elif status == 'pending_review' %}
+        <div class="retention-hero__badge retention-hero__badge--success">
+            <ion-icon name="checkmark-done-outline"></ion-icon>
+        </div>
+        <h3>{% trans "Nothing pending review" %}</h3>
+        <p class="retention-hero__lead">
+            {% trans "No records are currently awaiting admin action. The engine runs nightly at 02:00 and will flag any records that have passed their retention window based on your configured policies." %}
+        </p>
+        <div class="retention-hero__actions">
+            <a href="{% url 'retention-policies' %}" class="oh-btn oh-btn--light-bkg">
+                <ion-icon name="document-text-outline" class="me-1"></ion-icon>{% trans "Review policies" %}
+            </a>
+            <a href="{% url 'retention-run-log' %}" class="oh-btn oh-btn--light-bkg">
+                <ion-icon name="time-outline" class="me-1"></ion-icon>{% trans "View run history" %}
+            </a>
+        </div>
+    {% elif status == 'deferred' %}
+        <div class="retention-hero__badge retention-hero__badge--info">
+            <ion-icon name="time-outline"></ion-icon>
+        </div>
+        <h3>{% trans "No deferred actions" %}</h3>
+        <p class="retention-hero__lead">
+            {% trans "Deferred records show up here when an admin pushes their anonymization date out — usually pending payroll close-out or legal hold." %}
+        </p>
+    {% elif status == 'anonymized' %}
+        <div class="retention-hero__badge retention-hero__badge--neutral">
+            <ion-icon name="archive-outline"></ion-icon>
+        </div>
+        <h3>{% trans "No anonymized records yet" %}</h3>
+        <p class="retention-hero__lead">
+            {% trans "Once the engine processes a flagged record — either automatically after its grace period or via manual admin approval — it lands here as an immutable evidence trail." %}
+        </p>
+    {% elif status == 'cancelled' %}
+        <div class="retention-hero__badge retention-hero__badge--neutral">
+            <ion-icon name="close-circle-outline"></ion-icon>
+        </div>
+        <h3>{% trans "No cancelled actions" %}</h3>
+        <p class="retention-hero__lead">
+            {% trans "Admins can cancel a flagged action — typically when the policy itself was a misconfiguration. Cancelling does not modify any records." %}
+        </p>
+    {% else %}
+        <div class="retention-hero__badge retention-hero__badge--neutral">
+            <ion-icon name="folder-open-outline"></ion-icon>
+        </div>
+        <h3>{% trans "No retention actions yet" %}</h3>
+        <p class="retention-hero__lead">
+            {% trans "Once the engine runs against your configured policies, every flagged record will appear here. Use the tabs above to filter by status — pending, deferred, anonymized, failed, or cancelled." %}
+        </p>
+    {% endif %}
 </div>
 {% endif %}
 {% endblock settings %}

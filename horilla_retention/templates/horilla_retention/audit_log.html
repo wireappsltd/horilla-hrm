@@ -2,7 +2,7 @@
 {% load static i18n retention_tags %}
 
 {% block settings %}
-<link rel="stylesheet" href="{% static 'horilla_retention/retention.css' %}">
+<link rel="stylesheet" href="{% static 'horilla_retention/retention.css' %}?v=20260526">
 
 <div class="retention-page-header">
     <div>
@@ -80,10 +80,18 @@
     </div>
 </div>
 {% else %}
-<div class="retention-empty">
-    <ion-icon name="document-lock-outline"></ion-icon>
+<div class="retention-hero">
+    <div class="retention-hero__badge retention-hero__badge--info">
+        <ion-icon name="document-lock-outline"></ion-icon>
+    </div>
     <h3>{% trans "Audit trail is empty" %}</h3>
-    <p>{% trans "Entries will appear here automatically as the retention engine runs and admins take action on flagged records." %}</p>
+    <p class="retention-hero__lead">
+        {% trans "Every retention event will appear here automatically — policy changes, records flagged by the engine, admin approvals, defers, anonymizations, errors, and engine runs. The trail is append-only and entries cannot be edited or deleted, so it serves as compliance evidence." %}
+    </p>
+    <p class="retention-hero__hint">
+        <ion-icon name="shield-checkmark-outline"></ion-icon>
+        {% trans "Entries are captured automatically — no manual logging required." %}
+    </p>
 </div>
 {% endif %}
 {% endblock settings %}

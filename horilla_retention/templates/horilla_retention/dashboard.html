@@ -2,7 +2,7 @@
 {% load static i18n %}
 
 {% block settings %}
-<link rel="stylesheet" href="{% static 'horilla_retention/retention.css' %}">
+<link rel="stylesheet" href="{% static 'horilla_retention/retention.css' %}?v=20260526">
 
 <div class="retention-page-header">
     <div>
@@ -20,6 +20,62 @@
         </a>
     </div>
 </div>
+
+{% if policy_count == 0 and not last_run and pending_count == 0 and failed_count == 0 %}
+<div class="retention-hero">
+    <div class="retention-hero__badge">
+        <ion-icon name="shield-checkmark-outline"></ion-icon>
+    </div>
+    <h3>{% trans "Data Retention is ready to go" %}</h3>
+    <p class="retention-hero__lead">
+        {% trans "No retention activity yet. The engine stays dormant until at least one enabled policy exists per company. Once configured, it scans employees nightly and flags records eligible for anonymization based on each category's retention period." %}
+    </p>
+    <div class="retention-hero__actions">
+        {% if can_approve %}
+            <a href="{% url 'retention-policy-create' %}" class="oh-btn oh-btn--primary">
+                <ion-icon name="add-outline" class="me-1"></ion-icon>{% trans "Create your first policy" %}
+            </a>
+        {% endif %}
+        {% if can_run %}
+            <form method="post" action="{% url 'retention-trigger-run' %}" style="display:inline;">
+                {% csrf_token %}
+                <input type="hidden" name="dry_run" value="on">
+                <button type="submit" class="oh-btn oh-btn--light-bkg">
+                    <ion-icon name="play-outline" class="me-1"></ion-icon>{% trans "Try a dry run" %}
+                </button>
+            </form>
+        {% endif %}
+    </div>
+    <p class="retention-hero__hint">
+        <ion-icon name="information-circle-outline"></ion-icon>
+        {% trans "Scheduled run: every day at 02:00 server time." %}
+    </p>
+
+    <div class="retention-hero__steps">
+        <div class="retention-hero__step">
+            <span class="retention-hero__step-num">1</span>
+            <div class="retention-hero__step-body">
+                <strong>{% trans "Create a retention policy" %}</strong>
+                <span>{% trans "Pick a category (HR, attendance, payroll, EPF/ETF/PAYE) and set how many years to keep records." %}</span>
+            </div>
+        </div>
+        <div class="retention-hero__step">
+            <span class="retention-hero__step-num">2</span>
+            <div class="retention-hero__step-body">
+                <strong>{% trans "Engine runs nightly" %}</strong>
+                <span>{% trans "Scans all employees against your policies and flags records that have passed their retention window." %}</span>
+            </div>
+        </div>
+        <div class="retention-hero__step">
+            <span class="retention-hero__step-num">3</span>
+            <div class="retention-hero__step-body">
+                <strong>{% trans "Review pending actions" %}</strong>
+                <span>{% trans "Approve immediate anonymization, defer with a reason, or cancel each flagged record." %}</span>
+            </div>
+        </div>
+    </div>
+</div>
+{% else %}
 
 {% if policy_count == 0 %}
 <div class="oh-alert oh-alert--warning mb-4" style="display:flex;align-items:flex-start;gap:.85rem;">
@@ -136,4 +192,6 @@
 </form>
 </div>
 {% endif %}
+
+{% endif %}{# end of fully-empty hero vs populated dashboard #}
 {% endblock settings %}

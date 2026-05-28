@@ -17,6 +17,7 @@ MIDDLEWARE.append("horilla.horilla_middlewares.ThreadLocalMiddleware")
 MIDDLEWARE.append("accessibility.middlewares.AccessibilityMiddleware")
 MIDDLEWARE.append("base.middleware.ForcePasswordChangeMiddleware")
 MIDDLEWARE.append("base.middleware.TwoFactorAuthMiddleware")
+MIDDLEWARE.append("base.middleware.NoBrowserCacheMiddleware")
 _thread_locals = threading.local()
 
 

@@ -50,6 +50,41 @@ def reporting_manager_validator(value):
     return value
 
 
+def validate_initials_format(value):
+    """
+    Validate dot-separated initials format (e.g. ``A.B.C.``).
+    """
+    if value in (None, ""):
+        return
+    if not re.match(r"^(?:[A-Za-z]\.)+$", value):
+        raise ValidationError(
+            _("Initials must be dot-separated letters ending with a dot, e.g. A.B.C.")
+        )
+
+
+def validate_tin_format(value):
+    """
+    Validate TIN (Tax Identification Number) - exactly 9 digits.
+    """
+    if value in (None, ""):
+        return
+    if not re.match(r"^\d{9}$", value):
+        raise ValidationError(_("TIN must be exactly 9 digits."))
+
+
+def validate_etf_epf_format(value):
+    """
+    Validate ETF/EPF Number - allow alphanumeric characters along with
+    common statutory separators such as ``/`` and ``-`` (e.g. ``B/51115/32``).
+    """
+    if value in (None, ""):
+        return
+    if not re.match(r"^[A-Za-z0-9/\-]+$", value):
+        raise ValidationError(
+            _("ETF/EPF Number may contain only letters, numbers, '/' and '-'.")
+        )
+
+
 class Employee(models.Model):
     """
     Employee model
@@ -75,10 +110,40 @@ class Employee(models.Model):
         verbose_name=_("User"),
     )
     employee_first_name = models.CharField(
-        max_length=200, null=False,blank=False , verbose_name=_("First Name")
+        max_length=200, null=False,blank=False , verbose_name=_("Preferred Name")
     )
     employee_last_name = models.CharField(
         max_length=200, null=True, blank=False, verbose_name=_("Last Name")
+    )
+    initials = models.CharField(
+        max_length=50,
+        null=True,
+        blank=True,
+        verbose_name=_("Initials"),
+        help_text=_("Dot-separated initials, e.g. K.P.S."),
+        validators=[validate_initials_format],
+    )
+    names_denoted_by_initials = models.CharField(
+        max_length=200,
+        null=True,
+        blank=True,
+        verbose_name=_("Names Denoted by Initials"),
+        help_text=_("Full names that the initials stand for, e.g. Kamal Perera Silva"),
+    )
+    etf_epf_number = models.CharField(
+        max_length=50,
+        null=True,
+        blank=True,
+        verbose_name=_("ETF/EPF Number"),
+        help_text=_("Alphanumeric ETF/EPF number (HR Admin only)"),
+        validators=[validate_etf_epf_format],
+    )
+    tin = models.CharField(
+        max_length=9,
+        null=True,
+        blank=True,
+        verbose_name=_("TIN"),
+        validators=[validate_tin_format],
     )
     employee_profile = models.ImageField(
         upload_to="employee/profile", null=True, blank=True
@@ -144,6 +209,24 @@ class Employee(models.Model):
         import re
         if self.nic and not re.match(r'^(?:\d{9}[vVxX]|\d{12})$', self.nic):
             raise ValidationError({'nic': "Invalid NIC format."})
+        errors = {}
+        if self.initials:
+            try:
+                validate_initials_format(self.initials)
+            except ValidationError as exc:
+                errors["initials"] = exc.messages
+        if self.tin:
+            try:
+                validate_tin_format(self.tin)
+            except ValidationError as exc:
+                errors["tin"] = exc.messages
+        if self.etf_epf_number:
+            try:
+                validate_etf_epf_format(self.etf_epf_number)
+            except ValidationError as exc:
+                errors["etf_epf_number"] = exc.messages
+        if errors:
+            raise ValidationError(errors)
 
     def clean_fields(self, exclude=None):
         errors = {}

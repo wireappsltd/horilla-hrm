@@ -582,8 +582,7 @@ class AvailableLeave(HorillaModel):
 
     def balance_leaves(self):
         if getattr(self.leave_type_id, "is_compensatory_leave", False):
-            personal_max = (self.available_days or 0) + self.leave_taken()
-            balance_leave_days = personal_max - self.pending_leaves()
+            balance_leave_days = (self.available_days or 0) - self.pending_leaves()
             return balance_leave_days if balance_leave_days else 0
 
         max_days = (
