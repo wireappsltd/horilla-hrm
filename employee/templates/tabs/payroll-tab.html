@@ -78,7 +78,7 @@
                     </div>
                   <div class="oh-sticky-table__td">
                     <div class="oh-btn-group">
-                      <div type="button" id="download" data-id={{payslip.id}} title="{% trans 'Download' %}" class="oh-btn oh-btn--light-bkg w-100"> <ion-icon name="download"></ion-icon></div>
+                      <div type="button" data-id="{{payslip.id}}" title="{% trans 'Download' %}" class="oh-btn oh-btn--light-bkg w-100 payslip-download"> <ion-icon name="download"></ion-icon></div>
                     </div>
                   </div>
               </a>
@@ -93,10 +93,11 @@
 </div>
 {% endif %}
 <script>
-  // Use jQuery to select an element by its ID and add a click event handler
-  $("#download").click(function(e) {
+  // Bind the click handler to every download button (class-based, not id)
+  $(".payslip-download").click(function(e) {
     e.preventDefault();
-    payslip_id = $(this).data("id");
-    window.location.href = `/payroll/payslip-pdf/${payslip_id}`
+    e.stopPropagation();
+    const payslip_id = $(this).data("id");
+    window.location.href = `/payroll/view-payslip-pdf/${payslip_id}/`
   });
 </script>
