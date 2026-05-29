@@ -18,11 +18,7 @@
         <div class="oh-kanban-card__details">
             <span class="oh-kanban-card__title">{{user_leave.leave_type_id}}</span>
             <span class="oh-kanban-card__subtitle">{% trans "Available Leave Days" %} : {{user_leave.available_days}}</span><br>
-            {% if user_leave.leave_type_id.carryforward_type == "no carryforward" %}
-            <span class="oh-kanban-card__subtitle" style="color: #b5b5b5;" title="{% trans 'Carryforward is not configured for this leave type' %}">{% trans "Carryforward Leave Days" %} : —</span><br>
-            <span class="oh-kanban-card__subtitle" style="color: #b5b5b5;" title="{% trans 'Carryforward is not configured for this leave type' %}">{% trans "Used Carryforward Days" %} : —</span><br>
-            <span class="oh-kanban-card__subtitle" style="color: #b5b5b5;" title="{% trans 'Carryforward is not configured for this leave type' %}">{% trans "Expired Carryforward Days" %} : —</span><br>
-            {% else %}
+            {% if user_leave.leave_type_id.carryforward_type != "no carryforward" %}
             <span class="oh-kanban-card__subtitle">{% trans "Carryforward Leave Days" %} :
                 {{user_leave.carryforward_days}}</span><br>
             <span class="oh-kanban-card__subtitle">{% trans "Used Carryforward Days" %} :
