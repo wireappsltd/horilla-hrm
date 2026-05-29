@@ -625,7 +625,33 @@ def view_payslip_pdf(request, payslip_id):
             data["protocol"] = "https" if request.is_secure() else "http"
             data["company"] = company
 
-            return render(request, "payroll/payslip/payslip_pdf.html", context=data)
+            from weasyprint import HTML
+
+            html_content = render_to_string(
+                "payroll/payslip/payslip_pdf.html", context=data
+            )
+
+            try:
+                pdf_bytes = HTML(
+                    string=html_content,
+                    base_url=request.build_absolute_uri("/"),
+                ).write_pdf()
+            except Exception as error:
+                logger.error("Error generating payslip PDF: %s", error)
+                pdf_bytes = None
+
+            if not pdf_bytes:
+                return HttpResponse(
+                    _("Failed to generate the payslip PDF."), status=500
+                )
+
+            # Build a safe file name for the downloaded payslip
+            file_name = f"payslip_{payslip.get_payslip_title()}.pdf"
+            file_name = file_name.replace(" ", "_").replace("/", "-")
+
+            response = HttpResponse(pdf_bytes, content_type="application/pdf")
+            response["Content-Disposition"] = f'attachment; filename="{file_name}"'
+            return response
         return redirect(filter_payslip)
     return render(request, "405.html")
 

@@ -70,9 +70,41 @@
 
   .no-print { margin-top:16px; text-align:right; }
 
+  /* Constrain the company logo so it keeps a fixed, proportional size
+     in the PDF instead of being scaled up to its natural width. */
+  .company-logo {
+    height:60px;
+    width:auto;
+    max-width:160px;
+    object-fit:contain;
+    display:inline-block;
+  }
+
+  /* Paged-media rules: only affect the generated PDF / print output,
+     so the on-screen layout stays exactly the same. */
+  @page {
+    size: A4 portrait;
+    margin: 14mm;
+  }
+
   @media print {
+    html, body { margin:0; padding:0; }
+
     .no-print { display:none; }
-    .sheet { margin:0; border:0; }
+
+    /* Make the bordered sheet fill the printable area of a single A4 page
+       instead of using the fixed 820px screen width. */
+    .sheet {
+      width:100%;
+      margin:0;
+      border:2px solid #111;
+      padding:20px 24px;
+      box-sizing:border-box;
+    }
+
+    /* Keep every block together so nothing spills onto a second page. */
+    table { page-break-inside:avoid; }
+    br { line-height:1; }
   }
 </style>
 </head>
@@ -86,9 +118,9 @@
     <td style="width:33%; border:none"></td>
     <td style="width:33%;border:none; text-align:center">
       {% if employee.employee_work_info.company_id %}
-        <img src="{{ protocol }}://{{ host }}{{ employee.employee_work_info.company_id.icon.url }}" height="60">
+        <img class="company-logo" src="{{ protocol }}://{{ host }}{{ employee.employee_work_info.company_id.icon.url }}" height="60">
       {% else %}
-        <img src="{{ protocol }}://{{ host }}{{ company.icon.url }}" height="60">
+        <img class="company-logo" src="{{ protocol }}://{{ host }}{{ company.icon.url }}" height="60">
       {% endif %}
     </td>
     <td style="width:33%;border:none"></td>
