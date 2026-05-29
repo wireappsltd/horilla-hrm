@@ -875,7 +875,7 @@ class AssignLeaveForm(HorillaForm):
     """
 
     leave_type_id = forms.ModelChoiceField(
-        queryset=LeaveType.objects.all(),
+        queryset=LeaveType.objects.exclude(is_compensatory_leave=True),
         widget=forms.SelectMultiple(
             attrs={"class": "oh-select oh-select-2 mb-2", "required": True}
         ),
