@@ -566,25 +566,58 @@ def initialize_job_position_delete(request, obj_id):
     )
 
 
-def _login_template_context(request):
-    """
-    Build the context for rendering login.html. When the session is marked as
-    locked out for a username and the cache still has an active lockout, expose
-    the remaining time so the template can render the form in a disabled state
-    with a visible countdown.
-    """
-    ctx = {"initialize_database": initialize_database_condition()}
+TURNSTILE_VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
 
-    locked_username = request.session.get("login_lockout_username")
-    if locked_username:
-        remaining = get_login_lockout_remaining(locked_username)
-        if remaining > 0:
-            ctx["is_locked_out"] = True
-            ctx["lockout_remaining_seconds"] = remaining
-            ctx["lockout_username"] = locked_username
-        else:
-            request.session.pop("login_lockout_username", None)
-    return ctx
+
+def _client_ip(request):
+    """Return the best-effort client IP for Turnstile remoteip."""
+    forwarded = request.META.get("HTTP_X_FORWARDED_FOR")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.META.get("REMOTE_ADDR", "")
+
+
+def verify_turnstile_token(request):
+    """
+    Verify the Cloudflare Turnstile token submitted with the login form.
+
+    Returns True when the challenge passes (or when no secret key is
+    configured — in which case the feature is effectively disabled).
+    Returns False when Cloudflare positively says the token is invalid.
+    A network/transport failure is treated as a pass with a logged warning
+    so an outage at Cloudflare cannot lock every user out of the system.
+    """
+    import logging
+
+    import requests
+
+    secret = getattr(settings, "TURNSTILE_SECRETKEY", "")
+    if not secret:
+        return True
+
+    token = request.POST.get("cf-turnstile-response", "")
+    if not token:
+        return False
+
+    try:
+        resp = requests.post(
+            TURNSTILE_VERIFY_URL,
+            data={
+                "secret": secret,
+                "response": token,
+                "remoteip": _client_ip(request),
+            },
+            timeout=5,
+        )
+        data = resp.json()
+    except Exception as exc:
+        logging.getLogger(__name__).warning(
+            "Turnstile verification request failed; allowing login through: %s",
+            exc,
+        )
+        return True
+
+    return bool(data.get("success"))
 
 
 @never_cache
@@ -615,20 +648,17 @@ def login_user(request):
         query_params.pop("next", None)
         params = urlencode(query_params)
 
-        # Enforce the failed-login lockout before doing any password work so
-        # that locked accounts cannot be brute-forced and timing differences
-        # between locked and unlocked accounts are minimised.
-        login_lockout_remaining = get_login_lockout_remaining(username)
-        if login_lockout_remaining > 0:
-            request.session["login_lockout_username"] = username
-            minutes = int((login_lockout_remaining + 59) // 60)
+        # Block automated and rapid-fire login attempts via Cloudflare
+        # Turnstile. Verified before any password work so failed challenges
+        # also count toward the login lockout counter (defence in depth).
+        if not verify_turnstile_token(request):
+            increment_login_attempts(username)
             messages.error(
                 request,
                 _(
-                    "Too many failed login attempts. Please try again after "
-                    "%(minutes)s minute(s)."
-                )
-                % {"minutes": minutes},
+                    "Verification failed. Please complete the security check "
+                    "and try again."
+                ),
             )
             return redirect("login")
 
@@ -728,7 +758,14 @@ def login_user(request):
             next_url += f"?{params}"
         return redirect(next_url)
 
-    return render(request, "login.html", _login_template_context(request))
+    return render(
+        request,
+        "login.html",
+        {
+            "initialize_database": initialize_database_condition(),
+            "turnstile_sitekey": getattr(settings, "TURNSTILE_SITEKEY", ""),
+        },
+    )
 
 
 def include_employee_instance(request, form):
