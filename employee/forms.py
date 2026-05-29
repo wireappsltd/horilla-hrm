@@ -242,7 +242,7 @@ class EmployeeForm(ModelForm):
                 "placeholder", "Kamal Perera Silva"
             )
         if "etf_epf_number" in self.fields:
-            self.fields["etf_epf_number"].widget.attrs["placeholder"] = "ETF/EPF Number"
+            self.fields["etf_epf_number"].widget.attrs["placeholder"] = "Enter ETF/EPF Member Number"
         if "tin" in self.fields:
             self.fields["tin"].widget.attrs["placeholder"] = "TIN"
             self.fields["tin"].widget.attrs.setdefault("maxlength", "9")

@@ -134,7 +134,7 @@ class Employee(models.Model):
         max_length=50,
         null=True,
         blank=True,
-        verbose_name=_("ETF/EPF Number"),
+        verbose_name=_("ETF/EPF Member Number"),
         help_text=_("Alphanumeric ETF/EPF number (HR Admin only)"),
         validators=[validate_etf_epf_format],
     )
