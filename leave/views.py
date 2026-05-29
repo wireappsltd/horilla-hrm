@@ -1683,7 +1683,9 @@ def leave_assign(request):
         employee_ids = request.POST.getlist("employee_id")
 
         if leave_type_ids and employee_ids:
-            leave_types = LeaveType.objects.filter(id__in=leave_type_ids)
+            leave_types = LeaveType.objects.filter(id__in=leave_type_ids).exclude(
+                is_compensatory_leave=True
+            )
             employees = Employee.objects.filter(id__in=employee_ids)
 
             existing_assignments = set(
@@ -1921,6 +1923,10 @@ def assign_leave_type_import(request):
                 errors.append(_("This badge id does not exist."))
             if leave_type is None:
                 errors.append(_("This leave type does not exist."))
+            if leave_type is not None and leave_type.is_compensatory_leave:
+                errors.append(
+                    _("Compensatory leave type cannot be assigned manually.")
+                )
             if errors:
                 assign_leave[
                     "Badge ID Error" if "badge id" in errors[0] else "Leave Type Error"
