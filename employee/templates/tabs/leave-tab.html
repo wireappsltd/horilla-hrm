@@ -27,11 +27,13 @@
     gap: 10px;
     width: 100%;
     overflow-x: scroll;
+    align-items: stretch;
   }
   .oh-kanban-card {
     min-width: 350px;
     border-radius:10px;
     flex-basis: calc(17% - 15px);
+    align-items: flex-start;
   }
   .oh-sticky-table-container + .oh-sticky-table-request {
     margin-top: 20px;
@@ -109,11 +111,7 @@
               <span class="oh-kanban-card__subtitle">{% trans "Pending Leaves" %} : {{user_leave.pending_leaves}}</span><br />
               <span class="oh-kanban-card__subtitle">{% trans "Balance Leave" %} : {% if user_leave.leave_type_id.limit_leave %}{{user_leave.balance_leaves}}{% else %}{% trans "No Limit" %}{% endif %}</span><br />
               <span class="oh-kanban-card__subtitle">{% trans "Total Leave Count" %} : {% if user_leave.leave_type_id.limit_leave %}{{user_leave.total_leaves}}{% else %}{% trans "No Limit" %}{% endif %}</span><br />
-              {% if user_leave.leave_type_id.carryforward_type == "no carryforward" %}
-              <span class="oh-kanban-card__subtitle" style="color: #b5b5b5;" title="{% trans 'Carryforward is not configured for this leave type' %}">{% trans "Carryforward Leave Days" %} : —</span><br />
-              <span class="oh-kanban-card__subtitle" style="color: #b5b5b5;" title="{% trans 'Carryforward is not configured for this leave type' %}">{% trans "Used Carryforward Days" %} : —</span><br />
-              <span class="oh-kanban-card__subtitle" style="color: #b5b5b5;" title="{% trans 'Carryforward is not configured for this leave type' %}">{% trans "Expired Carryforward Days" %} : —</span>
-              {% else %}
+              {% if user_leave.leave_type_id.carryforward_type != "no carryforward" %}
               <span class="oh-kanban-card__subtitle">{% trans "Carryforward Leave Days" %} : {{user_leave.carryforward_days}}</span><br />
               <span class="oh-kanban-card__subtitle">{% trans "Used Carryforward Days" %} : {{user_leave.used_carryforward_days}}</span><br />
               <span class="oh-kanban-card__subtitle">{% trans "Expired Carryforward Days" %} : {{user_leave.expired_carryforward_days}}</span>
@@ -165,11 +163,7 @@
               <span class="oh-kanban-card__subtitle">{% trans "Pending Leaves" %} : {{employee_leave.pending_leaves}}</span><br />
               <span class="oh-kanban-card__subtitle">{% trans "Balance Leave" %} : {% if employee_leave.leave_type_id.limit_leave %}{{employee_leave.balance_leaves}}{% else %}{% trans "No Limit" %}{% endif %}</span><br />
               <span class="oh-kanban-card__subtitle">{% trans "Total Leave Count" %} : {% if employee_leave.leave_type_id.limit_leave %}{{employee_leave.total_leaves}}{% else %}{% trans "No Limit" %}{% endif %}</span><br />
-              {% if employee_leave.leave_type_id.carryforward_type == "no carryforward" %}
-              <span class="oh-kanban-card__subtitle" style="color: #b5b5b5;" title="{% trans 'Carryforward is not configured for this leave type' %}">{% trans "Carryforward Leave Days" %} : —</span><br />
-              <span class="oh-kanban-card__subtitle" style="color: #b5b5b5;" title="{% trans 'Carryforward is not configured for this leave type' %}">{% trans "Used Carryforward Days" %} : —</span><br />
-              <span class="oh-kanban-card__subtitle" style="color: #b5b5b5;" title="{% trans 'Carryforward is not configured for this leave type' %}">{% trans "Expired Carryforward Days" %} : —</span>
-              {% else %}
+              {% if employee_leave.leave_type_id.carryforward_type != "no carryforward" %}
               <span class="oh-kanban-card__subtitle">{% trans "Carryforward Leave Days" %} : {{employee_leave.carryforward_days}}</span><br />
               <span class="oh-kanban-card__subtitle">{% trans "Used Carryforward Days" %} : {{employee_leave.used_carryforward_days}}</span><br />
               <span class="oh-kanban-card__subtitle">{% trans "Expired Carryforward Days" %} : {{employee_leave.expired_carryforward_days}}</span>
