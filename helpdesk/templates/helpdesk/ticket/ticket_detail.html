@@ -79,6 +79,32 @@
         overflow-x: auto;
         width: 100%;
     }
+
+    /* ISO status badges (Issue 3): consistent `.oh-badge` chips with distinct
+       per-status colours (warning/light modifiers don't exist in Horilla CSS). */
+    .oh-badge--iso-pending  { background-color: hsl(0, 0%, 27%);   color: #fff; }
+    .oh-badge--iso-action   { background-color: hsl(38, 92%, 50%); color: #fff; }
+    .oh-badge--iso-awaiting { background-color: hsl(207, 90%, 54%); color: #fff; }
+    .oh-badge--iso-closed   { background-color: hsl(8, 77%, 56%);  color: #fff; }
+    .oh-badge--iso-rejected { background-color: hsl(1, 100%, 61%); color: #fff; }
+    .oh-badge--iso-default  { background-color: hsl(0, 0%, 45%);   color: #fff; }
+
+    /* ISO detail header row (Issue 4): keep the title, status dropdown and ISO
+       action button(s) on one vertically-centred baseline, matched heights and
+       consistent spacing, without wrapping/offset. */
+    .oh-helpdesk__header .d-flex.justify-content-between {
+        flex-wrap: nowrap;
+        gap: 12px;
+    }
+    .oh-helpdesk__header .oh-helpdesk__header-title {
+        margin-bottom: 0;
+    }
+    .oh-helpdesk__header .oh-select,
+    .oh-helpdesk__header .d-flex.align-items-center .oh-btn {
+        height: 38px;
+        display: inline-flex;
+        align-items: center;
+    }
 </style>
 
 <div id="main">
@@ -91,16 +117,16 @@
                 <div class="d-flex justify-content-between align-items-center">
                     <p class="oh-helpdesk__header-title">{{ticket.title}}</p>
 
-                    <span class="helpdesk__card-value me-3">
-                            {% if password_reset_request and password_reset_request.iso_status != 'PENDING' and not is_iso_officer %}
-                                <select name="status_update" title='{% trans "Status" %}' class="oh-select" disabled
-                                    style="width:190px; align-items: center; border: 1px solid #aaa; border-radius: 2px; background-color: #fff;">
-                                    {% for status in ticket_status %}
-                                        {% if status.0 == ticket.status %}
-                                        <option value="{{status.0}}" selected>
-                                            <span class="oh-dot oh-dot--small oh-dot--warning">{{status.1}}</span>
+                    <div class="d-flex align-items-center gap-2">
+                    <span class="helpdesk__card-value">
+                            {% if password_reset_request %}
+                                {# ISO requests show the ISO workflow states; read-only since transitions go through the action buttons. #}
+                                <select name="iso_status_display" title='{% trans "ISO Status" %}' class="oh-select" disabled
+                                    style="width:220px; align-items: center; border: 1px solid #aaa; border-radius: 2px; background-color: #fff;">
+                                    {% for status in iso_status_choices %}
+                                        <option value="{{status.0}}" {% if status.0 == password_reset_request.iso_status %}selected{% endif %}>
+                                            {{status.1}}
                                         </option>
-                                        {% endif %}
                                     {% endfor %}
                                 </select>
                             {% elif perms.helpdesk.change_ticket or request.user.employee_get|is_department_manager:ticket or request.user.employee_get in ticket.assigned_to.all or request.user.employee_get == ticket.employee_id %}
@@ -126,6 +152,44 @@
                                 </select>
                             {% endif %}
                     </span>
+                    {% if password_reset_request %}
+                    {# ── ISO workflow action buttons (contextual by status AND role) ── #}
+                    <div class="d-flex align-items-center gap-2 ms-4">
+                        {% if password_reset_request.iso_status == 'PENDING' and is_iso_officer and request.user.employee_get != ticket.employee_id %}
+                            {# Approve / Reject — ISO User Group only, status Pending. #}
+                            <button type="button" class="oh-btn oh-btn--success"
+                                title="{% trans 'Approve' %}"
+                                onclick="openIsoApproveModal('{% url 'iso-review-password-reset' password_reset_request.id %}');">
+                                <ion-icon name="checkmark-outline" class="me-1"></ion-icon>{% trans "Approve" %}
+                            </button>
+                            <button type="button" class="oh-btn oh-btn--danger"
+                                title="{% trans 'Reject' %}"
+                                onclick="openIsoRejectModal('{% url 'iso-review-password-reset' password_reset_request.id %}');">
+                                <ion-icon name="close-outline" class="me-1"></ion-icon>{% trans "Reject" %}
+                            </button>
+                        {% elif password_reset_request.iso_status == 'IN_ACTION' and is_iso_officer %}
+                            {# Mark Awaiting Acknowledgement — ISO User Group only, status In Action. #}
+                            <button type="button" class="oh-btn oh-btn--secondary"
+                                title="{% trans 'Mark Awaiting Acknowledgement' %}"
+                                onclick="openIsoMarkAwaitingModal('{% url 'password-reset-mark-awaiting' password_reset_request.id %}');">
+                                <ion-icon name="send-outline" class="me-1"></ion-icon>{% trans "Mark Awaiting Acknowledgement" %}
+                            </button>
+                        {% elif password_reset_request.iso_status == 'AWAITING_ACKNOWLEDGEMENT' and request.user.employee_get == ticket.employee_id %}
+                            {# Requestor acknowledgement — original requestor only. #}
+                            <button type="button" class="oh-btn oh-btn--success"
+                                title="{% trans 'Yes – Fulfilled' %}"
+                                onclick="openIsoAcknowledgeModal('{% url 'password-reset-acknowledge' password_reset_request.id %}', 'yes');">
+                                <ion-icon name="checkmark-done-outline" class="me-1"></ion-icon>{% trans "Yes" %}
+                            </button>
+                            <button type="button" class="oh-btn oh-btn--warning"
+                                title="{% trans 'No – Not Resolved' %}"
+                                onclick="openIsoAcknowledgeModal('{% url 'password-reset-acknowledge' password_reset_request.id %}', 'no');">
+                                <ion-icon name="refresh-outline" class="me-1"></ion-icon>{% trans "No" %}
+                            </button>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                    </div>
                 </div>
                 </div>
             <div class="oh-helpdesk__body">
@@ -492,11 +556,17 @@
                     <div class="oh-helpdesk__card-header d-flex justify-content-between align-items-center">
                         <span class="oh-helpdesk__card-title">{% trans "ISO Review" %}</span>
                         {% if password_reset_request.iso_status == 'PENDING' %}
-                            <span class="oh-badge oh-badge--info">{% trans "Pending" %}</span>
-                        {% elif password_reset_request.iso_status == 'APPROVED' %}
-                            <span class="oh-badge oh-badge--success">{% trans "Approved" %}</span>
+                            <span class="oh-badge oh-badge--iso-pending">{{ password_reset_request.get_iso_status_display }}</span>
+                        {% elif password_reset_request.iso_status == 'IN_ACTION' %}
+                            <span class="oh-badge oh-badge--iso-action">{{ password_reset_request.get_iso_status_display }}</span>
+                        {% elif password_reset_request.iso_status == 'AWAITING_ACKNOWLEDGEMENT' %}
+                            <span class="oh-badge oh-badge--iso-awaiting">{{ password_reset_request.get_iso_status_display }}</span>
+                        {% elif password_reset_request.iso_status == 'CLOSED' %}
+                            <span class="oh-badge oh-badge--iso-closed">{{ password_reset_request.get_iso_status_display }}</span>
                         {% elif password_reset_request.iso_status == 'REJECTED' %}
-                            <span class="oh-badge oh-badge--danger">{% trans "Rejected" %}</span>
+                            <span class="oh-badge oh-badge--iso-rejected">{{ password_reset_request.get_iso_status_display }}</span>
+                        {% else %}
+                            <span class="oh-badge oh-badge--iso-default">{{ password_reset_request.get_iso_status_display }}</span>
                         {% endif %}
                     </div>
                     <div class="oh-helpdesk__card-body">
@@ -513,6 +583,24 @@
                             <li class="helpdesk__card-item">
                                 <span class="helpdesk__card-label">{% trans "Reviewed by:" %}</span>
                                 <span class="helpdesk__card-value">{{ password_reset_request.reviewed_by.employee_get.get_full_name }}</span>
+                            </li>
+                            {% endif %}
+                            {% if password_reset_request.approved_by %}
+                            <li class="helpdesk__card-item">
+                                <span class="helpdesk__card-label">{% trans "Approved by:" %}</span>
+                                <span class="helpdesk__card-value">{{ password_reset_request.approved_by.employee_get.get_full_name|default:password_reset_request.approved_by.username }}</span>
+                            </li>
+                            {% endif %}
+                            {% if password_reset_request.actioned_by %}
+                            <li class="helpdesk__card-item">
+                                <span class="helpdesk__card-label">{% trans "Actioned by:" %}</span>
+                                <span class="helpdesk__card-value">{{ password_reset_request.actioned_by.employee_get.get_full_name|default:password_reset_request.actioned_by.username }}</span>
+                            </li>
+                            {% endif %}
+                            {% if password_reset_request.closed_by %}
+                            <li class="helpdesk__card-item">
+                                <span class="helpdesk__card-label">{% trans "Closed by:" %}</span>
+                                <span class="helpdesk__card-value">{{ password_reset_request.closed_by.employee_get.get_full_name|default:password_reset_request.closed_by.username }}</span>
                             </li>
                             {% endif %}
                             {% if password_reset_request.reviewed_at %}
@@ -1032,6 +1120,181 @@
 </script>
 
 <div id="passwordResetModalTarget"></div>
+
+{% if password_reset_request %}
+{# ── ISO Workflow Modals (detail view) ── #}
+<div class="oh-modal" id="isoApproveModal" role="dialog" aria-hidden="true">
+    <div class="oh-modal__dialog">
+        <div class="oh-modal__dialog-header">
+            <h2 class="oh-modal__dialog-title">{% trans "Approve Request" %}</h2>
+            <button class="oh-modal__close" aria-label="Close" onclick="closeIsoModal('isoApproveModal');">
+                <ion-icon name="close-outline"></ion-icon>
+            </button>
+        </div>
+        <div class="oh-modal__dialog-body">
+            <form id="isoApproveForm" method="post" action="">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="approve" />
+                <div class="oh-form__group">
+                    <label class="oh-label oh-label--mandatory">{% trans "Review Comment" %}</label>
+                    <textarea name="iso_feedback" id="isoApproveComment" class="oh-input w-100" rows="3"
+                        placeholder="{% trans 'Add a comment about this approval' %}" required></textarea>
+                    <span id="isoApproveError" class="oh-text--danger" style="font-size:12px; display:none;">{% trans "This field is required." %}</span>
+                </div>
+                <div class="d-flex justify-content-end mt-3 gap-2">
+                    <button type="button" class="oh-btn oh-btn--light-bkg" onclick="closeIsoModal('isoApproveModal');">{% trans "Cancel" %}</button>
+                    <button type="submit" class="oh-btn oh-btn--success">{% trans "Approve" %}</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="oh-modal" id="isoRejectModal" role="dialog" aria-hidden="true">
+    <div class="oh-modal__dialog">
+        <div class="oh-modal__dialog-header">
+            <h2 class="oh-modal__dialog-title">{% trans "Reject Request" %}</h2>
+            <button class="oh-modal__close" aria-label="Close" onclick="closeIsoModal('isoRejectModal');">
+                <ion-icon name="close-outline"></ion-icon>
+            </button>
+        </div>
+        <div class="oh-modal__dialog-body">
+            <form id="isoRejectForm" method="post" action="">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="reject" />
+                <div class="oh-form__group">
+                    <label class="oh-label oh-label--mandatory">{% trans "Reason for Rejection" %}</label>
+                    <textarea name="iso_feedback" id="isoRejectComment" class="oh-input w-100" rows="3"
+                        placeholder="{% trans 'Provide a reason for rejection...' %}" required></textarea>
+                    <span id="isoRejectError" class="oh-text--danger" style="font-size:12px; display:none;">{% trans "This field is required." %}</span>
+                </div>
+                <div class="d-flex justify-content-end mt-3 gap-2">
+                    <button type="button" class="oh-btn oh-btn--light-bkg" onclick="closeIsoModal('isoRejectModal');">{% trans "Cancel" %}</button>
+                    <button type="submit" class="oh-btn oh-btn--danger">{% trans "Reject" %}</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="oh-modal" id="isoMarkAwaitingModal" role="dialog" aria-hidden="true">
+    <div class="oh-modal__dialog">
+        <div class="oh-modal__dialog-header">
+            <h2 class="oh-modal__dialog-title">{% trans "Mark Awaiting Acknowledgement" %}</h2>
+            <button class="oh-modal__close" aria-label="Close" onclick="closeIsoModal('isoMarkAwaitingModal');">
+                <ion-icon name="close-outline"></ion-icon>
+            </button>
+        </div>
+        <div class="oh-modal__dialog-body">
+            <p class="text-muted mb-3">{% trans "A comment is required to notify the employee." %}</p>
+            <form id="isoMarkAwaitingForm" method="post" action="">
+                {% csrf_token %}
+                <div class="oh-form__group">
+                    <label class="oh-label oh-label--mandatory">{% trans "Comment" %}</label>
+                    <textarea name="comment" id="isoMarkAwaitingComment" class="oh-input w-100" rows="3"
+                        placeholder="{% trans 'Describe the action performed...' %}" required></textarea>
+                    <span id="isoMarkAwaitingError" class="oh-text--danger" style="font-size:12px; display:none;">{% trans "This field is required." %}</span>
+                </div>
+                <div class="d-flex justify-content-end mt-3 gap-2">
+                    <button type="button" class="oh-btn oh-btn--light-bkg" onclick="closeIsoModal('isoMarkAwaitingModal');">{% trans "Cancel" %}</button>
+                    <button type="submit" class="oh-btn oh-btn--secondary">{% trans "Mark Awaiting Acknowledgement" %}</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="oh-modal" id="isoAcknowledgeModal" role="dialog" aria-hidden="true">
+    <div class="oh-modal__dialog">
+        <div class="oh-modal__dialog-header">
+            <h2 class="oh-modal__dialog-title" id="isoAcknowledgeTitle">{% trans "Was this request fulfilled?" %}</h2>
+            <button class="oh-modal__close" aria-label="Close" onclick="closeIsoModal('isoAcknowledgeModal');">
+                <ion-icon name="close-outline"></ion-icon>
+            </button>
+        </div>
+        <div class="oh-modal__dialog-body">
+            <p class="text-muted mb-3" id="isoAcknowledgeHint"></p>
+            <form id="isoAcknowledgeForm" method="post" action="">
+                {% csrf_token %}
+                <input type="hidden" name="answer" id="isoAcknowledgeAnswer" value="" />
+                <div class="oh-form__group">
+                    <label class="oh-label oh-label--mandatory">{% trans "Comment" %}</label>
+                    <textarea name="comment" id="isoAcknowledgeComment" class="oh-input w-100" rows="3"
+                        placeholder="{% trans 'Add your comment...' %}" required></textarea>
+                    <span id="isoAcknowledgeError" class="oh-text--danger" style="font-size:12px; display:none;">{% trans "This field is required." %}</span>
+                </div>
+                <div class="d-flex justify-content-end mt-3 gap-2">
+                    <button type="button" class="oh-btn oh-btn--light-bkg" onclick="closeIsoModal('isoAcknowledgeModal');">{% trans "Cancel" %}</button>
+                    <button type="submit" id="isoAcknowledgeSubmit" class="oh-btn oh-btn--success">{% trans "Submit" %}</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    function closeIsoModal(id) {
+        document.getElementById(id).classList.remove('oh-modal--show');
+    }
+    function _isoRequireComment(formId, inputId, errorId) {
+        document.getElementById(formId).addEventListener('submit', function (e) {
+            var input = document.getElementById(inputId);
+            var err = document.getElementById(errorId);
+            if (!input.value.trim()) {
+                e.preventDefault();
+                err.style.display = 'block';
+                input.focus();
+                return false;
+            }
+            err.style.display = 'none';
+        });
+    }
+    function openIsoApproveModal(url) {
+        var f = document.getElementById('isoApproveForm');
+        f.action = url;
+        document.getElementById('isoApproveComment').value = '';
+        document.getElementById('isoApproveError').style.display = 'none';
+        document.getElementById('isoApproveModal').classList.add('oh-modal--show');
+    }
+    function openIsoRejectModal(url) {
+        var f = document.getElementById('isoRejectForm');
+        f.action = url;
+        document.getElementById('isoRejectComment').value = '';
+        document.getElementById('isoRejectError').style.display = 'none';
+        document.getElementById('isoRejectModal').classList.add('oh-modal--show');
+    }
+    function openIsoMarkAwaitingModal(url) {
+        var f = document.getElementById('isoMarkAwaitingForm');
+        f.action = url;
+        document.getElementById('isoMarkAwaitingComment').value = '';
+        document.getElementById('isoMarkAwaitingError').style.display = 'none';
+        document.getElementById('isoMarkAwaitingModal').classList.add('oh-modal--show');
+    }
+    function openIsoAcknowledgeModal(url, answer) {
+        var f = document.getElementById('isoAcknowledgeForm');
+        f.action = url;
+        document.getElementById('isoAcknowledgeAnswer').value = answer;
+        document.getElementById('isoAcknowledgeComment').value = '';
+        document.getElementById('isoAcknowledgeError').style.display = 'none';
+        var submitBtn = document.getElementById('isoAcknowledgeSubmit');
+        var hint = document.getElementById('isoAcknowledgeHint');
+        if (answer === 'yes') {
+            hint.textContent = '{% trans "Confirm this request was fulfilled. A comment is required." %}';
+            submitBtn.textContent = '{% trans "Yes, Close Request" %}';
+            submitBtn.className = 'oh-btn oh-btn--success';
+        } else {
+            hint.textContent = '{% trans "Explain why this was not resolved. A comment is required." %}';
+            submitBtn.textContent = '{% trans "No, Reopen Request" %}';
+            submitBtn.className = 'oh-btn oh-btn--warning';
+        }
+        document.getElementById('isoAcknowledgeModal').classList.add('oh-modal--show');
+    }
+    _isoRequireComment('isoApproveForm', 'isoApproveComment', 'isoApproveError');
+    _isoRequireComment('isoRejectForm', 'isoRejectComment', 'isoRejectError');
+    _isoRequireComment('isoMarkAwaitingForm', 'isoMarkAwaitingComment', 'isoMarkAwaitingError');
+    _isoRequireComment('isoAcknowledgeForm', 'isoAcknowledgeComment', 'isoAcknowledgeError');
+</script>
+{% endif %}
 
 <script type="module" src="https://unpkg.com/ionicons@5.5.2/dist/ionicons/ionicons.esm.js"></script>
 <script nomodule src="https://unpkg.com/ionicons@5.5.2/dist/ionicons/ionicons.js"></script>
