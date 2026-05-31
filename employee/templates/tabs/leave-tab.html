@@ -38,6 +38,32 @@
   .oh-sticky-table-container + .oh-sticky-table-request {
     margin-top: 20px;
   }
+
+  .oh-kanban-card__stat {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 24px;
+    padding: 3px 0;
+    white-space: nowrap;
+  }
+  .oh-kanban-card__stat-label {
+    font-weight: 400;
+    opacity: 0.75;
+  }
+  .oh-kanban-card__stat-value {
+    font-weight: 700;
+    text-align: right;
+  }
+  .oh-kanban-card__stats-group {
+    display: flex;
+    flex-direction: column;
+  }
+  .oh-kanban-card__stats-divider {
+    border: 0;
+    border-top: 1px solid rgba(128, 128, 128, 0.25);
+    margin: 8px 0;
+  }
 </style>
 <!-- {% if employee.leaverequest_set.all %}
 <div class="d-flex flex-row-reverse">
@@ -107,14 +133,40 @@
               <span class="oh-kanban-card__title"
                 >{{user_leave.leave_type_id}}</span
               >
-              <span class="oh-kanban-card__subtitle">{% trans "Approved Leaves" %} : {{user_leave.leave_taken}}</span><br />
-              <span class="oh-kanban-card__subtitle">{% trans "Pending Leaves" %} : {{user_leave.pending_leaves}}</span><br />
-              <span class="oh-kanban-card__subtitle">{% trans "Balance Leave" %} : {% if user_leave.leave_type_id.limit_leave %}{{user_leave.balance_leaves}}{% else %}{% trans "No Limit" %}{% endif %}</span><br />
-              <span class="oh-kanban-card__subtitle">{% trans "Total Leave Count" %} : {% if user_leave.leave_type_id.limit_leave %}{{user_leave.total_leaves}}{% else %}{% trans "No Limit" %}{% endif %}</span><br />
+              <div class="oh-kanban-card__stats-group">
+                <div class="oh-kanban-card__stat">
+                  <span class="oh-kanban-card__stat-label">{% trans "Approved Leaves" %}</span>
+                  <span class="oh-kanban-card__stat-value">{{user_leave.leave_taken}}</span>
+                </div>
+                <div class="oh-kanban-card__stat">
+                  <span class="oh-kanban-card__stat-label">{% trans "Pending Leaves" %}</span>
+                  <span class="oh-kanban-card__stat-value">{{user_leave.pending_leaves}}</span>
+                </div>
+                <div class="oh-kanban-card__stat">
+                  <span class="oh-kanban-card__stat-label">{% trans "Balance Leave" %}</span>
+                  <span class="oh-kanban-card__stat-value">{% if user_leave.leave_type_id.limit_leave %}{{user_leave.balance_leaves}}{% else %}{% trans "No Limit" %}{% endif %}</span>
+                </div>
+                <div class="oh-kanban-card__stat">
+                  <span class="oh-kanban-card__stat-label">{% trans "Total Leave Count" %}</span>
+                  <span class="oh-kanban-card__stat-value">{% if user_leave.leave_type_id.limit_leave %}{{user_leave.total_leaves}}{% else %}{% trans "No Limit" %}{% endif %}</span>
+                </div>
+              </div>
               {% if user_leave.leave_type_id.carryforward_type != "no carryforward" %}
-              <span class="oh-kanban-card__subtitle">{% trans "Carryforward Leave Days" %} : {{user_leave.carryforward_days}}</span><br />
-              <span class="oh-kanban-card__subtitle">{% trans "Used Carryforward Days" %} : {{user_leave.used_carryforward_days}}</span><br />
-              <span class="oh-kanban-card__subtitle">{% trans "Expired Carryforward Days" %} : {{user_leave.expired_carryforward_days}}</span>
+              <hr class="oh-kanban-card__stats-divider">
+              <div class="oh-kanban-card__stats-group">
+                <div class="oh-kanban-card__stat">
+                  <span class="oh-kanban-card__stat-label">{% trans "Carryforward Days" %}</span>
+                  <span class="oh-kanban-card__stat-value">{{user_leave.carryforward_days}}</span>
+                </div>
+                <div class="oh-kanban-card__stat">
+                  <span class="oh-kanban-card__stat-label">{% trans "Used Carryforward" %}</span>
+                  <span class="oh-kanban-card__stat-value">{{user_leave.used_carryforward_days}}</span>
+                </div>
+                <div class="oh-kanban-card__stat">
+                  <span class="oh-kanban-card__stat-label">{% trans "Expired Carryforward" %}</span>
+                  <span class="oh-kanban-card__stat-value">{{user_leave.expired_carryforward_days}}</span>
+                </div>
+              </div>
               {% endif %}
             </div>
           </div>
@@ -159,14 +211,40 @@
               <span class="oh-kanban-card__title"
                 >{{employee_leave.leave_type_id}}</span
               >
-              <span class="oh-kanban-card__subtitle">{% trans "Approved Leaves" %} : {{employee_leave.leave_taken}}</span><br />
-              <span class="oh-kanban-card__subtitle">{% trans "Pending Leaves" %} : {{employee_leave.pending_leaves}}</span><br />
-              <span class="oh-kanban-card__subtitle">{% trans "Balance Leave" %} : {% if employee_leave.leave_type_id.limit_leave %}{{employee_leave.balance_leaves}}{% else %}{% trans "No Limit" %}{% endif %}</span><br />
-              <span class="oh-kanban-card__subtitle">{% trans "Total Leave Count" %} : {% if employee_leave.leave_type_id.limit_leave %}{{employee_leave.total_leaves}}{% else %}{% trans "No Limit" %}{% endif %}</span><br />
+              <div class="oh-kanban-card__stats-group">
+                <div class="oh-kanban-card__stat">
+                  <span class="oh-kanban-card__stat-label">{% trans "Approved Leaves" %}</span>
+                  <span class="oh-kanban-card__stat-value">{{employee_leave.leave_taken}}</span>
+                </div>
+                <div class="oh-kanban-card__stat">
+                  <span class="oh-kanban-card__stat-label">{% trans "Pending Leaves" %}</span>
+                  <span class="oh-kanban-card__stat-value">{{employee_leave.pending_leaves}}</span>
+                </div>
+                <div class="oh-kanban-card__stat">
+                  <span class="oh-kanban-card__stat-label">{% trans "Balance Leave" %}</span>
+                  <span class="oh-kanban-card__stat-value">{% if employee_leave.leave_type_id.limit_leave %}{{employee_leave.balance_leaves}}{% else %}{% trans "No Limit" %}{% endif %}</span>
+                </div>
+                <div class="oh-kanban-card__stat">
+                  <span class="oh-kanban-card__stat-label">{% trans "Total Leave Count" %}</span>
+                  <span class="oh-kanban-card__stat-value">{% if employee_leave.leave_type_id.limit_leave %}{{employee_leave.total_leaves}}{% else %}{% trans "No Limit" %}{% endif %}</span>
+                </div>
+              </div>
               {% if employee_leave.leave_type_id.carryforward_type != "no carryforward" %}
-              <span class="oh-kanban-card__subtitle">{% trans "Carryforward Leave Days" %} : {{employee_leave.carryforward_days}}</span><br />
-              <span class="oh-kanban-card__subtitle">{% trans "Used Carryforward Days" %} : {{employee_leave.used_carryforward_days}}</span><br />
-              <span class="oh-kanban-card__subtitle">{% trans "Expired Carryforward Days" %} : {{employee_leave.expired_carryforward_days}}</span>
+              <hr class="oh-kanban-card__stats-divider">
+              <div class="oh-kanban-card__stats-group">
+                <div class="oh-kanban-card__stat">
+                  <span class="oh-kanban-card__stat-label">{% trans "Carryforward Days" %}</span>
+                  <span class="oh-kanban-card__stat-value">{{employee_leave.carryforward_days}}</span>
+                </div>
+                <div class="oh-kanban-card__stat">
+                  <span class="oh-kanban-card__stat-label">{% trans "Used Carryforward" %}</span>
+                  <span class="oh-kanban-card__stat-value">{{employee_leave.used_carryforward_days}}</span>
+                </div>
+                <div class="oh-kanban-card__stat">
+                  <span class="oh-kanban-card__stat-label">{% trans "Expired Carryforward" %}</span>
+                  <span class="oh-kanban-card__stat-value">{{employee_leave.expired_carryforward_days}}</span>
+                </div>
+              </div>
               {% endif %}
             </div>
           </div>
