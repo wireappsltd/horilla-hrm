@@ -78,7 +78,7 @@
                     </div>
                   <div class="oh-sticky-table__td">
                     <div class="oh-btn-group">
-                      <div type="button" data-id="{{payslip.id}}" title="{% trans 'Download' %}" class="oh-btn oh-btn--light-bkg w-100 payslip-download"> <ion-icon name="download"></ion-icon></div>
+                      <div type="button" data-id="{{payslip.id}}" data-url="{% url 'view-payslip-pdf' payslip.id %}" title="{% trans 'Download' %}" class="oh-btn oh-btn--light-bkg w-100 payslip-download"> <ion-icon name="download"></ion-icon></div>
                     </div>
                   </div>
               </a>
@@ -97,7 +97,6 @@
   $(".payslip-download").click(function(e) {
     e.preventDefault();
     e.stopPropagation();
-    const payslip_id = $(this).data("id");
-    window.location.href = `/payroll/view-payslip-pdf/${payslip_id}/`
+    window.location.href = $(this).data("url");
   });
 </script>
