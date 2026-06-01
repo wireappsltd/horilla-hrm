@@ -70,6 +70,7 @@ tzlocal
 uritools
 urllib3
 utils
+WeasyPrint==68.1
 webencodings
 Whoosh
 xhtml2pdf

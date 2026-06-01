@@ -623,13 +623,13 @@ def view_payslip_pdf(request, payslip_id):
             data["protocol"] = "https" if request.is_secure() else "http"
             data["company"] = company
 
-            from weasyprint import HTML
-
             html_content = render_to_string(
                 "payroll/payslip/payslip_pdf.html", context=data
             )
 
             try:
+                from weasyprint import HTML
+
                 pdf_bytes = HTML(
                     string=html_content,
                     base_url=request.build_absolute_uri("/"),
