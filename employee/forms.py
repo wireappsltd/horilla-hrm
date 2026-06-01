@@ -66,6 +66,33 @@ def get_intern_employee_type_id():
     return str(intern_id) if intern_id else ""
 
 
+def _resolve_is_intern(form):
+    """
+    Determine whether the form's currently selected (bound / initial / instance)
+    employee_type corresponds to an "Intern".
+    """
+    intern_id = get_intern_employee_type_id()
+    candidates = []
+    if form.is_bound:
+        candidates.append(form.data.get(form.add_prefix("employee_type_id")))
+    candidates.append(form.initial.get("employee_type_id"))
+    instance = getattr(form, "instance", None)
+    if instance is not None:
+        candidates.append(getattr(instance, "employee_type_id_id", None))
+    for value in candidates:
+        if value in (None, ""):
+            continue
+        if intern_id and str(value) == intern_id:
+            return True
+        try:
+            et_obj = EmployeeType.objects.filter(id=int(value)).first()
+            if et_obj and (et_obj.employee_type or "").strip().lower() == "intern":
+                return True
+        except (TypeError, ValueError):
+            continue
+    return False
+
+
 class ModelForm(forms.ModelForm):
     """
     Overriding django default model form to apply some styles
@@ -206,6 +233,39 @@ class EmployeeForm(ModelForm):
             "style": "text-transform:none;"
         })
         self.fields["badge_id"].required = False
+
+        # Friendly placeholders for the new statutory / initials fields
+        if "initials" in self.fields:
+            self.fields["initials"].widget.attrs.setdefault("placeholder", "K.P.S.")
+        if "names_denoted_by_initials" in self.fields:
+            self.fields["names_denoted_by_initials"].widget.attrs.setdefault(
+                "placeholder", "Kamal Perera Silva"
+            )
+        if "etf_epf_number" in self.fields:
+            self.fields["etf_epf_number"].widget.attrs["placeholder"] = "Enter ETF/EPF Member Number"
+        if "tin" in self.fields:
+            self.fields["tin"].widget.attrs["placeholder"] = "TIN"
+            self.fields["tin"].widget.attrs.setdefault("maxlength", "9")
+            self.fields["tin"].widget.attrs.setdefault("pattern", r"\d{9}")
+
+        # ETF/EPF Number and TIN should only be editable by HR Admin users.
+        try:
+            from horilla.horilla_middlewares import _thread_locals
+            request = getattr(_thread_locals, "request", None)
+        except Exception:
+            request = None
+        user = getattr(request, "user", None)
+        is_hr_admin = False
+        if user is not None and getattr(user, "is_authenticated", False):
+            is_hr_admin = (
+                user.is_superuser
+                or user.has_perm("employee.change_employee")
+                or user.groups.filter(name__in=["HR Admin", "HR"]).exists()
+            )
+        if not is_hr_admin:
+            for restricted in ("etf_epf_number", "tin"):
+                if restricted in self.fields:
+                    self.fields.pop(restricted)
 
         for _field_name in ("children", "experience"):
             if _field_name in self.fields:
@@ -438,9 +498,17 @@ class EmployeeWorkInformationForm(ModelForm):
         intern_employee_type_id = get_intern_employee_type_id()
         self.fields["email"].widget.attrs["autocomplete"] = "email"
 
-        for required_field in ("email", "date_joining", "probation_end_date"):
+        is_intern = _resolve_is_intern(self)
+        for required_field in ("email", "date_joining"):
             if required_field in self.fields:
                 self.fields[required_field].required = True
+        if "probation_end_date" in self.fields:
+            # Probation end date is not applicable for interns.
+            self.fields["probation_end_date"].required = not is_intern
+        if "intern_period_end_date" in self.fields:
+            # Intern period end date is mandatory only for interns; this drives
+            # the `*` asterisk rendering in the template label.
+            self.fields["intern_period_end_date"].required = is_intern
 
         self.fields["job_position_id"].widget.attrs.update(
             {
@@ -526,17 +594,6 @@ class EmployeeWorkInformationForm(ModelForm):
                 "date_joining",
                 _("This field is required.")
             )
-        if not probation_period_end and not self.has_error("probation_end_date"):
-            self.add_error(
-                "probation_end_date",
-                _("This field is required.")
-            )
-        if date_joining and probation_period_end and probation_period_end < date_joining:
-            self.add_error(
-                "probation_end_date",
-                _("Probation end date cannot be earlier than date of joining.")
-            )
-
         # Intern Period End Date validation
         intern_end_date = self.cleaned_data.get("intern_period_end_date")
         employee_type_value = self.cleaned_data.get("employee_type_id")
@@ -553,16 +610,31 @@ class EmployeeWorkInformationForm(ModelForm):
                     is_intern = True
             except (TypeError, ValueError):
                 is_intern = False
+
         if is_intern:
-            if not intern_end_date:
-                self.add_error(
-                    "intern_period_end_date",
-                    _("This field is required.")
-                )
-            elif date_joining and intern_end_date <= date_joining:
+            # Probation end date is not applicable for interns; clear any value
+            # that may have been persisted previously so we don't keep stale data.
+            self.cleaned_data["probation_end_date"] = None
+            if "probation_end_date" in self.errors:
+                del self.errors["probation_end_date"]
+            # Required check removed — intern_period_end_date.required = True
+            # is set in __init__, so Django adds "This field is required."
+            # automatically. Re-adding it here caused a duplicate error in the UI.
+            if intern_end_date and date_joining and intern_end_date <= date_joining:
                 self.add_error(
                     "intern_period_end_date",
                     _("Intern period end date must be after the joining date.")
+                )
+        else:
+            if not probation_period_end and not self.has_error("probation_end_date"):
+                self.add_error(
+                    "probation_end_date",
+                    _("This field is required.")
+                )
+            if date_joining and probation_period_end and probation_period_end < date_joining:
+                self.add_error(
+                    "probation_end_date",
+                    _("Probation end date cannot be earlier than date of joining.")
                 )
 
         if not email and not self.has_error("email"):
@@ -625,9 +697,14 @@ class EmployeeWorkInformationUpdateForm(ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        for required_field in ("email", "date_joining", "probation_end_date"):
+        is_intern = _resolve_is_intern(self)
+        for required_field in ("email", "date_joining"):
             if required_field in self.fields:
                 self.fields[required_field].required = True
+        if "probation_end_date" in self.fields:
+            self.fields["probation_end_date"].required = not is_intern
+        if "intern_period_end_date" in self.fields:
+            self.fields["intern_period_end_date"].required = is_intern
 
         if "employee_type_id" in self.fields:
             self.fields["employee_type_id"].widget.attrs["data-intern-type-id"] = (
@@ -681,16 +758,6 @@ class EmployeeWorkInformationUpdateForm(ModelForm):
                 "date_joining",
                 _("This field is required.")
             )
-        if not probation_period_end and not self.has_error("probation_end_date"):
-            self.add_error(
-                "probation_end_date",
-                _("This field is required.")
-            )
-        if date_joining and probation_period_end and probation_period_end < date_joining:
-            self.add_error(
-                "probation_end_date",
-                _("Probation end date cannot be earlier than date of joining.")
-            )
 
         # Intern Period End Date validation
         intern_end_date = self.cleaned_data.get("intern_period_end_date")
@@ -708,16 +775,30 @@ class EmployeeWorkInformationUpdateForm(ModelForm):
                     is_intern = True
             except (TypeError, ValueError):
                 is_intern = False
+
         if is_intern:
-            if not intern_end_date:
-                self.add_error(
-                    "intern_period_end_date",
-                    _("This field is required.")
-                )
-            elif date_joining and intern_end_date <= date_joining:
+            # Probation end date is not applicable for interns.
+            self.cleaned_data["probation_end_date"] = None
+            if "probation_end_date" in self.errors:
+                del self.errors["probation_end_date"]
+            # Required check removed — intern_period_end_date.required = True
+            # is set in __init__, so Django adds "This field is required."
+            # automatically. Re-adding it here caused a duplicate error in the UI.
+            if intern_end_date and date_joining and intern_end_date <= date_joining:
                 self.add_error(
                     "intern_period_end_date",
                     _("Intern period end date must be after the joining date.")
+                )
+        else:
+            if not probation_period_end and not self.has_error("probation_end_date"):
+                self.add_error(
+                    "probation_end_date",
+                    _("This field is required.")
+                )
+            if date_joining and probation_period_end and probation_period_end < date_joining:
+                self.add_error(
+                    "probation_end_date",
+                    _("Probation end date cannot be earlier than date of joining.")
                 )
 
 
@@ -837,7 +918,7 @@ class EmployeeBankDetailsUpdateForm(ModelForm):
 
 excel_columns = [
     ("badge_id", trans("Badge ID")),
-    ("employee_first_name", trans("First Name")),
+    ("employee_first_name", trans("Preferred Name")),
     ("employee_last_name", trans("Last Name")),
     ("email", trans("Email")),
     ("phone", trans("Phone")),

@@ -44,6 +44,8 @@ from helpdesk.forms import (
     DepartmentManagerCreateForm,
     FAQCategoryForm,
     FAQForm,
+    ISOAcknowledgementForm,
+    ISOCommentTransitionForm,
     ISOReviewForm,
     PasswordResetRequestForm,
     TicketAssigneesForm,
@@ -56,6 +58,7 @@ from helpdesk.methods import is_department_manager
 from helpdesk.models import (
     FAQ,
     ISO_GROUP_NAME,
+    ISO_STATUS_CHOICES,
     TICKET_STATUS,
     Attachment,
     ClaimRequest,
@@ -810,6 +813,17 @@ def ticket_filter(request):
     return render(request, template, context)
 
 
+def _suppress_initial_set_changes(trackings):
+    for history in trackings:
+        changes = history.get("changes")
+        if not changes:
+            continue
+        history["changes"] = [
+            change for change in changes if change.get("old") not in (None, "")
+        ]
+    return trackings
+
+
 @login_required
 def ticket_detail(request, ticket_id, **kwargs):
     ticket = Ticket.objects.get(id=ticket_id)
@@ -849,23 +863,14 @@ def ticket_detail(request, ticket_id, **kwargs):
             and _pr_for_audit.iso_status in ("APPROVED", "REJECTED")
         )
 
-        # Status values driven by ISO review (auto-set in iso_review_password_reset)
-        _iso_driven_ticket_statuses = {"resolved", "canceled"}
-
-        if _has_iso_review:
+        if _pr_for_audit:
             for h in trackings:
                 changes = h.get("changes") or []
-                # Drop ticket.status change rows that were caused by ISO review –
-                # this information is already conveyed by the ISO Review entry
-                # and the approval/rejection comment.
-                changes = [
-                    c for c in changes
-                    if not (
-                        c.get("field_name") == "status"
-                        and str(c.get("new", "")).lower() in _iso_driven_ticket_statuses
-                    )
+                h["changes"] = [
+                    c for c in changes if c.get("field_name") != "status"
                 ]
-                h["changes"] = changes
+
+        trackings = _suppress_initial_set_changes(trackings)
 
         # Filter out history entries that have no visible changes
         trackings = [
@@ -903,6 +908,7 @@ def ticket_detail(request, ticket_id, **kwargs):
                         if c.get("field_name") not in _iso_review_fields
                     ]
                     h["changes"] = changes
+            pr_trackings = _suppress_initial_set_changes(pr_trackings)
             # Filter out history entries that have no visible changes
             pr_trackings = [
                 h for h in pr_trackings
@@ -964,6 +970,7 @@ def ticket_detail(request, ticket_id, **kwargs):
             "f_form": f_form,
             "attachments": attachments,
             "ticket_status": TICKET_STATUS,
+            "iso_status_choices": ISO_STATUS_CHOICES,
             "tag_form": TicketTagForm(instance=ticket),
             "sorted_activity_list": sorted_activity_list,
             "create_tag_f": TagsForm(),
@@ -2482,11 +2489,17 @@ def iso_review_password_reset(request, pr_id):
             requestor = ticket.employee_id
 
             if action == "approve":
-                pr_request.iso_status = "APPROVED"
-                ticket.status = "resolved"
+                # Approving does NOT create an "Approved" resting status: the
+                # request transitions straight to IN_ACTION (spec §1/§4). The
+                # word "Approved" only survives in the audit comment below.
+                pr_request.iso_status = "IN_ACTION"
+                pr_request.approved_by = request.user
+                ticket.status = "in_progress"
                 verb = f"Your password reset request for {pr_request.platform} has been approved."
                 messages.success(request, _("Password reset request approved."))
             else:
+                # Rejection is terminal. We reuse the existing reviewed_by field
+                # to record the rejecting user (matches existing convention).
                 pr_request.iso_status = "REJECTED"
                 ticket.status = "canceled"
                 verb = (
@@ -2502,8 +2515,12 @@ def iso_review_password_reset(request, pr_id):
             try:
                 reviewer_employee = request.user.employee_get
                 if action == "approve":
+                    # Audit comment: keep the existing "ISO Review – Approved"
+                    # heading and add a "Status: Approved" line directly beneath
+                    # it (spec §4). The request itself is now IN_ACTION.
                     comment_text = (
                         f"<strong>ISO Review – Approved</strong><br>"
+                        f"<strong>Status:</strong> Approved<br>"
                         f"Your password reset request for <strong>{pr_request.platform}</strong> "
                         f"has been approved."
                     )
@@ -2512,6 +2529,7 @@ def iso_review_password_reset(request, pr_id):
                 else:
                     comment_text = (
                         f"<strong>ISO Review – Rejected</strong><br>"
+                        f"<strong>Status:</strong> Rejected<br>"
                         f"Your password reset request for <strong>{pr_request.platform}</strong> "
                         f"has been rejected."
                     )
@@ -2580,6 +2598,157 @@ def iso_review_password_reset(request, pr_id):
         else:
             for error in review_form.errors.values():
                 messages.error(request, error)
+
+    return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+
+@login_required
+def password_reset_mark_awaiting(request, pr_id):
+    """
+    ISO Officer / Superuser: move a request from In Action → Awaiting
+    Acknowledgement (spec §5).
+
+    Triggered after the ISO Officer has performed the actual out-of-system
+    action (reset link / re-add user). Requires a mandatory comment which is
+    used to notify the requestor. Role and mandatory-comment validation are
+    authoritative server-side.
+    """
+    if request.method != "POST":
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    # Server-side role enforcement: only ISO group members (or superusers) may
+    # perform this transition. A wrong-role POST is rejected, never allowed.
+    if not request.user.is_superuser and not _is_iso_officer(request.user):
+        messages.error(request, _("You don't have permission to perform this action."))
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    pr_request = PasswordResetRequest.objects.get(id=pr_id)
+
+    if pr_request.iso_status != "IN_ACTION":
+        messages.info(request, _("This request is not awaiting an ISO action."))
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    form = ISOCommentTransitionForm(request.POST)
+    if not form.is_valid():
+        for error in form.errors.values():
+            messages.error(request, error)
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    comment = form.cleaned_data["comment"]
+    ticket = pr_request.ticket
+    requestor = ticket.employee_id
+
+    pr_request.iso_status = "AWAITING_ACKNOWLEDGEMENT"
+    pr_request.actioned_by = request.user
+    pr_request.save()
+
+    # Keep the underlying ticket status meaningful for the rest of the helpdesk UI.
+    ticket.status = "on_hold"
+    ticket.save()
+
+    # Inline audit entry on the existing comment thread (spec §5/§7).
+    try:
+        Comment.objects.create(
+            comment=(
+                f"<strong>ISO Action Completed</strong><br>"
+                f"<strong>Status:</strong> Awaiting Acknowledgement<br>"
+                f"{comment}"
+            ),
+            ticket=ticket,
+            employee_id=request.user.employee_get,
+        )
+    except Exception as exc:
+        logger.error("ISO awaiting-acknowledgement comment error: %s", exc)
+
+    # Notify the requestor that their action is ready to acknowledge.
+    try:
+        notify.send(
+            request.user.employee_get,
+            recipient=requestor.employee_user_id,
+            verb=(
+                f"Your password reset request for {pr_request.platform} has been "
+                f"actioned and is awaiting your acknowledgement."
+            ),
+            icon="key",
+            redirect=reverse("ticket-detail", kwargs={"ticket_id": ticket.id}),
+        )
+    except Exception as exc:
+        logger.error("ISO awaiting-acknowledgement notify error: %s", exc)
+
+    messages.success(request, _("Request moved to Awaiting Acknowledgement."))
+    return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+
+@login_required
+def password_reset_acknowledge(request, pr_id):
+    """
+    Requestor acknowledgement (spec §6): the employee confirms the request was
+    fulfilled, which transitions it to Closed (closed_by = requestor) with a
+    mandatory comment. The "No"/reopen branch has been removed.
+
+    Only the original requestor may perform this step; enforced server-side.
+    """
+    if request.method != "POST":
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    pr_request = PasswordResetRequest.objects.get(id=pr_id)
+
+    # Server-side role enforcement: only the original requestor may close.
+    if not _is_password_reset_request_owner(request.user, pr_request):
+        messages.error(request, _("Only the requestor can acknowledge this request."))
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    if pr_request.iso_status != "AWAITING_ACKNOWLEDGEMENT":
+        messages.info(request, _("This request is not awaiting acknowledgement."))
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    form = ISOAcknowledgementForm(request.POST)
+    if not form.is_valid():
+        for error in form.errors.values():
+            messages.error(request, error)
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    comment = form.cleaned_data["comment"]
+    ticket = pr_request.ticket
+
+    pr_request.iso_status = "CLOSED"
+    pr_request.closed_by = request.user
+    pr_request.save()
+    ticket.status = "resolved"
+    ticket.save()
+
+    try:
+        Comment.objects.create(
+            comment=(
+                f"<strong>Request Acknowledged – Fulfilled</strong><br>"
+                f"<strong>Status:</strong> Closed<br>"
+                f"{comment}"
+            ),
+            ticket=ticket,
+            employee_id=request.user.employee_get,
+        )
+    except Exception as exc:
+        logger.error("ISO close comment error: %s", exc)
+
+    verb = (
+        f"The password reset request for {pr_request.platform} has been "
+        f"acknowledged and closed by the requestor."
+    )
+    messages.success(request, _("Request closed. Thank you for confirming."))
+
+    # Notify ISO officers about the requestor's decision.
+    try:
+        officers = _get_iso_officer_users()
+        if officers:
+            notify.send(
+                request.user.employee_get,
+                recipient=officers,
+                verb=verb,
+                icon="key",
+                redirect=reverse("ticket-detail", kwargs={"ticket_id": ticket.id}),
+            )
+    except Exception as exc:
+        logger.error("ISO acknowledgement notify error: %s", exc)
 
     return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
 

@@ -23,10 +23,10 @@
 <div class="row">
   {% for field in form %}
     {% if field.label != "Employee profile" and field.label != 'Country' and field.label != 'State' and field.label != 'Address' and field.label != 'Badge id' %}
-      <div class="col-lg-6{% if field.name == 'basic_salary' or field.name == 'salary_hour' or field.name == 'salary_currency' or field.name == 'intern_period_end_date' %} intern-salary-fields{% endif %}"
+      <div class="col-lg-6{% if field.name == 'basic_salary' or field.name == 'salary_hour' or field.name == 'salary_currency' or field.name == 'intern_period_end_date' %} intern-salary-fields{% endif %}{% if field.name == 'probation_end_date' %} non-intern-fields{% endif %}"
            {% if field.name == 'basic_salary' or field.name == 'salary_hour' or field.name == 'salary_currency' or field.name == 'intern_period_end_date' %}style="display:none;"{% endif %}>
         <div class="oh-input__group">
-          <label class="oh-label {% if field.field.required %}required-star{% endif %}"
+          <label class="oh-label {% if field.field.required or field.name == 'intern_period_end_date' %}required-star{% endif %}"
                  for="id_{{ field.name }}"
                  title="{{ field.help_text|safe }}">
             {% trans field.label %}
@@ -181,6 +181,13 @@
         $targets = window.jQuery(".intern-salary-fields");
       }
       $targets.toggle(show);
+
+      // Probation end date is hidden for interns and shown otherwise.
+      let $nonInternTargets = $scope.find(".non-intern-fields");
+      if (!$nonInternTargets.length) {
+        $nonInternTargets = window.jQuery(".non-intern-fields");
+      }
+      $nonInternTargets.toggle(!show);
     }
 
     function applyAll(root) {

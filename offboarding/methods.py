@@ -114,6 +114,10 @@ def assign_task_to_stage_employees(sender, instance, created, **kwargs):
         # The stage_id filter already scopes to the correct offboarding's employees.
         if instance.stage_id:
             employees = OffboardingEmployee.objects.entire().filter(stage_id=instance.stage_id)
+        elif instance.stage_title:
+            employees = OffboardingEmployee.objects.entire().filter(
+                stage_id__title=instance.stage_title
+            )
         else:
             employees = OffboardingEmployee.objects.entire().filter(employee_id__is_active=True)
 
@@ -148,7 +152,14 @@ def assign_stage_tasks_to_employee(employee):
         return
 
     tasks = OffboardingTask.objects.filter(
-        Q(stage_id=employee.stage_id_id) | Q(stage_id__isnull=True),
+        Q(stage_id=employee.stage_id_id)
+        | (
+            Q(stage_id__isnull=True)
+            & (
+                Q(stage_title=employee.stage_id.title)
+                | Q(stage_title__isnull=True)
+            )
+        ),
         is_fine=False,
         is_active=True,
     )

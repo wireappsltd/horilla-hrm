@@ -97,14 +97,32 @@ def pipeline_grouper(filters={}, offboardings=[]):
         stages = PipelineStageFilter(
             filters, queryset=offboarding.offboardingstage_set.all()
         ).qs.order_by("sequence")
+
+        # Build the employee FilterSet ONCE per offboarding flow instead of
+        # once per stage. PipelineEmployeeFilter has 8 ModelChoice fields, each
+        # of which queries its FK table to populate dropdown options when the
+        # FilterSet is instantiated -- doing that per stage was the main source
+        # of the pagination latency.
+        flow_employee_qs = (
+            OffboardingEmployee.objects.filter(stage_id__offboarding_id=offboarding)
+            .select_related(
+                "employee_id",
+                "employee_id__employee_work_info",
+                "employee_id__employee_work_info__department_id",
+                "employee_id__employee_work_info__job_position_id",
+                "stage_id",
+                "stage_id__offboarding_id",
+            )
+        )
+        filtered_flow_qs = PipelineEmployeeFilter(filters, flow_employee_qs).qs
+
         all_stages_grouper = []
         data = {"offboarding": offboarding, "stages": [], "employees": []}
         for stage in stages:
             all_stages_grouper.append({"grouper": stage, "list": []})
-            stage_employees = PipelineEmployeeFilter(
-                filters,
-                OffboardingEmployee.objects.filter(stage_id=stage),
-            ).qs.order_by("stage_id__id")
+            stage_employees = filtered_flow_qs.filter(stage_id=stage).order_by(
+                "stage_id__id"
+            )
 
             if request and not (
                     request.user.has_perm("offboarding.view_offboarding")
@@ -121,9 +139,9 @@ def pipeline_grouper(filters={}, offboardings=[]):
                 filters.get(page_name),
                 page_name,
             ).object_list
-            employees = employees + [
-                employee.id for employee in stage.offboardingemployee_set.all()
-            ]
+            employees = employees + list(
+                stage.offboardingemployee_set.values_list("id", flat=True)
+            )
             data["stages"] = data["stages"] + employee_grouper
 
         ordered_data = []
@@ -424,7 +442,11 @@ def add_employee(request):
 
             from django.db.models import Q
             tasks_for_stage = OffboardingTask.objects.filter(
-                Q(stage_id=stage) | Q(stage_id__isnull=True),
+                Q(stage_id=stage)
+                | (
+                    Q(stage_id__isnull=True)
+                    & (Q(stage_title=stage.title) | Q(stage_title__isnull=True))
+                ),
                 is_active=True,
                 is_fine=False,
             )

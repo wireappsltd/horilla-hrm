@@ -173,6 +173,16 @@ urlpatterns = [
         name="iso-review-password-reset",
     ),
     path(
+        "password-reset-request/mark-awaiting/<int:pr_id>/",
+        views.password_reset_mark_awaiting,
+        name="password-reset-mark-awaiting",
+    ),
+    path(
+        "password-reset-request/acknowledge/<int:pr_id>/",
+        views.password_reset_acknowledge,
+        name="password-reset-acknowledge",
+    ),
+    path(
         "password-reset-request/withdraw/<int:pr_id>/",
         views.password_reset_request_withdraw,
         name="password-reset-request-withdraw",

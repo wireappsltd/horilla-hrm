@@ -1145,7 +1145,8 @@ def leave_request_approve(request, id, emp_id=None):
         employee_id = emp_id
         return redirect(f"/employee/employee-view/{employee_id}/")
     return _trigger_leave_stats_refresh(
-        HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+        HttpResponseRedirect(request.META.get("HTTP_REFERER", "/")),
+        request,
     )
 
 
@@ -1682,7 +1683,9 @@ def leave_assign(request):
         employee_ids = request.POST.getlist("employee_id")
 
         if leave_type_ids and employee_ids:
-            leave_types = LeaveType.objects.filter(id__in=leave_type_ids)
+            leave_types = LeaveType.objects.filter(id__in=leave_type_ids).exclude(
+                is_compensatory_leave=True
+            )
             employees = Employee.objects.filter(id__in=employee_ids)
 
             existing_assignments = set(
@@ -1920,6 +1923,10 @@ def assign_leave_type_import(request):
                 errors.append(_("This badge id does not exist."))
             if leave_type is None:
                 errors.append(_("This leave type does not exist."))
+            if leave_type is not None and leave_type.is_compensatory_leave:
+                errors.append(
+                    _("Compensatory leave type cannot be assigned manually.")
+                )
             if errors:
                 assign_leave[
                     "Badge ID Error" if "badge id" in errors[0] else "Leave Type Error"
@@ -2504,7 +2511,7 @@ def user_request_update(request, id):
                             None,
                             _("You dont have enough leave days to make the request.."),
                         )
-            return render(
+            response = render(
                 request,
                 "leave/user_leave/user_request_update.html",
                 {
@@ -2513,9 +2520,17 @@ def user_request_update(request, id):
                     "pd": previous_data,
                 },
             )
+            # Trigger stats refresh whenever the user submitted a successful
+            # update — detected via the success message above.
+            if request.method == "POST" and form.is_valid():
+                _trigger_leave_stats_refresh(response, request)
+            return response
         else:
             messages.error(request, _("You can't update this leave request..."))
-            return HttpResponse("<script>window.location.reload();</script>")
+            return _trigger_leave_stats_refresh(
+                HttpResponse("<script>window.location.reload();</script>"),
+                request,
+            )
     except Exception as e:
         messages.error(request, _("User has no leave request.."))
     return render(
@@ -2553,9 +2568,15 @@ def user_request_delete(request, id):
     except ProtectedError:
         messages.error(request, _("Related entries exists"))
     if not LeaveRequest.objects.filter(employee_id=request.user.employee_get):
-        return HttpResponse("<script>window.location.reload();</script>")
+        return _trigger_leave_stats_refresh(
+            HttpResponse("<script>window.location.reload();</script>"),
+            request,
+        )
     else:
-        return redirect(f"/leave/user-request-filter?{previous_data}")
+        return _trigger_leave_stats_refresh(
+            redirect(f"/leave/user-request-filter?{previous_data}"),
+            request,
+        )
 
 
 @login_required
@@ -2907,10 +2928,29 @@ def employee_dashboard(request):
 LEAVE_STATS_TRIGGER = "leaveStatsRefresh"
 
 
-def _trigger_leave_stats_refresh(response):
-    """Attach the HX-Trigger header used to auto-refresh leave dashboard stats."""
+def _trigger_leave_stats_refresh(response, request=None):
+    """Attach the HX-Trigger header used to auto-refresh leave dashboard stats.
+
+    Browsers transparently follow 3xx redirects, which strips any custom
+    response header (including ``HX-Trigger``) from the original response. To
+    keep the trigger reaching htmx we transform redirect responses into a
+    ``204`` carrying ``HX-Redirect`` + ``HX-Trigger`` whenever the originating
+    request is an htmx request — htmx will then both fire the trigger and
+    perform the redirect itself, instead of letting the browser swallow the
+    header.
+    """
     if response is None:
         return response
+    is_htmx = False
+    if request is not None:
+        is_htmx = (
+            request.headers.get("HX-Request") == "true"
+            or getattr(request, "htmx", False)
+        )
+    if is_htmx and getattr(response, "status_code", 200) in (301, 302, 303, 307, 308):
+        location = response.get("Location", "/")
+        response = HttpResponse(status=204)
+        response["HX-Redirect"] = location
     existing = response.get("HX-Trigger", "")
     events = [e.strip() for e in existing.split(",") if e.strip()]
     if LEAVE_STATS_TRIGGER not in events:
@@ -3764,7 +3804,10 @@ def leave_allocation_request_approve(request, req_id):
             )
     else:
         messages.error(request, _("The leave allocation request can't be approved"))
-    return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+    return _trigger_leave_stats_refresh(
+        HttpResponseRedirect(request.META.get("HTTP_REFERER", "/")),
+        request,
+    )
 
 
 @login_required
@@ -3822,7 +3865,10 @@ def leave_allocation_request_reject(request, req_id):
                         redirect=reverse("leave-allocation-request-view")
                         + f"?id={leave_allocation_request.id}",
                     )
-                return HttpResponse("<script>location.reload();</script>")
+                return _trigger_leave_stats_refresh(
+                    HttpResponse("<script>location.reload();</script>"),
+                    request,
+                )
         return render(
             request,
             "leave/leave_allocation_request/leave_allocation_request_reject_form.html",
@@ -3830,7 +3876,10 @@ def leave_allocation_request_reject(request, req_id):
         )
     else:
         messages.error(request, _("The leave allocation request can't be rejected"))
-        return HttpResponse("<script>location.reload();</script>")
+        return _trigger_leave_stats_refresh(
+            HttpResponse("<script>location.reload();</script>"),
+            request,
+        )
 
 
 @login_required
@@ -3870,9 +3919,15 @@ def leave_allocation_request_delete(request, req_id):
     if hx_target and hx_target == "view-container":
         leave_allocations = LeaveAllocationRequest.objects.all()
         if leave_allocations.exists():
-            return redirect(f"/leave/leave-allocation-request-filter?{previous_data}")
+            return _trigger_leave_stats_refresh(
+                redirect(f"/leave/leave-allocation-request-filter?{previous_data}"),
+                request,
+            )
         else:
-            return HttpResponse("<script>location.reload();</script>")
+            return _trigger_leave_stats_refresh(
+                HttpResponse("<script>location.reload();</script>"),
+                request,
+            )
     elif hx_target and hx_target == "objectDetailsModalW25Target":
         instances_ids = request.GET.get("instances_ids")
         instances_list = json.loads(instances_ids)
@@ -3881,11 +3936,16 @@ def leave_allocation_request_delete(request, req_id):
         previous_instance, next_instance = closest_numbers(
             json.loads(instances_ids), req_id
         )
-        return redirect(
-            f"/leave/leave-allocation-request-single-view/{next_instance}?{previous_data}"
+        return _trigger_leave_stats_refresh(
+            redirect(
+                f"/leave/leave-allocation-request-single-view/{next_instance}?{previous_data}"
+            ),
+            request,
         )
 
-    return redirect(leave_allocation_request_view)
+    return _trigger_leave_stats_refresh(
+        redirect(leave_allocation_request_view), request
+    )
 
 
 @login_required
@@ -4138,12 +4198,15 @@ def employee_available_leave_count(request):
         #                 = balance_leaves() + pending_leaves()
         # The pending subtraction below leaves balance_leaves() — same
         # number as the stats tab.
-        total_leave_days = (
-            (leave_type.total_days or 0)
-            + available_leave.carryforward_days
-            + available_leave.used_carryforward_days()
-            - available_leave.leave_taken()
-        )
+        if getattr(leave_type, "is_compensatory_leave", False):
+            total_leave_days = (available_leave.available_days or 0)
+        else:
+            total_leave_days = (
+                (leave_type.total_days or 0)
+                + available_leave.carryforward_days
+                + available_leave.used_carryforward_days()
+                - available_leave.leave_taken()
+            )
 
         if leave_type:
             require_attachment = leave_type.require_attachment == "yes"
@@ -5084,8 +5147,13 @@ if apps.is_installed("attendance"):
         except:
             messages.error(request, _("Sorry, something went wrong!"))
         if request.GET.get("individual"):
-            return HttpResponse("<script>location.reload();</script>")
-        return redirect(filter_compensatory_leave)
+            return _trigger_leave_stats_refresh(
+                HttpResponse("<script>location.reload();</script>"),
+                request,
+            )
+        return _trigger_leave_stats_refresh(
+            redirect(filter_compensatory_leave), request
+        )
 
     @login_required
     @is_compensatory_leave_enabled()
@@ -5126,7 +5194,10 @@ if apps.is_installed("attendance"):
                             redirect=reverse("view-compensatory-leave")
                             + f"?id={comp_leave_req.id}",
                         )
-                    return HttpResponse("<script>location.reload();</script>")
+                    return _trigger_leave_stats_refresh(
+                        HttpResponse("<script>location.reload();</script>"),
+                        request,
+                    )
             return render(
                 request,
                 "leave/compensatory_leave/compensatory_leave_reject_form..html",
@@ -5134,7 +5205,10 @@ if apps.is_installed("attendance"):
             )
         else:
             messages.error(request, _("The leave allocation request can't be rejected"))
-            return HttpResponse("<script>location.reload();</script>")
+            return _trigger_leave_stats_refresh(
+                HttpResponse("<script>location.reload();</script>"),
+                request,
+            )
 
     @login_required
     @is_compensatory_leave_enabled()

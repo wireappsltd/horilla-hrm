@@ -112,6 +112,7 @@
             window.location.href = '{% url "user-request-view" %}?status=rejected'
         })
 
+
         // Refresh the Available Leaves donut chart on the same trigger so
         // the leave-balance pie always reflects the latest data.
         $(document).on("leaveStatsRefresh", function () {

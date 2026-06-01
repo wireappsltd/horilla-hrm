@@ -115,38 +115,11 @@
 {#                <span class="oh-timeoff-modal__stat-count">{{attendance_request.batch_attendance_id}}</span>#}
 {#            </div>#}
 {#        </div>#}
-        {% with compensation_request=attendance_request.compensatory_leave_request %}
-        <div class="oh-timeoff-modal__stats-container mt-3 mb-3">
-            <div class="oh-timeoff-modal__stat">
-                <span class="oh-timeoff-modal__stat-title">{% trans "Compensation Requested" %}</span>
-                {% if compensation_request %}
-                    {% if compensation_request.status == "approved" %}
-                        <span class="oh-timeoff-modal__stat-count oh-badge oh-badge--success">
-                            {% trans "Requested" %} ({% trans "Approved" %})
-                        </span>
-                    {% elif compensation_request.status == "rejected" %}
-                        <span class="oh-timeoff-modal__stat-count oh-badge oh-badge--danger">
-                            {% trans "Requested" %} ({% trans "Rejected" %})
-                        </span>
-                    {% else %}
-                        <span class="oh-timeoff-modal__stat-count oh-badge oh-badge--warning">
-                            {% trans "Requested" %} ({% trans "Pending" %})
-                        </span>
-                    {% endif %}
-                {% else %}
-                    <span class="oh-timeoff-modal__stat-count oh-badge oh-badge--secondary">
-                        {% trans "Not Requested" %}
-                    </span>
-                {% endif %}
-            </div>
-            {% if compensation_request %}
-            <div class="oh-timeoff-modal__stat" style="margin-left: 20px;">
-                <span class="oh-timeoff-modal__stat-title">{% trans "Compensation Days" %}</span>
-                <span class="oh-timeoff-modal__stat-count">{{ compensation_request.requested_days }}</span>
-            </div>
-            {% endif %}
-        </div>
-        {% endwith %}
+{% comment %}
+Compensation Requested / Not Requested section intentionally removed from
+the attendance request details view. The Mercantile Holiday — Compensation
+Type section below already conveys the relevant compensation information.
+{% endcomment %}
         <div class="oh-timeoff-modal__stats-container mt-3 mb-3">
             <div class="oh-timeoff-modal__stat" style="cursor: pointer;">
                 <span class="oh-timeoff-modal__stat-title">{% trans "Activities" %}</span>
@@ -163,21 +136,21 @@
                 <i class="bi bi-calendar-event" style="font-size:1rem;color:hsl(8,77%,56%);"></i>
                 <span class="fw-semibold" style="font-size:0.85rem;">{% trans "Mercantile Holiday — Compensation Type" %}</span>
             </div>
-            <div class="d-flex gap-2">
-                <div style="flex:1;border:2px solid {% if not requested_compensation_leave %}hsl(8,77%,56%){% else %}hsl(213,22%,84%){% endif %};border-radius:8px;padding:10px 14px;background:{% if not requested_compensation_leave %}hsl(8,77%,97%){% else %}white{% endif %};">
-                    <div class="d-flex align-items-center gap-2">
-                        <span class="d-flex align-items-center justify-content-center rounded-circle" style="width:28px;height:28px;background:{% if not requested_compensation_leave %}hsl(8,77%,56%){% else %}hsl(0,0%,93%){% endif %};">
+            <div style="display:grid;grid-template-columns:1fr;gap:0.5rem;align-items:stretch;">
+                <div style="border:2px solid {% if not requested_compensation_leave %}hsl(8,77%,56%){% else %}hsl(213,22%,84%){% endif %};border-radius:8px;padding:10px 14px;background:{% if not requested_compensation_leave %}hsl(8,77%,97%){% else %}white{% endif %};min-width:0;overflow:hidden;">
+                    <div class="d-flex align-items-center gap-2" style="min-width:0;">
+                        <span class="d-flex align-items-center justify-content-center rounded-circle flex-shrink-0" style="width:28px;height:28px;background:{% if not requested_compensation_leave %}hsl(8,77%,56%){% else %}hsl(0,0%,93%){% endif %};">
                             <i class="bi bi-cash-coin" style="font-size:0.85rem;color:{% if not requested_compensation_leave %}#fff{% else %}inherit{% endif %};"></i>
                         </span>
-                        <span class="fw-semibold" style="font-size:0.78rem;">{% trans "Compensation Payment" %}</span>
+                        <span class="fw-semibold" style="font-size:0.78rem;flex:1 1 auto;min-width:0;overflow-wrap:break-word;word-break:break-word;white-space:normal;line-height:1.2;">{% trans "Compensation Payment" %}</span>
                     </div>
                 </div>
-                <div style="flex:1;border:2px solid {% if requested_compensation_leave %}hsl(8,77%,56%){% else %}hsl(213,22%,84%){% endif %};border-radius:8px;padding:10px 14px;background:{% if requested_compensation_leave %}hsl(8,77%,97%){% else %}white{% endif %};">
-                    <div class="d-flex align-items-center gap-2">
-                        <span class="d-flex align-items-center justify-content-center rounded-circle" style="width:28px;height:28px;background:{% if requested_compensation_leave %}hsl(8,77%,56%){% else %}hsl(0,0%,93%){% endif %};">
+                <div style="border:2px solid {% if requested_compensation_leave %}hsl(8,77%,56%){% else %}hsl(213,22%,84%){% endif %};border-radius:8px;padding:10px 14px;background:{% if requested_compensation_leave %}hsl(8,77%,97%){% else %}white{% endif %};min-width:0;overflow:hidden;">
+                    <div class="d-flex align-items-center gap-2" style="min-width:0;">
+                        <span class="d-flex align-items-center justify-content-center rounded-circle flex-shrink-0" style="width:28px;height:28px;background:{% if requested_compensation_leave %}hsl(8,77%,56%){% else %}hsl(0,0%,93%){% endif %};">
                             <i class="bi bi-calendar2-check" style="font-size:0.85rem;color:{% if requested_compensation_leave %}#fff{% else %}inherit{% endif %};"></i>
                         </span>
-                        <span class="fw-semibold" style="font-size:0.78rem;">{% trans "Compensation Leave" %}</span>
+                        <span class="fw-semibold" style="font-size:0.78rem;flex:1 1 auto;min-width:0;overflow-wrap:break-word;word-break:break-word;white-space:normal;line-height:1.2;">{% trans "Compensation Leave" %}</span>
                     </div>
                 </div>
             </div>

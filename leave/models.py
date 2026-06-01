@@ -581,11 +581,10 @@ class AvailableLeave(HorillaModel):
         return pending_leaves if pending_leaves else 0
 
     def balance_leaves(self):
-        # Anchor on the leave type's configured max so the balance does not
-        # drift with the cached available_days field (which can desync from
-        # request data when the scheduler/approval logic misbehaves).
-        # Period max = total_days + starting CF (rolled in at period start),
-        # reconstructed as live carryforward_days + already-used CF.
+        if getattr(self.leave_type_id, "is_compensatory_leave", False):
+            balance_leave_days = (self.available_days or 0) - self.pending_leaves()
+            return balance_leave_days if balance_leave_days else 0
+
         max_days = (
             (self.leave_type_id.total_days or 0)
             + self.carryforward_days
@@ -595,6 +594,10 @@ class AvailableLeave(HorillaModel):
         return balance_leave_days if balance_leave_days else 0
 
     def total_leaves(self):
+        if getattr(self.leave_type_id, "is_compensatory_leave", False):
+            personal_total = (self.available_days or 0) + self.leave_taken()
+            return personal_total if personal_total else 0
+
         # See balance_leaves: anchored on the configured max plus starting CF
         # rather than the live (drifty) available_days bucket.
         total_leave_days_assigned = (
@@ -1010,10 +1013,11 @@ class LeaveRequest(HorillaModel):
 
     def clean(self):
         cleaned_data = super().clean()
-        # Prevent selecting self as covering person
-        manager = getattr(self, "manager", None)
-        emp = getattr(self, "employee_id", None)
-        if manager and emp and manager.pk and emp.pk and manager.pk == emp.pk:
+        # Prevent selecting self as covering person. Compare by FK ids so the
+        # check works even if related instances aren't fully loaded.
+        manager_pk = getattr(self, "manager_id", None)
+        employee_pk = getattr(self, "employee_id_id", None)
+        if manager_pk and employee_pk and str(manager_pk) == str(employee_pk):
             raise ValidationError(
                 {"manager": _("You cannot select yourself as the covering person.")}
             )

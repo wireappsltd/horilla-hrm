@@ -63,5 +63,23 @@ $(document).ready(function () {
     });
   });
 
+  // Auto-refresh the overall leave chart whenever any leave action fires
+  // the global `leaveStatsRefresh` event (apply / approve / reject / cancel).
+  $(document).on("leaveStatsRefresh", function () {
+    if (!overAllLeave) return;
+    var selected = $("#overAllLeaveSelect").val() || "today";
+    $.ajax({
+      type: "GET",
+      url: `/leave/overall-leave?overall_leave=${selected}`,
+      dataType: "json",
+      success: function (response) {
+        overAllLeave.data.labels = response.labels;
+        overAllLeave.data.datasets[0].data = response.data;
+        overAllLeave.data.datasets[0].backgroundColor = null;
+        overAllLeave.update();
+      },
+    });
+  });
+
   //Today leave employees chart
 });

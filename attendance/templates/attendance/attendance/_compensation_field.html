@@ -1,8 +1,10 @@
 {% load i18n %}
-{# This partial is rendered both as included markup (parent provides the wrapping
-   #compensation-field-container div) and as the HTMX response of the
-   check-compensation endpoint (innerHTML-swapped into the same wrapper). Do
-   not re-wrap with #compensation-field-container here or the id collides. #}
+{% comment %}
+This partial is rendered both as included markup (parent provides the wrapping
+#compensation-field-container div) and as the HTMX response of the
+check-compensation endpoint (innerHTML-swapped into the same wrapper). Do
+not re-wrap with #compensation-field-container here or the id collides.
+{% endcomment %}
     {% if show_field %}
         <div class="mb-3 mt-1">
             <div class="d-flex align-items-center mb-2 gap-1">
@@ -14,14 +16,14 @@
                 {{ form.is_get_compensation_leave }}
             </div>
 
-            <div class="d-flex gap-2 flex-wrap" id="compensation-option-cards">
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem; align-items:stretch;" id="compensation-option-cards">
 
-                <div class="compensation-option-card flex-fill"
+                <div class="compensation-option-card"
                      data-value="false"
                      onclick="selectCompensationOption(this)"
-                     style="cursor:pointer; border:2px solid hsl(213, 22%, 84%); border-radius:10px; padding:14px 16px; min-width:160px; transition: border-color 0.2s, background-color 0.2s;">
+                     style="cursor:pointer; border:2px solid hsl(213, 22%, 84%); border-radius:10px; padding:14px 16px; min-width:0; transition: border-color 0.2s, background-color 0.2s;">
                     <div class="d-flex align-items-center gap-2 mb-1">
-                        <span class="compensation-option-icon d-flex align-items-center justify-content-center rounded-circle"
+                        <span class="compensation-option-icon d-flex align-items-center justify-content-center rounded-circle flex-shrink-0"
                               style="width:32px; height:32px; background-color:hsl(0, 0%, 93%); transition: background-color 0.2s;">
                             <i class="bi bi-cash-coin" style="font-size:1rem;"></i>
                         </span>
@@ -32,12 +34,12 @@
                     </p>
                 </div>
 
-                <div class="compensation-option-card flex-fill"
+                <div class="compensation-option-card"
                      data-value="true"
                      onclick="selectCompensationOption(this)"
-                     style="cursor:pointer; border:2px solid hsl(213, 22%, 84%); border-radius:10px; padding:14px 16px; min-width:160px; transition: border-color 0.2s, background-color 0.2s;">
+                     style="cursor:pointer; border:2px solid hsl(213, 22%, 84%); border-radius:10px; padding:14px 16px; min-width:0; transition: border-color 0.2s, background-color 0.2s;">
                     <div class="d-flex align-items-center gap-2 mb-1">
-                        <span class="compensation-option-icon d-flex align-items-center justify-content-center rounded-circle"
+                        <span class="compensation-option-icon d-flex align-items-center justify-content-center rounded-circle flex-shrink-0"
                               style="width:32px; height:32px; background-color:hsl(0, 0%, 93%); transition: background-color 0.2s;">
                             <i class="bi bi-calendar2-check" style="font-size:1rem;"></i>
                         </span>
