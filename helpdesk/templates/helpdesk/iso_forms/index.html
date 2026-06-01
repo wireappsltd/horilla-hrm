@@ -46,8 +46,17 @@
         min-width: 200px;
     }
     #password-reset-table .iso-col--status {
-        width: 110px;
-        min-width: 110px;
+        width: 200px;
+        min-width: 200px;
+    }
+    /* Let the badge size to its content and stay on one line, even for long
+       labels like "Awaiting Acknowledgement". */
+    #password-reset-table .iso-col--status .oh-badge {
+        white-space: nowrap;
+    }
+    #password-reset-table .iso-col--actioned {
+        width: 190px;
+        min-width: 190px;
     }
     #password-reset-table .iso-col--updated {
         width: 155px;
@@ -79,6 +88,19 @@
     #password-reset-table .iso-col--actions .oh-btn {
         min-width: 34px;
     }
+
+    /* ISO status badges (Issue 3): every status renders as a consistent chip.
+       We build on the existing `.oh-badge` shape/padding/typography and only add
+       a distinct background colour per status. `warning`/`light` modifiers don't
+       exist in Horilla's CSS, which is why some statuses previously showed as
+       bare text — these classes fix that. Colours reuse Horilla's existing
+       badge HSLs where applicable (info=dark, secondary=closed, danger=red). */
+    .oh-badge--iso-pending  { background-color: hsl(0, 0%, 27%);   color: #fff; } /* neutral/dark */
+    .oh-badge--iso-action   { background-color: hsl(38, 92%, 50%); color: #fff; } /* amber / in-progress */
+    .oh-badge--iso-awaiting { background-color: hsl(207, 90%, 54%); color: #fff; } /* blue / info */
+    .oh-badge--iso-closed   { background-color: hsl(8, 77%, 56%);  color: #fff; } /* keep current Closed tone */
+    .oh-badge--iso-rejected { background-color: hsl(1, 100%, 61%); color: #fff; } /* red / destructive */
+    .oh-badge--iso-default  { background-color: hsl(0, 0%, 45%);   color: #fff; } /* neutral fallback */
 </style>
 
 <section class="oh-wrapper oh-main__topbar">
@@ -163,22 +185,26 @@
             <p class="text-muted mb-3">
                 {% trans "You are about to approve request" %}
                 <strong id="approveTicketId"></strong>.
-                {% trans "You may optionally add a review comment." %}
+                {% trans "A review comment is required." %}
             </p>
             <form id="approveCommentForm" method="post" action="">
                 {% csrf_token %}
                 <input type="hidden" name="action" value="approve" />
                 <div class="oh-form__group">
-                    <label class="oh-label" for="approveFeedbackInput">
-                        {% trans "Review Comment (optional)" %}
+                    <label class="oh-label oh-label--mandatory" for="approveFeedbackInput">
+                        {% trans "Review Comment" %}
                     </label>
                     <textarea
                         id="approveFeedbackInput"
                         name="iso_feedback"
                         class="oh-input w-100"
                         rows="3"
-                        placeholder="{% trans 'Add an optional comment about this approval...' %}"
+                        placeholder="{% trans 'Add a comment about this approval' %}"
+                        required
                     ></textarea>
+                    <span id="approveFeedbackError" class="oh-text--danger" style="font-size:12px; display:none;">
+                        {% trans "This field is required." %}
+                    </span>
                 </div>
                 <div class="d-flex justify-content-end mt-3 gap-2">
                     <button type="button" class="oh-btn oh-btn--light-bkg" onclick="closeApproveModal();">
@@ -248,10 +274,12 @@
         var form = document.getElementById('approveCommentForm');
         var ticketLabel = document.getElementById('approveTicketId');
         var feedbackInput = document.getElementById('approveFeedbackInput');
+        var errorSpan = document.getElementById('approveFeedbackError');
 
         form.action = actionUrl;
         ticketLabel.textContent = ticketId;
         feedbackInput.value = '';
+        if (errorSpan) { errorSpan.style.display = 'none'; }
         modal.classList.add('oh-modal--show');
     }
 
@@ -290,6 +318,163 @@
         }
         errorSpan.style.display = 'none';
     });
+
+    // Approve comment is mandatory (client-side UX; server-side is authoritative).
+    document.getElementById('approveCommentForm').addEventListener('submit', function(e) {
+        var feedbackInput = document.getElementById('approveFeedbackInput');
+        var errorSpan = document.getElementById('approveFeedbackError');
+        if (!feedbackInput.value.trim()) {
+            e.preventDefault();
+            errorSpan.style.display = 'block';
+            feedbackInput.focus();
+            return false;
+        }
+        errorSpan.style.display = 'none';
+    });
+
+    // ── Mark Awaiting Acknowledgement (ISO officer) ──
+    function openMarkAwaitingModal(actionUrl, ticketId) {
+        var modal = document.getElementById('markAwaitingModal');
+        var form = document.getElementById('markAwaitingForm');
+        document.getElementById('markAwaitingTicketId').textContent = ticketId;
+        var input = document.getElementById('markAwaitingCommentInput');
+        var errorSpan = document.getElementById('markAwaitingError');
+        form.action = actionUrl;
+        input.value = '';
+        errorSpan.style.display = 'none';
+        modal.classList.add('oh-modal--show');
+    }
+    function closeMarkAwaitingModal() {
+        document.getElementById('markAwaitingModal').classList.remove('oh-modal--show');
+    }
+    document.getElementById('markAwaitingForm').addEventListener('submit', function(e) {
+        var input = document.getElementById('markAwaitingCommentInput');
+        var errorSpan = document.getElementById('markAwaitingError');
+        if (!input.value.trim()) {
+            e.preventDefault();
+            errorSpan.style.display = 'block';
+            input.focus();
+            return false;
+        }
+        errorSpan.style.display = 'none';
+    });
+
+    // ── Requestor acknowledgement: Yes (close) ──
+    function openAcknowledgeModal(actionUrl, ticketId) {
+        var modal = document.getElementById('acknowledgeModal');
+        var form = document.getElementById('acknowledgeForm');
+        document.getElementById('acknowledgeTicketId').textContent = ticketId;
+        var input = document.getElementById('acknowledgeCommentInput');
+        var errorSpan = document.getElementById('acknowledgeError');
+        var title = document.getElementById('acknowledgeModalTitle');
+        var hint = document.getElementById('acknowledgeHint');
+        var submitBtn = document.getElementById('acknowledgeSubmitBtn');
+        form.action = actionUrl;
+        input.value = '';
+        errorSpan.style.display = 'none';
+        title.textContent = '{% trans "Confirm Fulfilment" %}';
+        hint.textContent = '{% trans "Confirm this request was fulfilled. A comment is required." %}';
+        submitBtn.textContent = '{% trans "Yes, Close Request" %}';
+        submitBtn.className = 'oh-btn oh-btn--success';
+        modal.classList.add('oh-modal--show');
+    }
+    function closeAcknowledgeModal() {
+        document.getElementById('acknowledgeModal').classList.remove('oh-modal--show');
+    }
+    document.getElementById('acknowledgeForm').addEventListener('submit', function(e) {
+        var input = document.getElementById('acknowledgeCommentInput');
+        var errorSpan = document.getElementById('acknowledgeError');
+        if (!input.value.trim()) {
+            e.preventDefault();
+            errorSpan.style.display = 'block';
+            input.focus();
+            return false;
+        }
+        errorSpan.style.display = 'none';
+    });
 </script>
+
+{# ── Mark Awaiting Acknowledgement Modal (ISO officer) ── #}
+<div class="oh-modal" id="markAwaitingModal" role="dialog" aria-labelledby="markAwaitingModalTitle" aria-hidden="true">
+    <div class="oh-modal__dialog">
+        <div class="oh-modal__dialog-header">
+            <h2 class="oh-modal__dialog-title" id="markAwaitingModalTitle">
+                {% trans "Mark Awaiting Acknowledgement" %}
+            </h2>
+            <button class="oh-modal__close" aria-label="Close" onclick="closeMarkAwaitingModal();">
+                <ion-icon name="close-outline"></ion-icon>
+            </button>
+        </div>
+        <div class="oh-modal__dialog-body">
+            <p class="text-muted mb-3">
+                {% trans "You are about to move request" %}
+                <strong id="markAwaitingTicketId"></strong>
+                {% trans "to Awaiting Acknowledgement. A comment is required to notify the employee." %}
+            </p>
+            <form id="markAwaitingForm" method="post" action="">
+                {% csrf_token %}
+                <div class="oh-form__group">
+                    <label class="oh-label oh-label--mandatory" for="markAwaitingCommentInput">
+                        {% trans "Comment" %}
+                    </label>
+                    <textarea id="markAwaitingCommentInput" name="comment" class="oh-input w-100" rows="3"
+                        placeholder="{% trans 'Describe the action performed...' %}" required></textarea>
+                    <span id="markAwaitingError" class="oh-text--danger" style="font-size:12px; display:none;">
+                        {% trans "This field is required." %}
+                    </span>
+                </div>
+                <div class="d-flex justify-content-end mt-3 gap-2">
+                    <button type="button" class="oh-btn oh-btn--light-bkg" onclick="closeMarkAwaitingModal();">
+                        {% trans "Cancel" %}
+                    </button>
+                    <button type="submit" class="oh-btn oh-btn--secondary">
+                        {% trans "Mark Awaiting Acknowledgement" %}
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+{# ── Requestor Acknowledgement Modal (Yes/No) ── #}
+<div class="oh-modal" id="acknowledgeModal" role="dialog" aria-labelledby="acknowledgeModalTitle" aria-hidden="true">
+    <div class="oh-modal__dialog">
+        <div class="oh-modal__dialog-header">
+            <h2 class="oh-modal__dialog-title" id="acknowledgeModalTitle">
+                {% trans "Was this request fulfilled?" %}
+            </h2>
+            <button class="oh-modal__close" aria-label="Close" onclick="closeAcknowledgeModal();">
+                <ion-icon name="close-outline"></ion-icon>
+            </button>
+        </div>
+        <div class="oh-modal__dialog-body">
+            <p class="text-muted mb-3">
+                {% trans "Request" %} <strong id="acknowledgeTicketId"></strong>.
+                <span id="acknowledgeHint"></span>
+            </p>
+            <form id="acknowledgeForm" method="post" action="">
+                {% csrf_token %}
+                <div class="oh-form__group">
+                    <label class="oh-label oh-label--mandatory" for="acknowledgeCommentInput">
+                        {% trans "Comment" %}
+                    </label>
+                    <textarea id="acknowledgeCommentInput" name="comment" class="oh-input w-100" rows="3"
+                        placeholder="{% trans 'Add your comment...' %}" required></textarea>
+                    <span id="acknowledgeError" class="oh-text--danger" style="font-size:12px; display:none;">
+                        {% trans "This field is required." %}
+                    </span>
+                </div>
+                <div class="d-flex justify-content-end mt-3 gap-2">
+                    <button type="button" class="oh-btn oh-btn--light-bkg" onclick="closeAcknowledgeModal();">
+                        {% trans "Cancel" %}
+                    </button>
+                    <button type="submit" id="acknowledgeSubmitBtn" class="oh-btn oh-btn--success">
+                        {% trans "Submit" %}
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
 
 {% endblock %}
