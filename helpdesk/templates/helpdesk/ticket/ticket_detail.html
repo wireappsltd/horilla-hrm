@@ -175,16 +175,11 @@
                                 <ion-icon name="send-outline" class="me-1"></ion-icon>{% trans "Mark Awaiting Acknowledgement" %}
                             </button>
                         {% elif password_reset_request.iso_status == 'AWAITING_ACKNOWLEDGEMENT' and request.user.employee_get == ticket.employee_id %}
-                            {# Requestor acknowledgement — original requestor only. #}
+                            {# Requestor acknowledgement — original requestor only (confirm = close). #}
                             <button type="button" class="oh-btn oh-btn--success"
                                 title="{% trans 'Yes – Fulfilled' %}"
-                                onclick="openIsoAcknowledgeModal('{% url 'password-reset-acknowledge' password_reset_request.id %}', 'yes');">
+                                onclick="openIsoAcknowledgeModal('{% url 'password-reset-acknowledge' password_reset_request.id %}');">
                                 <ion-icon name="checkmark-done-outline" class="me-1"></ion-icon>{% trans "Yes" %}
-                            </button>
-                            <button type="button" class="oh-btn oh-btn--warning"
-                                title="{% trans 'No – Not Resolved' %}"
-                                onclick="openIsoAcknowledgeModal('{% url 'password-reset-acknowledge' password_reset_request.id %}', 'no');">
-                                <ion-icon name="refresh-outline" class="me-1"></ion-icon>{% trans "No" %}
                             </button>
                         {% endif %}
                     </div>
@@ -1207,16 +1202,15 @@
 <div class="oh-modal" id="isoAcknowledgeModal" role="dialog" aria-hidden="true">
     <div class="oh-modal__dialog">
         <div class="oh-modal__dialog-header">
-            <h2 class="oh-modal__dialog-title" id="isoAcknowledgeTitle">{% trans "Was this request fulfilled?" %}</h2>
+            <h2 class="oh-modal__dialog-title" id="isoAcknowledgeTitle">{% trans "Confirm Fulfilment" %}</h2>
             <button class="oh-modal__close" aria-label="Close" onclick="closeIsoModal('isoAcknowledgeModal');">
                 <ion-icon name="close-outline"></ion-icon>
             </button>
         </div>
         <div class="oh-modal__dialog-body">
-            <p class="text-muted mb-3" id="isoAcknowledgeHint"></p>
+            <p class="text-muted mb-3" id="isoAcknowledgeHint">{% trans "Confirm this request was fulfilled. A comment is required." %}</p>
             <form id="isoAcknowledgeForm" method="post" action="">
                 {% csrf_token %}
-                <input type="hidden" name="answer" id="isoAcknowledgeAnswer" value="" />
                 <div class="oh-form__group">
                     <label class="oh-label oh-label--mandatory">{% trans "Comment" %}</label>
                     <textarea name="comment" id="isoAcknowledgeComment" class="oh-input w-100" rows="3"
@@ -1225,7 +1219,7 @@
                 </div>
                 <div class="d-flex justify-content-end mt-3 gap-2">
                     <button type="button" class="oh-btn oh-btn--light-bkg" onclick="closeIsoModal('isoAcknowledgeModal');">{% trans "Cancel" %}</button>
-                    <button type="submit" id="isoAcknowledgeSubmit" class="oh-btn oh-btn--success">{% trans "Submit" %}</button>
+                    <button type="submit" id="isoAcknowledgeSubmit" class="oh-btn oh-btn--success">{% trans "Yes, Close Request" %}</button>
                 </div>
             </form>
         </div>
@@ -1270,23 +1264,11 @@
         document.getElementById('isoMarkAwaitingError').style.display = 'none';
         document.getElementById('isoMarkAwaitingModal').classList.add('oh-modal--show');
     }
-    function openIsoAcknowledgeModal(url, answer) {
+    function openIsoAcknowledgeModal(url) {
         var f = document.getElementById('isoAcknowledgeForm');
         f.action = url;
-        document.getElementById('isoAcknowledgeAnswer').value = answer;
         document.getElementById('isoAcknowledgeComment').value = '';
         document.getElementById('isoAcknowledgeError').style.display = 'none';
-        var submitBtn = document.getElementById('isoAcknowledgeSubmit');
-        var hint = document.getElementById('isoAcknowledgeHint');
-        if (answer === 'yes') {
-            hint.textContent = '{% trans "Confirm this request was fulfilled. A comment is required." %}';
-            submitBtn.textContent = '{% trans "Yes, Close Request" %}';
-            submitBtn.className = 'oh-btn oh-btn--success';
-        } else {
-            hint.textContent = '{% trans "Explain why this was not resolved. A comment is required." %}';
-            submitBtn.textContent = '{% trans "No, Reopen Request" %}';
-            submitBtn.className = 'oh-btn oh-btn--warning';
-        }
         document.getElementById('isoAcknowledgeModal').classList.add('oh-modal--show');
     }
     _isoRequireComment('isoApproveForm', 'isoApproveComment', 'isoApproveError');

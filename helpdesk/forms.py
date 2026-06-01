@@ -523,16 +523,10 @@ class ISOCommentTransitionForm(forms.Form):
 class ISOAcknowledgementForm(forms.Form):
     """
     Requestor acknowledgement form (§6) driven from the detail top-bar control.
-    Answers "Was this request fulfilled?" with Yes (→ Closed) or No (→ reopen
-    to In Action). Both branches require a mandatory comment.
+    The employee confirms the request was fulfilled (→ Closed) with a mandatory
+    comment. (The "No"/reopen branch has been removed.)
     """
 
-    ANSWER_CHOICES = [
-        ("yes", _("Yes")),
-        ("no", _("No")),
-    ]
-
-    answer = forms.ChoiceField(choices=ANSWER_CHOICES, widget=forms.HiddenInput())
     comment = forms.CharField(
         required=True,
         label=_("Comment"),

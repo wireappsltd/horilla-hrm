@@ -2682,12 +2682,9 @@ def password_reset_mark_awaiting(request, pr_id):
 @login_required
 def password_reset_acknowledge(request, pr_id):
     """
-    Requestor acknowledgement (spec §6): "Was this request fulfilled?".
-
-    Yes → status Closed, closed_by = requestor (mandatory comment).
-    No  → status back to In Action so the ISO Officer can re-perform the action
-          (mandatory comment explaining why). Routed to In Action rather than
-          Pending because the request is already approved.
+    Requestor acknowledgement (spec §6): the employee confirms the request was
+    fulfilled, which transitions it to Closed (closed_by = requestor) with a
+    mandatory comment. The "No"/reopen branch has been removed.
 
     Only the original requestor may perform this step; enforced server-side.
     """
@@ -2696,7 +2693,7 @@ def password_reset_acknowledge(request, pr_id):
 
     pr_request = PasswordResetRequest.objects.get(id=pr_id)
 
-    # Server-side role enforcement: only the original requestor may close/reopen.
+    # Server-side role enforcement: only the original requestor may close.
     if not _is_password_reset_request_owner(request.user, pr_request):
         messages.error(request, _("Only the requestor can acknowledge this request."))
         return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
@@ -2711,62 +2708,33 @@ def password_reset_acknowledge(request, pr_id):
             messages.error(request, error)
         return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
 
-    answer = form.cleaned_data["answer"]
     comment = form.cleaned_data["comment"]
     ticket = pr_request.ticket
 
-    if answer == "yes":
-        pr_request.iso_status = "CLOSED"
-        pr_request.closed_by = request.user
-        pr_request.save()
-        ticket.status = "resolved"
-        ticket.save()
+    pr_request.iso_status = "CLOSED"
+    pr_request.closed_by = request.user
+    pr_request.save()
+    ticket.status = "resolved"
+    ticket.save()
 
-        try:
-            Comment.objects.create(
-                comment=(
-                    f"<strong>Request Acknowledged – Fulfilled</strong><br>"
-                    f"<strong>Status:</strong> Closed<br>"
-                    f"{comment}"
-                ),
-                ticket=ticket,
-                employee_id=request.user.employee_get,
-            )
-        except Exception as exc:
-            logger.error("ISO close comment error: %s", exc)
-
-        verb = (
-            f"The password reset request for {pr_request.platform} has been "
-            f"acknowledged and closed by the requestor."
+    try:
+        Comment.objects.create(
+            comment=(
+                f"<strong>Request Acknowledged – Fulfilled</strong><br>"
+                f"<strong>Status:</strong> Closed<br>"
+                f"{comment}"
+            ),
+            ticket=ticket,
+            employee_id=request.user.employee_get,
         )
-        messages.success(request, _("Request closed. Thank you for confirming."))
-    else:
-        # "No / not resolved" → reopen back to In Action (already approved).
-        pr_request.iso_status = "IN_ACTION"
-        # Clear actioned_by so the ISO Officer re-stamps it on the next action.
-        pr_request.actioned_by = None
-        pr_request.save()
-        ticket.status = "in_progress"
-        ticket.save()
+    except Exception as exc:
+        logger.error("ISO close comment error: %s", exc)
 
-        try:
-            Comment.objects.create(
-                comment=(
-                    f"<strong>Request Not Resolved – Reopened</strong><br>"
-                    f"<strong>Status:</strong> In Action (reopened)<br>"
-                    f"{comment}"
-                ),
-                ticket=ticket,
-                employee_id=request.user.employee_get,
-            )
-        except Exception as exc:
-            logger.error("ISO reopen comment error: %s", exc)
-
-        verb = (
-            f"The password reset request for {pr_request.platform} was not "
-            f"resolved and has been reopened by the requestor."
-        )
-        messages.success(request, _("Request reopened for the ISO Officer."))
+    verb = (
+        f"The password reset request for {pr_request.platform} has been "
+        f"acknowledged and closed by the requestor."
+    )
+    messages.success(request, _("Request closed. Thank you for confirming."))
 
     # Notify ISO officers about the requestor's decision.
     try:

@@ -359,12 +359,11 @@
         errorSpan.style.display = 'none';
     });
 
-    // ── Requestor acknowledgement: Yes (close) / No (reopen) ──
-    function openAcknowledgeModal(actionUrl, ticketId, answer) {
+    // ── Requestor acknowledgement: Yes (close) ──
+    function openAcknowledgeModal(actionUrl, ticketId) {
         var modal = document.getElementById('acknowledgeModal');
         var form = document.getElementById('acknowledgeForm');
         document.getElementById('acknowledgeTicketId').textContent = ticketId;
-        document.getElementById('acknowledgeAnswerInput').value = answer;
         var input = document.getElementById('acknowledgeCommentInput');
         var errorSpan = document.getElementById('acknowledgeError');
         var title = document.getElementById('acknowledgeModalTitle');
@@ -373,17 +372,10 @@
         form.action = actionUrl;
         input.value = '';
         errorSpan.style.display = 'none';
-        if (answer === 'yes') {
-            title.textContent = '{% trans "Confirm Fulfilment" %}';
-            hint.textContent = '{% trans "Confirm this request was fulfilled. A comment is required." %}';
-            submitBtn.textContent = '{% trans "Yes, Close Request" %}';
-            submitBtn.className = 'oh-btn oh-btn--success';
-        } else {
-            title.textContent = '{% trans "Not Resolved" %}';
-            hint.textContent = '{% trans "Explain why this was not resolved. A comment is required." %}';
-            submitBtn.textContent = '{% trans "No, Reopen Request" %}';
-            submitBtn.className = 'oh-btn oh-btn--warning';
-        }
+        title.textContent = '{% trans "Confirm Fulfilment" %}';
+        hint.textContent = '{% trans "Confirm this request was fulfilled. A comment is required." %}';
+        submitBtn.textContent = '{% trans "Yes, Close Request" %}';
+        submitBtn.className = 'oh-btn oh-btn--success';
         modal.classList.add('oh-modal--show');
     }
     function closeAcknowledgeModal() {
@@ -462,7 +454,6 @@
             </p>
             <form id="acknowledgeForm" method="post" action="">
                 {% csrf_token %}
-                <input type="hidden" name="answer" id="acknowledgeAnswerInput" value="" />
                 <div class="oh-form__group">
                     <label class="oh-label oh-label--mandatory" for="acknowledgeCommentInput">
                         {% trans "Comment" %}
