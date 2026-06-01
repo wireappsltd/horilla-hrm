@@ -587,14 +587,12 @@ def view_payslip_pdf(request, payslip_id):
             month_start_name = start_date.strftime("%d %B %Y")
             month_end_name = end_date.strftime("%d %B %Y")
 
-            # Formatted date for each format
-            for format_name, format_string in HORILLA_DATE_FORMATS.items():
-                if format_name == date_format:
-                    formatted_start_date = start_date.strftime(format_string)
-
-            for format_name, format_string in HORILLA_DATE_FORMATS.items():
-                if format_name == date_format:
-                    formatted_end_date = end_date.strftime(format_string)
+            # Resolve the strftime pattern for the configured date format.
+            # Fall back to a sensible default when the format is not recognised
+            # so these variables are always bound (prevents a 500 on download).
+            format_string = HORILLA_DATE_FORMATS.get(date_format, "%b. %d, %Y")
+            formatted_start_date = start_date.strftime(format_string)
+            formatted_end_date = end_date.strftime(format_string)
             data["month_start_name"] = month_start_name
             data["month_end_name"] = month_end_name
             data["formatted_start_date"] = formatted_start_date
@@ -653,7 +651,9 @@ def view_payslip_pdf(request, payslip_id):
             response["Content-Disposition"] = f'attachment; filename="{file_name}"'
             return response
         return redirect(filter_payslip)
-    return render(request, "405.html")
+    # Payslip id does not exist (e.g. stale link / deleted record): return a
+    # proper 404 instead of the misleading "405 Method Not Allowed" page.
+    return render(request, "404.html", status=404)
 
 
 @login_required
