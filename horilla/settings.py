@@ -36,6 +36,9 @@ env = environ.Env(
         list,
         ["https://pmo-alpha.vercel.app"],
     ),
+    # Number of seconds of user inactivity after which the session is
+    # automatically logged out. Defaults to 30 minutes.
+    SESSION_IDLE_TIMEOUT=(int, 1800),
 )
 
 env.read_env(os.path.join(BASE_DIR, ".env"), overwrite=True)
@@ -93,6 +96,14 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
+
+# Automatic logout after a period of user inactivity (in seconds).
+# Enforced by ``base.middleware.InactivityTimeoutMiddleware``. Setting it to
+# 0 (or a negative value) disables the inactivity-based logout.
+SESSION_IDLE_TIMEOUT = env.int("SESSION_IDLE_TIMEOUT", default=1800)
+# Persist the session on every request so the rolling "last activity"
+# timestamp is written back as the user keeps interacting with the app.
+SESSION_SAVE_EVERY_REQUEST = True
 
 ROOT_URLCONF = "horilla.urls"
 
