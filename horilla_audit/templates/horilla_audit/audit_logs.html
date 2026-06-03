@@ -1,0 +1,132 @@
+{% extends 'index.html' %}
+{% load i18n %}
+
+{% block content %}
+<div class="oh-wrapper">
+
+    <div class="oh-page__header d-flex justify-content-between align-items-center m-4">
+        <div class="d-flex align-items-center gap-2">
+            <ion-icon name="shield-checkmark-outline" style="font-size: 1.6rem;"></ion-icon>
+            <h2 class="oh-page__title m-0">{% trans "Audit Logs" %}</h2>
+        </div>
+        <span class="text-muted small">
+            {% trans "Read-only activity trail" %}
+        </span>
+    </div>
+
+    <ul class="oh-general__tabs oh-general__tabs--no-grow mt-2 mb-3 px-4">
+        {% for slug, label in modules %}
+        <li class="oh-general__tab">
+            <a href="?module={{ slug }}"
+               class="oh-general__tab-link{% if slug == active_module %} oh-general__tab-link--active{% endif %}"
+               role="tab"
+               aria-selected="{% if slug == active_module %}true{% else %}false{% endif %}">
+                {{ label }}
+            </a>
+        </li>
+        {% endfor %}
+    </ul>
+
+    <div class="oh-card shadow-sm p-2 mx-4">
+
+        <div class="oh-table-wrapper">
+            <table class="oh-table oh-table--hover oh-table--striped">
+                <thead class="bg-light">
+                    <tr>
+                        <th class="py-3">{% trans "Timestamp" %}</th>
+                        <th class="py-3">{% trans "Actor" %}</th>
+                        <th class="py-3">{% trans "Action" %}</th>
+                        <th class="py-3">{% trans "Module" %}</th>
+                        <th class="py-3">{% trans "Record" %}</th>
+                        <th class="py-3">{% trans "Changes" %}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for log in page_obj %}
+                    <tr>
+                        <td class="align-middle text-nowrap">
+                            <span class="text-muted small">{{ log.timestamp|date:"Y-m-d" }}</span>
+                            <br>
+                            <strong>{{ log.timestamp|date:"H:i:s" }}</strong>
+                        </td>
+                        <td class="align-middle">
+                            {% if log.user %}
+                                <strong>{{ log.user.get_full_name|default:log.user.username }}</strong>
+                            {% else %}
+                                <span class="text-muted">{% trans "System" %}</span>
+                            {% endif %}
+                        </td>
+                        <td class="align-middle">
+                            <span class="badge bg-secondary-subtle text-dark px-2 py-1">
+                                {{ log.action }}
+                            </span>
+                        </td>
+                        <td class="align-middle">
+                            <span class="text-muted">{{ active_module_label }}</span>
+                        </td>
+                        <td class="align-middle">
+                            {% if log.target_type %}
+                                <strong>{{ log.target_type }}</strong>
+                                {% if log.target_id %}<span class="text-muted">#{{ log.target_id }}</span>{% endif %}
+                            {% else %}
+                                <span class="text-muted">&mdash;</span>
+                            {% endif %}
+                        </td>
+                        <td class="align-middle" style="max-width: 360px;">
+                            {% if log.changes %}
+                                <div class="d-flex flex-column gap-1">
+                                    {% for key, value in log.changes.items %}
+                                    <div class="small">
+                                        <span class="text-muted">{{ key }}:</span>
+                                        {% if value.from is not None or value.to is not None %}
+                                            <span class="text-danger">{{ value.from|default:"—" }}</span>
+                                            <ion-icon name="arrow-forward-outline"></ion-icon>
+                                            <span class="text-success">{{ value.to|default:"—" }}</span>
+                                        {% else %}
+                                            <strong>{{ value }}</strong>
+                                        {% endif %}
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            {% else %}
+                                <span class="text-muted">&mdash;</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="6" class="text-center py-5 text-muted">
+                            <ion-icon name="document-text-outline" style="font-size: 2.5rem; opacity: 0.4;"></ion-icon>
+                            <div class="mt-2">
+                                {% trans "No audit log entries for this module yet." %}
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        {% if page_obj.paginator.num_pages > 1 %}
+        <div class="d-flex justify-content-center align-items-center mt-3 mb-2">
+            {% if page_obj.has_previous %}
+            <a href="?module={{ active_module }}&page={{ page_obj.previous_page_number }}"
+               class="oh-btn oh-btn--secondary mx-1">
+                &laquo; {% trans "Prev" %}
+            </a>
+            {% endif %}
+            <span class="mx-3 small text-muted">
+                {% trans "Page" %} <strong>{{ page_obj.number }}</strong>
+                {% trans "of" %} {{ page_obj.paginator.num_pages }}
+            </span>
+            {% if page_obj.has_next %}
+            <a href="?module={{ active_module }}&page={{ page_obj.next_page_number }}"
+               class="oh-btn oh-btn--secondary mx-1">
+                {% trans "Next" %} &raquo;
+            </a>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock content %}
