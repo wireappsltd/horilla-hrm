@@ -78,10 +78,10 @@
                                     {% for key, value in log.changes.items %}
                                     <div class="small">
                                         <span class="text-muted">{{ key }}:</span>
-                                        {% if value.from is not None or value.to is not None %}
-                                            <span class="text-danger">{{ value.from|default:"—" }}</span>
+                                        {% if value.from or value.to %}
+                                            <span class="text-danger">{{ value.from|default_if_none:"—" }}</span>
                                             <ion-icon name="arrow-forward-outline"></ion-icon>
-                                            <span class="text-success">{{ value.to|default:"—" }}</span>
+                                            <span class="text-success">{{ value.to|default_if_none:"—" }}</span>
                                         {% else %}
                                             <strong>{{ value }}</strong>
                                         {% endif %}

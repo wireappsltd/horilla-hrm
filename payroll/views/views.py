@@ -42,21 +42,6 @@ from horilla.decorators import (
 from horilla.group_by import group_by_queryset
 from horilla.horilla_settings import HORILLA_DATE_FORMATS
 from horilla_audit.methods import log_activity
-
-PAYSLIP_STATUS_LABELS = {
-    "draft": "Draft",
-    "review_ongoing": "Review Ongoing",
-    "confirmed": "Approved",
-    "paid": "Published",
-}
-
-
-def _payslip_status_action(new_status):
-    if new_status == "confirmed":
-        return "Payslip approved"
-    if new_status == "paid":
-        return "Payslip published"
-    return "Payslip status changed"
 from notifications.signals import notify
 from payroll.context_processors import get_active_employees
 from payroll.filters import ContractFilter, ContractReGroup, PayslipFilter
@@ -89,6 +74,21 @@ status_choices = {
     "confirmed": _("Confirmed"),
     "paid": _("Paid"),
 }
+
+PAYSLIP_STATUS_LABELS = {
+    "draft": "Draft",
+    "review_ongoing": "Review Ongoing",
+    "confirmed": "Approved",
+    "paid": "Published",
+}
+
+
+def _payslip_status_action(new_status):
+    if new_status == "confirmed":
+        return "Payslip approved"
+    if new_status == "paid":
+        return "Payslip published"
+    return "Payslip status changed"
 
 
 def get_language_code(request):
