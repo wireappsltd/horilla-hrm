@@ -77,6 +77,7 @@ SIDEBARS = [
     "helpdesk",
     "project",
     "horilla_retention",
+    "time_tracker",
 ]
 
 WHITE_LABELLING = False
