@@ -1,0 +1,49 @@
+{% load i18n %}
+{% load widget_tweaks %}
+<div class="oh-modal__content">
+  <div class="oh-modal__header">
+    <h5 class="oh-modal__title">
+      {% if tag %}{% trans "Edit Tag" %}{% else %}{% trans "Add Tag" %}{% endif %}
+    </h5>
+    <button type="button"
+            class="oh-btn oh-btn--transparent oh-btn--sm"
+            onclick="document.querySelector('.oh-modal--show').classList.remove('oh-modal--show')">
+      <ion-icon name="close-outline"></ion-icon>
+    </button>
+  </div>
+  <div class="oh-modal__body">
+    <form method="post"
+          {% if tag %}
+          hx-post="{% url 'time_tracker:tag-update' tag.pk %}"
+          {% else %}
+          hx-post="{% url 'time_tracker:tag-create' %}"
+          {% endif %}
+          hx-target="this"
+          hx-swap="outerHTML">
+      {% csrf_token %}
+      <div class="oh-form">
+        <div class="oh-form__group">
+          <label class="oh-label oh-label--required">{% trans "Name" %}</label>
+          {% render_field form.name %}
+        </div>
+        <div class="oh-form__group">
+          <label class="oh-label">{% trans "Color" %}</label>
+          {% render_field form.color %}
+        </div>
+      </div>
+      {% for error in form.non_field_errors %}
+      <div class="oh-alert oh-alert--danger mt-2">{{ error }}</div>
+      {% endfor %}
+      <div class="oh-modal__footer mt-3">
+        <button type="submit" class="oh-btn oh-btn--primary">
+          {% if tag %}{% trans "Update" %}{% else %}{% trans "Save" %}{% endif %}
+        </button>
+        <button type="button"
+                class="oh-btn oh-btn--light ml-2"
+                onclick="document.querySelector('.oh-modal--show').classList.remove('oh-modal--show')">
+          {% trans "Cancel" %}
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
