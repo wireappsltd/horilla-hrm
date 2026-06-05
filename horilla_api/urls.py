@@ -10,4 +10,5 @@ urlpatterns = [
     path("attendance/", include("horilla_api.api_urls.attendance.urls")),
     path("leave/", include("horilla_api.api_urls.leave.urls")),
     path("pmo/", include("horilla_api.api_urls.pmo.urls")),
+    path("time-tracker/", include("horilla_api.api_urls.time_tracker.urls")),
 ]
