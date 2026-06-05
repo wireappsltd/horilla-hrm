@@ -4,12 +4,49 @@ methods.py
 This module is used to write methods related to the history
 """
 
+import logging
+
 from django.contrib.auth.models import User
 from django.core.paginator import Paginator
 from django.db import models
 from django.shortcuts import render
 
 from horilla.decorators import apply_decorators
+
+logger = logging.getLogger(__name__)
+
+# Groups whose members may view audit logs.
+AUDIT_ROLE_GROUPS = ("HR", "ISO")
+
+
+def user_can_view_audit(user):
+    """HR Admin, ISO/Compliance Officer, or superuser."""
+    if not getattr(user, "is_authenticated", False):
+        return False
+    if user.is_superuser:
+        return True
+    return user.groups.filter(name__in=AUDIT_ROLE_GROUPS).exists()
+
+
+def log_activity(user, module, action, target=None, changes=None):
+    """Record an action-based audit log entry.
+
+    Failures are swallowed and logged — never block the originating request
+    because we couldn't write an audit row.
+    """
+    from horilla_audit.models import ActivityLog
+
+    try:
+        ActivityLog.objects.create(
+            user=user if getattr(user, "is_authenticated", False) else None,
+            module=module,
+            action=action,
+            target_type=type(target).__name__ if target is not None else "",
+            target_id=str(getattr(target, "pk", "")) if target is not None else "",
+            changes=changes,
+        )
+    except Exception:
+        logger.exception("Failed to write ActivityLog entry")
 
 
 class Bot:

@@ -78,6 +78,7 @@ SIDEBARS = [
     "project",
     "horilla_retention",
     "time_tracker",
+    "horilla_audit",
 ]
 
 WHITE_LABELLING = False

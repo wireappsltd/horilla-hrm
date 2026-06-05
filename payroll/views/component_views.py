@@ -45,6 +45,7 @@ from horilla.decorators import (
 from horilla.group_by import group_by_queryset
 from horilla.horilla_settings import HORILLA_DATE_FORMATS
 from horilla.methods import dynamic_attr, get_horilla_model_class, get_urlencode
+from horilla_audit.methods import log_activity
 
 # from leave.models import AvailableLeave
 from notifications.signals import notify
@@ -844,8 +845,25 @@ def generate_payslip(request):
                 data["pay_data"] = json.loads(payslip["json_data"])
                 calculate_employer_contribution(data)
                 data["installments"] = payslip["installments"]
+                pre_existing = Payslip.objects.filter(
+                    employee_id=employee,
+                    start_date=data["start_date"],
+                    end_date=data["end_date"],
+                ).exists()
                 instance = save_payslip(**data)
                 instances.append(instance)
+                log_activity(
+                    request.user,
+                    module="payroll",
+                    action="Payslip generated",
+                    target=instance,
+                    changes={
+                        "employee": str(employee),
+                        "period": f"{instance.start_date} to {instance.end_date}",
+                        "batch": group_name or "",
+                        "regenerated": pre_existing,
+                    },
+                )
                 notify.send(
                     request.user.employee_get,
                     recipient=employee.employee_user_id,
@@ -979,10 +997,22 @@ def create_payslip(request, new_post_data=None):
                 data["pay_data"] = json.loads(payslip_data["json_data"])
                 calculate_employer_contribution(data)
                 data["installments"] = payslip_data["installments"]
+                pre_existing = payslip is not None
                 payslip_data["instance"] = save_payslip(**data)
                 form = forms.PayslipForm()
                 messages.success(request, _("Payslip Saved"))
                 payslip = payslip_data["instance"]
+                log_activity(
+                    request.user,
+                    module="payroll",
+                    action="Payslip generated",
+                    target=payslip,
+                    changes={
+                        "employee": str(payslip.employee_id),
+                        "period": f"{payslip.start_date} to {payslip.end_date}",
+                        "regenerated": pre_existing,
+                    },
+                )
                 notify.send(
                     request.user.employee_get,
                     recipient=employee.employee_user_id,
@@ -1233,6 +1263,11 @@ def payslip_export(request):
     worksheet = writer.sheets["Sheet1"]
     worksheet.set_column("A:Z", 20)
     writer.close()
+    log_activity(
+        request.user,
+        module="payroll",
+        action="Payroll XLSX export",
+    )
     return response
 
 
@@ -2414,6 +2449,11 @@ def payslip_detailed_export(request):
     response["Content-Disposition"] = f"attachment; filename={file_name}.xlsx"
     wb.save(response)
 
+    log_activity(
+        request.user,
+        module="payroll",
+        action="Payroll detailed XLSX export",
+    )
     return response
 
 
@@ -2567,4 +2607,9 @@ def payslip_super_detailed_export(request):
     response["Content-Disposition"] = f'attachment; filename="{file_name}"'
     wb.save(response)
 
+    log_activity(
+        request.user,
+        module="payroll",
+        action="Payroll super-detailed XLSX export",
+    )
     return response
