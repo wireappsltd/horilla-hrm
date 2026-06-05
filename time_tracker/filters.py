@@ -25,35 +25,38 @@ class TimeEntryFilter(FilterSet):
         field_name="date",
         lookup_expr="gte",
         label=_("Date From"),
-        widget=forms.DateInput(attrs={"type": "date", "class": "oh-input w-100"}),
+        widget=forms.DateInput(attrs={"type": "date", "class": "tt-filter-input"}),
     )
     date__lte = django_filters.DateFilter(
         field_name="date",
         lookup_expr="lte",
         label=_("Date To"),
-        widget=forms.DateInput(attrs={"type": "date", "class": "oh-input w-100"}),
+        widget=forms.DateInput(attrs={"type": "date", "class": "tt-filter-input"}),
     )
-    employee_id = django_filters.ModelMultipleChoiceFilter(
+    employee_id = django_filters.ModelChoiceFilter(
         queryset=Employee.objects.all(),
         label=_("Employee"),
-        widget=forms.SelectMultiple(attrs={"class": "oh-select oh-select-2 w-100"}),
+        empty_label=_("All employees"),
+        widget=forms.Select(attrs={"class": "tt-filter-input"}),
     )
-    project_id = django_filters.ModelMultipleChoiceFilter(
+    project_id = django_filters.ModelChoiceFilter(
         queryset=Project.objects.all(),
         label=_("Project"),
-        widget=forms.SelectMultiple(attrs={"class": "oh-select oh-select-2 w-100"}),
+        empty_label=_("All projects"),
+        widget=forms.Select(attrs={"class": "tt-filter-input"}),
     )
     is_billable = django_filters.BooleanFilter(
         label=_("Billable"),
         widget=forms.Select(
-            choices=[("", "---------"), (True, _("Yes")), (False, _("No"))],
-            attrs={"class": "oh-select w-100"},
+            choices=[("", _("All")), (True, _("Billable")), (False, _("Non-billable"))],
+            attrs={"class": "tt-filter-input"},
         ),
     )
-    status = django_filters.MultipleChoiceFilter(
+    status = django_filters.ChoiceFilter(
         choices=TimeEntry.ENTRY_STATUS,
         label=_("Status"),
-        widget=forms.SelectMultiple(attrs={"class": "oh-select oh-select-2 w-100"}),
+        empty_label=_("All statuses"),
+        widget=forms.Select(attrs={"class": "tt-filter-input"}),
     )
 
     class Meta:
