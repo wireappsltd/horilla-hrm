@@ -30,11 +30,15 @@
   .tt-field { display: flex; flex-direction: column; gap: .3rem; }
   .tt-field label { font-size: .75rem; font-weight: 600; color: #6b7280;
     text-transform: uppercase; letter-spacing: .03em; }
-  .tt-field select, .tt-field input {
-    width: 100%; border: 1px solid #e3e6ec; border-radius: 9px; padding: .5rem .65rem;
-    font-size: .86rem; color: #1f2937; outline: none; background: #fff; }
-  .tt-field select:focus, .tt-field input:focus { border-color: #4f46e5;
-    box-shadow: 0 0 0 3px rgba(79,70,229,.1); }
+  .tt-field select, .tt-field input,
+  .tt-filters .tt-filter-input {
+    width: 100% !important; height: auto !important;
+    border: 1px solid #e3e6ec !important; border-radius: 10px !important;
+    padding: .55rem .7rem !important; font-size: .86rem; color: #1f2937;
+    outline: none; background: #fff !important; box-shadow: none; }
+  .tt-field select:focus, .tt-field input:focus,
+  .tt-filters .tt-filter-input:focus { border-color: #4f46e5 !important;
+    box-shadow: 0 0 0 3px rgba(79,70,229,.1) !important; }
   .tt-filters__actions { display: flex; gap: .5rem; margin-top: 1rem; }
 
   /* results table */

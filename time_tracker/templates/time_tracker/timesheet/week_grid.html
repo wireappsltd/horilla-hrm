@@ -90,7 +90,8 @@
   /* totals */
   .ts-row-total { font-family: 'SFMono-Regular', Consolas, monospace; font-weight: 700;
     color: #111827; background: #f8f9fc; }
-  .ts-foot td { background: #fafbfc; padding: .8rem .6rem; border-top: 2px solid #eceef2; }
+  .ts-foot td { background: #fafbfc; padding: .8rem .6rem; border-top: 2px solid #eceef2;
+    text-align: center; }
   .ts-foot__label { font-weight: 700; color: #6b7280; font-size: .82rem;
     text-transform: uppercase; letter-spacing: .04em; text-align: left !important; }
   .ts-foot .ts-day-total { font-family: 'SFMono-Regular', Consolas, monospace;
@@ -218,11 +219,11 @@
           <tr class="ts-foot">
             <td class="ts-col-proj ts-foot__label">{% trans "Daily Total" %}</td>
             {% for dm in day_meta %}
-            <td class="{% if dm.is_today %}is-today{% endif %}">
+            <td class="ta-c{% if dm.is_today %} is-today{% endif %}">
               {% if dm.total_display %}<span class="ts-day-total">{{ dm.total_display }}</span>{% else %}<span class="ts-dash">&ndash;</span>{% endif %}
             </td>
             {% endfor %}
-            <td><span class="ts-week-total">{{ week_total_display }}</span></td>
+            <td class="ta-c"><span class="ts-week-total">{{ week_total_display }}</span></td>
           </tr>
         </tfoot>
       </table>
