@@ -783,3 +783,53 @@ select.create-blue option[value="create"],
 .select2-container .select2-results__option[data-select2-id*="create"]:hover {
     color: darkorange !important;
 }
+
+/* ===== Time Tracker Navbar Widget ===== */
+.oh-navbar__tt-widget {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 8px;
+  vertical-align: middle;
+}
+.oh-navbar__tt-input {
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 0.8rem;
+  width: 180px;
+  outline: none;
+  background: #f8fafc;
+  color: #334155;
+  transition: border-color 0.2s;
+}
+.oh-navbar__tt-input:focus {
+  border-color: #6366f1;
+  background: #fff;
+}
+.oh-navbar__tt-widget--running {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  padding: 4px 10px;
+}
+.oh-navbar__tt-badge {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 20px;
+  background: #6366f1;
+  color: #fff;
+  white-space: nowrap;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.oh-navbar__tt-counter {
+  font-family: monospace;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #166534;
+  letter-spacing: 1px;
+  min-width: 70px;
+}
