@@ -1,0 +1,161 @@
+{% extends "index.html" %}
+{% load i18n %}
+{% load static %}
+
+{% block content %}
+<style>
+  .tt-page { padding-bottom: 2rem; }
+  .tt-header { display: flex; align-items: flex-start; justify-content: space-between;
+    margin-bottom: 1.1rem; flex-wrap: wrap; gap: .75rem; }
+  .tt-header__title { font-size: 1.55rem; font-weight: 700; color: #111827; margin: 0; }
+  .tt-header__sub { color: #6b7280; font-size: .88rem; margin: .15rem 0 0; }
+  .tt-actions { display: flex; gap: .5rem; }
+  .tt-btn { display: inline-flex; align-items: center; gap: .35rem; border-radius: 10px;
+    padding: .55rem 1rem; font-size: .85rem; font-weight: 600; cursor: pointer;
+    text-decoration: none; border: 1px solid transparent; }
+  .tt-btn--ghost { background: #fff; border-color: #e8ebf0; color: #4b5563; }
+  .tt-btn--ghost:hover { background: #f5f6f8; color: #111827; }
+  .tt-btn--primary { background: #4f46e5; color: #fff; }
+  .tt-btn--primary:hover { background: #4338ca; }
+
+  .tt-card { background: #fff; border: 1px solid #e8ebf0; border-radius: 14px;
+    box-shadow: 0 1px 2px rgba(16,24,40,.04); overflow: hidden; margin-bottom: 1.1rem; }
+  .tt-card__head { display: flex; align-items: center; gap: .5rem; padding: .9rem 1.25rem;
+    border-bottom: 1px solid #f0f1f4; }
+  .tt-card__title { font-size: .95rem; font-weight: 700; color: #111827; }
+
+  /* filters */
+  .tt-filters { padding: 1.1rem 1.25rem; }
+  .tt-filters__grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: .85rem; }
+  .tt-field { display: flex; flex-direction: column; gap: .3rem; }
+  .tt-field label { font-size: .75rem; font-weight: 600; color: #6b7280;
+    text-transform: uppercase; letter-spacing: .03em; }
+  .tt-field select, .tt-field input {
+    width: 100%; border: 1px solid #e3e6ec; border-radius: 9px; padding: .5rem .65rem;
+    font-size: .86rem; color: #1f2937; outline: none; background: #fff; }
+  .tt-field select:focus, .tt-field input:focus { border-color: #4f46e5;
+    box-shadow: 0 0 0 3px rgba(79,70,229,.1); }
+  .tt-filters__actions { display: flex; gap: .5rem; margin-top: 1rem; }
+
+  /* results table */
+  .tt-table { width: 100%; border-collapse: collapse; }
+  .tt-table thead th { text-align: left; font-size: .72rem; font-weight: 700; color: #9aa1ad;
+    text-transform: uppercase; letter-spacing: .05em; padding: .75rem 1.25rem; background: #fafbfc;
+    border-bottom: 1px solid #f0f1f4; }
+  .tt-table .ta-c { text-align: center; }
+  .tt-table .ta-r { text-align: right; }
+  .tt-table tbody td { padding: .75rem 1.25rem; border-bottom: 1px solid #f4f5f7;
+    vertical-align: middle; font-size: .88rem; color: #374151; }
+  .tt-table tbody tr:hover { background: #fbfbfd; }
+  .tt-proj-cell { display: flex; align-items: center; gap: .6rem; }
+  .tt-proj-cell__name { font-weight: 600; color: #1f2937; }
+  .tt-share { margin-top: .3rem; height: 6px; width: 160px; background: #f1f2f5;
+    border-radius: 6px; overflow: hidden; }
+  .tt-share__fill { height: 100%; border-radius: 6px; }
+  .tt-dot { width: 11px; height: 11px; border-radius: 50%; flex: none; }
+  .tt-dur { font-family: 'SFMono-Regular', Consolas, monospace; font-weight: 700;
+    font-size: .9rem; color: #1f2937; }
+  .tt-bill { font-family: 'SFMono-Regular', Consolas, monospace; font-weight: 700;
+    font-size: .82rem; color: #059669; background: #ecfdf5; border-radius: 7px; padding: .25rem .55rem; }
+  .tt-foot td { background: #fafbfc; border-top: 2px solid #eceef2; padding: .85rem 1.25rem;
+    font-weight: 800; color: #111827; }
+  .tt-foot .ttf-total { font-family: 'SFMono-Regular', Consolas, monospace; color: #4f46e5; }
+
+  .tt-empty { padding: 3rem 1rem; text-align: center; }
+  .tt-empty__icon { font-size: 3rem; color: #d1d5db; }
+  .tt-empty__text { color: #9ca3af; margin-top: .6rem; font-size: .92rem; }
+
+  @media (max-width: 768px) { .tt-filters__grid { grid-template-columns: 1fr; } }
+</style>
+
+<div class="oh-wrapper tt-page">
+  <!-- Header -->
+  <div class="tt-header">
+    <div>
+      <h1 class="tt-header__title">{% trans "Summary Report" %}</h1>
+      <p class="tt-header__sub">{% trans "Time grouped by project" %}</p>
+    </div>
+    <div class="tt-actions">
+      <a href="{% url 'time_tracker:reports-dashboard' %}" class="tt-btn tt-btn--ghost">
+        <ion-icon name="arrow-back-outline"></ion-icon> {% trans "Dashboard" %}
+      </a>
+      <a href="{% url 'time_tracker:reports-export' %}?{{ request.GET.urlencode }}" class="tt-btn tt-btn--primary">
+        <ion-icon name="download-outline"></ion-icon> {% trans "Export XLSX" %}
+      </a>
+    </div>
+  </div>
+
+  <!-- Filters -->
+  <div class="tt-card">
+    <div class="tt-card__head">
+      <ion-icon name="funnel-outline" style="color:#6b7280;"></ion-icon>
+      <span class="tt-card__title">{% trans "Filters" %}</span>
+    </div>
+    <form method="get" class="tt-filters">
+      <div class="tt-filters__grid">
+        <div class="tt-field"><label>{% trans "Date From" %}</label>{{ filter.form.date__gte }}</div>
+        <div class="tt-field"><label>{% trans "Date To" %}</label>{{ filter.form.date__lte }}</div>
+        <div class="tt-field"><label>{% trans "Employee" %}</label>{{ filter.form.employee_id }}</div>
+        <div class="tt-field"><label>{% trans "Project" %}</label>{{ filter.form.project_id }}</div>
+        <div class="tt-field"><label>{% trans "Billable" %}</label>{{ filter.form.is_billable }}</div>
+        <div class="tt-field"><label>{% trans "Status" %}</label>{{ filter.form.status }}</div>
+      </div>
+      <div class="tt-filters__actions">
+        <button type="submit" class="tt-btn tt-btn--primary">
+          <ion-icon name="search-outline"></ion-icon> {% trans "Apply Filters" %}
+        </button>
+        <a href="{% url 'time_tracker:reports-summary' %}" class="tt-btn tt-btn--ghost">
+          {% trans "Clear" %}
+        </a>
+      </div>
+    </form>
+  </div>
+
+  <!-- Results -->
+  <div class="tt-card">
+    {% if rows %}
+    <table class="tt-table">
+      <thead>
+        <tr>
+          <th>{% trans "Project" %}</th>
+          <th class="ta-c" style="width:140px;">{% trans "Total" %}</th>
+          <th class="ta-c" style="width:140px;">{% trans "Billable" %}</th>
+          <th class="ta-c" style="width:100px;">{% trans "Entries" %}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          <td>
+            <div class="tt-proj-cell">
+              <span class="tt-dot" style="background:{{ row.color }};"></span>
+              <span class="tt-proj-cell__name">{{ row.project_name }}</span>
+            </div>
+            <div class="tt-share"><div class="tt-share__fill" style="width:{{ row.pct }}%; background:{{ row.color }};"></div></div>
+          </td>
+          <td class="ta-c"><span class="tt-dur">{{ row.total_hours }}</span></td>
+          <td class="ta-c">
+            {% if row.billable_hours != "00:00" %}<span class="tt-bill">{{ row.billable_hours }}</span>{% else %}<span class="text-muted">—</span>{% endif %}
+          </td>
+          <td class="ta-c">{{ row.entry_count }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr class="tt-foot">
+          <td>{% trans "Total" %}</td>
+          <td class="ta-c"><span class="ttf-total">{{ total_hours }}</span></td>
+          <td class="ta-c"><span class="ttf-total">{{ total_billable }}</span></td>
+          <td class="ta-c">{{ total_count }}</td>
+        </tr>
+      </tfoot>
+    </table>
+    {% else %}
+    <div class="tt-empty">
+      <ion-icon name="bar-chart-outline" class="tt-empty__icon"></ion-icon>
+      <p class="tt-empty__text">{% trans "No data found for the selected filters." %}</p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
