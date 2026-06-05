@@ -1094,14 +1094,6 @@ class LeaveRequest(HorillaModel):
             leave_type_id=leave_type,
             requested_days=requested_days,
         )
-        leave_dates = leave_requested_dates(self.start_date, self.end_date)
-        month_year = [f"{date.year}-{date.strftime('%m')}" for date in leave_dates]
-        today = datetime.today()
-        unique_dates = list(set(month_year))
-        current_month = today.strftime("%Y-%m")
-        if current_month in unique_dates:
-            unique_dates.remove(current_month)
-
         leave_type = available_leave.leave_type_id
 
         # Validate strictly against the employee's real remaining balance so it
