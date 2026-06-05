@@ -10,6 +10,7 @@ from django.contrib import messages
 from django.contrib.auth import logout
 from django.core.cache import cache
 from django.db.models import Q
+from django.http import HttpResponse
 from django.shortcuts import redirect
 from django.utils.translation import gettext_lazy as _
 
@@ -267,14 +268,15 @@ class InactivityTimeoutMiddleware:
                 )
                 # Signal HTMX/AJAX callers to perform a full redirect to login
                 # instead of swapping a partial response into the page.
+                login_redirect = redirect("login")
                 if (
                     request.headers.get("HX-Request")
                     or request.headers.get("x-requested-with") == "XMLHttpRequest"
                 ):
-                    response = redirect("login")
-                    response["HX-Redirect"] = "/login"
+                    response = HttpResponse(status=204)
+                    response["HX-Redirect"] = login_redirect["Location"]
                     return response
-                return redirect("login")
+                return login_redirect
 
             # Refresh the activity timestamp for the current request.
             request.session[self.SESSION_KEY] = now
