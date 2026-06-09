@@ -20,7 +20,21 @@
     <div class="tt-bar__time" data-tt-counter
          data-started-at="{{ active_timer.started_at|date:'c' }}">00:00:00</div>
 
-    <button type="button" class="tt-bar__btn tt-bar__btn--stop"
+    <!-- Break controls -->
+    <span class="tt-bar__divider"></span>
+    <button type="button" id="tt-break-start-btn"
+            class="tt-bar__icon" title="{% trans 'Start break' %}"
+            style="font-size:.78rem;padding:.4rem .7rem;border:1px solid #e2e8f0;border-radius:7px;display:flex;align-items:center;gap:.3rem;color:#64748b;">
+      <i class="bi bi-pause-circle"></i> {% trans "Break" %}
+    </button>
+    <button type="button" id="tt-break-stop-btn"
+            class="tt-bar__icon" title="{% trans 'End break' %}"
+            style="display:none;font-size:.78rem;padding:.4rem .7rem;border:1px solid #f59e0b;border-radius:7px;background:#fffbeb;color:#92400e;display:none;align-items:center;gap:.3rem;">
+      <i class="bi bi-play-circle"></i> {% trans "Resume" %}
+    </button>
+    <span id="tt-break-info" style="display:none;font-size:.75rem;color:#94a3b8;"></span>
+
+    <button type="button" class="tt-bar__btn tt-bar__btn--stop" data-tt-stop-btn
             hx-post="{% url 'time_tracker:tt-timer-stop' %}"
             hx-target="#tt-tracker-bar"
             hx-swap="outerHTML"
@@ -31,7 +45,9 @@
 
   {% else %}
   {# ============================ STOPPED STATE ============================ #}
-  <form class="tt-bar__form"
+
+  {# ---- TIMER MODE ---- #}
+  <form class="tt-bar__form" id="tt-timer-form"
         hx-post="{% url 'time_tracker:tt-timer-start' %}"
         hx-target="#tt-tracker-bar"
         hx-swap="outerHTML"
@@ -40,11 +56,12 @@
     <input type="hidden" name="project_id" id="tt-project-id" value="">
     <span id="tt-tags-hidden"></span>
 
-    <!-- Description -->
-    <input type="text" name="description" class="tt-bar__desc"
-           placeholder="{% trans 'What are you working on?' %}" autocomplete="off">
+    <div class="tt-bar__desc-wrap">
+      <input type="text" name="description" id="tt-desc-input" class="tt-bar__desc"
+             placeholder="{% trans 'What are you working on?' %}" autocomplete="off">
+      <div class="tt-ac-drop" id="tt-ac-drop"></div>
+    </div>
 
-    <!-- Project picker -->
     <div class="tt-bar__field">
       <button type="button" class="tt-bar__project-btn" id="tt-project-btn">
         <span id="tt-project-label" class="tt-bar__project-add">
@@ -70,7 +87,6 @@
       </div>
     </div>
 
-    <!-- Tags picker -->
     <div class="tt-bar__field">
       <button type="button" class="tt-bar__icon" id="tt-tags-btn" title="{% trans 'Tags' %}">
         <ion-icon name="pricetag-outline"></ion-icon>
@@ -91,17 +107,218 @@
     </div>
 
     <span class="tt-bar__divider"></span>
-
-    <!-- Duration placeholder -->
     <div class="tt-bar__time">00:00:00</div>
+    <button type="submit" class="tt-bar__btn tt-bar__btn--start">{% trans "START" %}</button>
 
-    <!-- START -->
-    <button type="submit" class="tt-bar__btn tt-bar__btn--start">
-      {% trans "START" %}
-    </button>
+    <div class="tt-mode-grp" style="margin-left:.25rem;">
+      <button type="button" class="tt-mode-btn tt-mode-active"
+              onclick="ttSetMode('timer')" title="{% trans 'Timer' %}">
+        <ion-icon name="timer-outline"></ion-icon>
+      </button>
+      <button type="button" class="tt-mode-btn"
+              onclick="ttSetMode('manual')" title="{% trans 'Manual entry' %}">
+        <ion-icon name="create-outline"></ion-icon>
+      </button>
+    </div>
   </form>
+
+  {# ---- MANUAL MODE ---- #}
+  <form class="tt-bar__form" id="tt-manual-form-el" style="display:none;"
+        hx-post="{% url 'time_tracker:tt-manual-add' %}"
+        hx-target="#tt-tracker-bar"
+        hx-swap="outerHTML"
+        hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
+    {% csrf_token %}
+
+    <div class="tt-bar__desc-wrap">
+      <input type="text" name="description" id="tt-mf-desc" class="tt-bar__desc"
+             placeholder="{% trans 'What are you working on?' %}" autocomplete="off">
+      <div class="tt-ac-drop" id="tt-mf-ac-drop"></div>
+    </div>
+
+    <select name="project_id" class="tt-mf-select" id="tt-mf-project-select">
+      <option value="">{% trans "+ Project" %}</option>
+      {% for p in projects %}
+      <option value="{{ p.id }}">{{ p.title }}</option>
+      {% endfor %}
+    </select>
+
+    <span class="tt-bar__divider"></span>
+
+    <input type="date" name="date" id="tt-mf-date"
+           class="tt-mf-date" value="{{ today|date:'Y-m-d' }}">
+
+    <input type="time" name="start_time" id="tt-mf-start"
+           class="tt-mf-time" oninput="ttMfCalcDur()" required>
+    <span class="tt-mf-sep">—</span>
+    <input type="time" name="end_time" id="tt-mf-end"
+           class="tt-mf-time" oninput="ttMfCalcDur()" required>
+
+    <span class="tt-mf-dur" id="tt-mf-dur">0:00</span>
+
+    <button type="submit" class="tt-bar__btn tt-bar__btn--start">{% trans "ADD" %}</button>
+
+    <div class="tt-mode-grp" style="margin-left:.25rem;">
+      <button type="button" class="tt-mode-btn"
+              onclick="ttSetMode('timer')" title="{% trans 'Timer' %}">
+        <ion-icon name="timer-outline"></ion-icon>
+      </button>
+      <button type="button" class="tt-mode-btn tt-mode-active"
+              onclick="ttSetMode('manual')" title="{% trans 'Manual entry' %}">
+        <ion-icon name="create-outline"></ion-icon>
+      </button>
+    </div>
+  </form>
+
   {% endif %}
 </div>
+
+<script>
+function _ttBindAc(inp, drop, onApply) {
+  if (!inp || !drop || inp._ttAcReady) return;
+  inp._ttAcReady = true;
+
+  var _debounce = null, _items = [], _active = -1;
+
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];
+    });
+  }
+  function highlight(text, q) {
+    if (!q) return esc(text);
+    return esc(text).replace(
+      new RegExp("(" + q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + ")", "gi"),
+      '<span class="tt-ac-match">$1</span>'
+    );
+  }
+  function render(items) {
+    _items = items; _active = -1;
+    if (!items.length) { close(); return; }
+    drop.innerHTML = items.map(function (s, i) {
+      var ph = s.project_name
+        ? '<div class="tt-ac-proj"><span class="tt-ac-proj-dot" style="background:' + esc(s.project_color) + '"></span>' + esc(s.project_name) + '</div>' : "";
+      return '<div class="tt-ac-item" data-idx="' + i + '"><div class="tt-ac-text"><div class="tt-ac-desc">'
+           + highlight(s.description, inp.value.trim()) + '</div>' + ph + '</div></div>';
+    }).join("");
+    drop.classList.add("open");
+  }
+  function close() { drop.classList.remove("open"); _active = -1; }
+  function setActive(n) {
+    var els = drop.querySelectorAll(".tt-ac-item");
+    if (!els.length) return;
+    if (_active >= 0 && els[_active]) els[_active].classList.remove("active");
+    _active = ((n % els.length) + els.length) % els.length;
+    if (els[_active]) els[_active].classList.add("active");
+  }
+  function apply(idx) {
+    var s = _items[idx]; if (!s) return;
+    inp.value = s.description;
+    if (onApply) onApply(s);
+    close(); inp.focus();
+  }
+
+  inp.addEventListener("input", function () {
+    clearTimeout(_debounce);
+    var q = inp.value.trim();
+    if (q.length < 1) { close(); return; }
+    _debounce = setTimeout(function () {
+      fetch("{% url 'time_tracker:tt-desc-suggest' %}?q=" + encodeURIComponent(q), { headers: {"X-Requested-With":"XMLHttpRequest"} })
+        .then(function (r) { return r.json(); })
+        .then(function (d) { render(d.suggestions || []); })
+        .catch(function () { close(); });
+    }, 150);
+  });
+  inp.addEventListener("keydown", function (e) {
+    if (!drop.classList.contains("open")) return;
+    if (e.key === "ArrowDown")  { e.preventDefault(); setActive(_active + 1); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setActive(_active - 1); }
+    else if (e.key === "Enter" && _active >= 0) { e.preventDefault(); apply(_active); }
+    else if (e.key === "Escape") { close(); }
+  });
+  drop.addEventListener("mousedown", function (e) {
+    var item = e.target.closest(".tt-ac-item"); if (!item) return;
+    e.preventDefault(); apply(parseInt(item.dataset.idx, 10));
+  });
+  inp.addEventListener("blur", function () { setTimeout(close, 180); });
+}
+
+(function () {
+  /* timer bar — also mirrors project onto the custom picker */
+  _ttBindAc(
+    document.getElementById("tt-desc-input"),
+    document.getElementById("tt-ac-drop"),
+    function (s) {
+      var pId  = document.getElementById("tt-project-id");
+      var pLbl = document.getElementById("tt-project-label");
+      if (pId) pId.value = s.project_id || "";
+      if (pLbl && s.project_id) {
+        pLbl.className = "tt-bar__project-sel";
+        pLbl.innerHTML = '<span class="tt-dot" style="background:' + s.project_color + '"></span> ' + s.project_name;
+      }
+    }
+  );
+
+  /* manual form — mirrors project onto the select */
+  _ttBindAc(
+    document.getElementById("tt-mf-desc"),
+    document.getElementById("tt-mf-ac-drop"),
+    function (s) {
+      var sel = document.getElementById("tt-mf-project-select");
+      if (sel && s.project_id) sel.value = s.project_id;
+    }
+  );
+}());
+
+/* ── Mode toggle ── */
+function ttSetMode(mode) {
+  var tf = document.getElementById("tt-timer-form");
+  var mf = document.getElementById("tt-manual-form-el");
+  if (!tf || !mf) return;
+
+  if (mode === "manual") {
+    /* carry description across if manual field is empty */
+    var td = document.getElementById("tt-desc-input");
+    var md = document.getElementById("tt-mf-desc");
+    if (td && md && !md.value) md.value = td.value;
+    /* carry project across */
+    var tp = document.getElementById("tt-project-id");
+    var ms = document.getElementById("tt-mf-project-select");
+    if (tp && ms && tp.value) ms.value = tp.value;
+
+    tf.style.display = "none";
+    mf.style.display = "flex";
+    setTimeout(function () { var f = document.getElementById("tt-mf-desc"); if (f) f.focus(); }, 50);
+  } else {
+    var md = document.getElementById("tt-mf-desc");
+    var td = document.getElementById("tt-desc-input");
+    if (md && td && !td.value) td.value = md.value;
+
+    mf.style.display = "none";
+    tf.style.display = "flex";
+    setTimeout(function () { var f = document.getElementById("tt-desc-input"); if (f) f.focus(); }, 50);
+  }
+  try { localStorage.setItem("tt_mode", mode); } catch (e) {}
+}
+
+/* ── Duration auto-calc for manual form ── */
+function ttMfCalcDur() {
+  var s = document.getElementById("tt-mf-start"),
+      e = document.getElementById("tt-mf-end"),
+      d = document.getElementById("tt-mf-dur");
+  if (!s || !e || !d) return;
+  if (!s.value || !e.value) { d.textContent = "0:00"; return; }
+  var sm = s.value.split(":").map(Number), em = e.value.split(":").map(Number);
+  var diff = (em[0] * 60 + em[1]) - (sm[0] * 60 + sm[1]);
+  if (diff <= 0) { d.textContent = "0:00"; return; }
+  d.textContent = Math.floor(diff / 60) + ":" + ("0" + (diff % 60)).slice(-2);
+}
+
+/* ── Restore last mode from localStorage ── */
+(function () {
+  try { if (localStorage.getItem("tt_mode") === "manual") ttSetMode("manual"); } catch (e) {}
+}());
+</script>
 
 {% if oob_entries %}
 <div id="tt-entries-list" class="oh-card__body p-0" hx-swap-oob="true">
