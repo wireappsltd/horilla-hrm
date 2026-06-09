@@ -49,6 +49,7 @@ from base.methods import (
 )
 from base.models import EmployeeShift, EmployeeShiftDay
 from employee.models import Employee
+from horilla_audit.methods import log_activity
 from horilla.decorators import (
     hx_request_required,
     login_required,
@@ -504,6 +505,25 @@ def validate_attendance_request(request, attendance_id):
     )
 
 
+def _log_attendance_decision(request, attendance, decision):
+    """Record who approved/rejected/cancelled an attendance request.
+
+    Captures the actor (and timestamp via ActivityLog) plus the affected
+    employee and attendance date. Call before the row is deleted so the target
+    pk is still valid.
+    """
+    log_activity(
+        request.user,
+        module="attendance",
+        action=f"Attendance request {decision}",
+        target=attendance,
+        changes={
+            "Employee": str(attendance.employee_id),
+            "Attendance date": str(attendance.attendance_date),
+        },
+    )
+
+
 @login_required
 @manager_can_enter("attendance.change_attendance")
 def approve_validate_attendance_request(request, attendance_id):
@@ -631,6 +651,7 @@ def approve_validate_attendance_request(request, attendance_id):
             redirect=reverse("request-attendance-view") + f"?id={attendance.id}",
             icon="checkmark-circle-outline",
         )
+    _log_attendance_decision(request, attendance, "approved")
     return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
 
 
@@ -654,6 +675,14 @@ def cancel_attendance_request(request, attendance_id):
             attendance.request_type = None
 
             attendance.save()
+            is_self_cancel = (
+                attendance.employee_id.employee_user_id_id == request.user.id
+            )
+            _log_attendance_decision(
+                request,
+                attendance,
+                "cancelled" if is_self_cancel else "rejected",
+            )
             if is_create_request:
                 attendance.delete()
                 messages.success(request, _("The requested attendance is removed."))
@@ -804,6 +833,7 @@ def bulk_approve_attendance_request(request):
             )
 
         messages.success(request, _("Attendance request has been approved"))
+        _log_attendance_decision(request, attendance, "approved")
         employee = attendance.employee_id
         notify.send(
             request.user,
@@ -873,6 +903,14 @@ def bulk_reject_attendance_request(request):
                 attendance.requested_data = None
                 attendance.request_type = None
                 attendance.save()
+                is_self_cancel = (
+                    attendance.employee_id.employee_user_id_id == request.user.id
+                )
+                _log_attendance_decision(
+                    request,
+                    attendance,
+                    "cancelled" if is_self_cancel else "rejected",
+                )
                 if is_create_request:
                     attendance.delete()
                     messages.success(request, _("The requested attendance is removed."))
