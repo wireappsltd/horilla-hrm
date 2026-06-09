@@ -642,6 +642,36 @@
 						<hr>
 						{% endif %}
 
+						{% if "time_tracker"|app_installed and request.user.is_superuser or perms.time_tracker.view_requiredfieldconfig %}
+						<li class="oh-inner-sidebar__item">
+							<div class="oh-accordion ms-2">
+								<div class="oh-accordion-header" style="font-size:16px;">
+									<ion-icon name="timer-outline" class="me-2"></ion-icon>
+									{% trans "Time Tracker" %}
+								</div>
+								<div class="oh-accordion-body">
+									<div class="row">
+										<div class="col-sm-12 col-md-12 col-lg-12">
+											<div class="oh-input-group">
+												<a id="ttSettings" href="{% url 'time_tracker:tracker-settings' %}"
+													class="oh-inner-sidebar__link oh-dropdown__link">{% trans "Required Fields" %}</a>
+											</div>
+											<div class="oh-input-group">
+												<a id="ttClients" href="{% url 'time_tracker:client-list' %}"
+													class="oh-inner-sidebar__link oh-dropdown__link">{% trans "Clients" %}</a>
+											</div>
+											<div class="oh-input-group">
+												<a id="ttTags" href="{% url 'time_tracker:tag-list' %}"
+													class="oh-inner-sidebar__link oh-dropdown__link">{% trans "Tags" %}</a>
+											</div>
+										</div>
+									</div>
+								</div>
+							</div>
+						</li>
+						<hr>
+						{% endif %}
+
 					</ul>
 				</div>
 			</div>

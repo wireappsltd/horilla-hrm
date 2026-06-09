@@ -1,0 +1,15 @@
+{% load i18n %}
+<div class="tt-tabs">
+  <a href="{% url 'time_tracker:tracker-settings' %}"
+     class="tt-tab {% if active == 'settings' %}tt-tab--active{% endif %}">
+    <ion-icon name="options-outline"></ion-icon> {% trans "Required Fields" %}
+  </a>
+  <a href="{% url 'time_tracker:client-list' %}"
+     class="tt-tab {% if active == 'clients' %}tt-tab--active{% endif %}">
+    <ion-icon name="people-outline"></ion-icon> {% trans "Clients" %}
+  </a>
+  <a href="{% url 'time_tracker:tag-list' %}"
+     class="tt-tab {% if active == 'tags' %}tt-tab--active{% endif %}">
+    <ion-icon name="pricetags-outline"></ion-icon> {% trans "Tags" %}
+  </a>
+</div>

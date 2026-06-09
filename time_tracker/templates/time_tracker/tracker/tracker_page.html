@@ -1,0 +1,204 @@
+{% extends "index.html" %}
+{% load i18n %}
+{% load static %}
+
+{% block content %}
+<style>
+  [x-cloak] { display: none !important; }
+
+  /* ===================== Design tokens / page shell ===================== */
+  .tt-page { padding-bottom: 2rem; }
+  .tt-header { display: flex; align-items: flex-start; justify-content: space-between;
+    margin-bottom: 1.1rem; }
+  .tt-header__title { font-size: 1.55rem; font-weight: 700; color: #111827; margin: 0; }
+  .tt-header__sub { color: #6b7280; font-size: .88rem; margin: .15rem 0 0; }
+
+  /* ===================== Stat tiles ===================== */
+  .tt-stats {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    gap: 1rem; margin-bottom: 1.1rem;
+  }
+  .tt-stat {
+    display: flex; align-items: center; gap: .85rem;
+    background: #fff; border: 1px solid #e8ebf0; border-radius: 14px;
+    padding: 1rem 1.15rem; box-shadow: 0 1px 2px rgba(16,24,40,.04);
+  }
+  .tt-stat__icon {
+    width: 44px; height: 44px; border-radius: 11px; flex: none;
+    display: flex; align-items: center; justify-content: center; font-size: 1.4rem;
+  }
+  .tt-stat__icon--indigo { background: #eef2ff; color: #4f46e5; }
+  .tt-stat__icon--emerald { background: #ecfdf5; color: #10b981; }
+  .tt-stat__icon--amber { background: #fffbeb; color: #f59e0b; }
+  .tt-stat__body { display: flex; flex-direction: column; line-height: 1.2; }
+  .tt-stat__label { font-size: .76rem; color: #8a93a3; text-transform: uppercase;
+    letter-spacing: .04em; font-weight: 600; }
+  .tt-stat__value {
+    font-family: 'SFMono-Regular', Consolas, monospace;
+    font-size: 1.35rem; font-weight: 700; color: #111827; margin-top: .15rem;
+  }
+
+  /* ===================== Clockify-style tracker bar ===================== */
+  .tt-bar {
+    background: #fff; border: 1px solid #e8ebf0; border-radius: 14px;
+    box-shadow: 0 2px 8px rgba(16,24,40,.05); margin-bottom: 1.25rem;
+  }
+  .tt-bar__form { display: flex; align-items: center; gap: .5rem; padding: .5rem .75rem; }
+  .tt-bar__desc {
+    flex: 1 1 auto; min-width: 120px; border: none; outline: none;
+    font-size: .98rem; padding: .6rem .35rem; background: transparent; color: #111827;
+  }
+  .tt-bar__desc::placeholder { color: #9ca3af; }
+  .tt-bar__field { position: relative; }
+  .tt-bar__project-btn {
+    background: transparent; border: none; cursor: pointer; display: flex;
+    align-items: center; gap: .4rem; padding: .5rem .75rem; border-radius: 8px;
+    font-size: .88rem; color: #6b7280; white-space: nowrap;
+  }
+  .tt-bar__project-btn:hover { background: #f5f6f8; }
+  .tt-bar__project-sel { display: flex; align-items: center; gap: .45rem;
+    color: #111827; font-weight: 500; max-width: 200px; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  .tt-bar__project-add { display: flex; align-items: center; gap: .3rem;
+    color: #4f46e5; font-weight: 500; }
+  .tt-bar__project-add ion-icon { font-size: 1.2rem; }
+  .tt-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; flex: none; }
+  .tt-bar__icon {
+    position: relative; background: transparent; border: none; cursor: pointer;
+    color: #9ca3af; font-size: 1.3rem; padding: .45rem; border-radius: 8px;
+    display: flex; align-items: center;
+  }
+  .tt-bar__icon:hover { background: #f5f6f8; color: #6b7280; }
+  .tt-bar__icon--active { color: #4f46e5; }
+  .tt-bar__icon-count {
+    position: absolute; top: -2px; right: -2px; background: #4f46e5; color: #fff;
+    font-size: .6rem; font-weight: 700; min-width: 15px; height: 15px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center; padding: 0 3px;
+  }
+  .tt-bar__divider { width: 1px; height: 30px; background: #e8ebf0; margin: 0 .4rem; }
+  .tt-bar__time {
+    font-family: 'SFMono-Regular', Consolas, monospace; font-size: 1.35rem;
+    font-weight: 700; color: #111827; min-width: 104px; text-align: center; letter-spacing: .5px;
+  }
+  .tt-bar__btn {
+    border: none; cursor: pointer; font-weight: 700; font-size: .82rem; letter-spacing: .6px;
+    padding: .7rem 1.65rem; border-radius: 10px; color: #fff; transition: background .15s, transform .08s;
+  }
+  .tt-bar__btn:active { transform: scale(.97); }
+  .tt-bar__btn--start { background: #4f46e5; }
+  .tt-bar__btn--start:hover { background: #4338ca; }
+  .tt-bar__btn--stop { background: #ef4444; }
+  .tt-bar__btn--stop:hover { background: #dc2626; }
+  /* running pulse dot */
+  .tt-live { display: inline-block; width: 9px; height: 9px; border-radius: 50%;
+    background: #ef4444; margin-right: .15rem; box-shadow: 0 0 0 0 rgba(239,68,68,.5);
+    animation: tt-pulse 1.5s infinite; }
+  @keyframes tt-pulse {
+    0% { box-shadow: 0 0 0 0 rgba(239,68,68,.5); }
+    70% { box-shadow: 0 0 0 7px rgba(239,68,68,0); }
+    100% { box-shadow: 0 0 0 0 rgba(239,68,68,0); }
+  }
+  /* dropdowns */
+  .tt-bar__dropdown { display: none; position: absolute; top: calc(100% + 8px); right: 0;
+    z-index: 60; width: 290px; background: #fff; border: 1px solid #e8ebf0;
+    border-radius: 12px; box-shadow: 0 12px 32px rgba(16,24,40,.14); padding: .45rem; }
+  .tt-bar__dropdown.tt-open { display: block; }
+  .tt-bar__dropdown--tags { width: 240px; }
+  .tt-bar__search { width: 100%; border: 1px solid #e8ebf0; border-radius: 8px;
+    padding: .5rem .65rem; font-size: .85rem; outline: none; margin-bottom: .4rem; }
+  .tt-bar__search:focus { border-color: #4f46e5; }
+  .tt-bar__list { max-height: 260px; overflow-y: auto; }
+  .tt-bar__item { display: flex; align-items: center; gap: .55rem; padding: .55rem .65rem;
+    border-radius: 8px; cursor: pointer; font-size: .87rem; color: #374151; margin: 0; }
+  .tt-bar__item:hover { background: #f5f6f8; }
+  .tt-bar__empty { padding: .8rem; color: #9ca3af; font-size: .82rem; text-align: center; }
+
+  /* ===================== Entries card + table ===================== */
+  .tt-card { background: #fff; border: 1px solid #e8ebf0; border-radius: 14px;
+    box-shadow: 0 1px 2px rgba(16,24,40,.04); overflow: hidden; }
+  .tt-card__head { display: flex; align-items: center; justify-content: space-between;
+    padding: 1rem 1.25rem; border-bottom: 1px solid #f0f1f4; }
+  .tt-card__title { font-size: 1rem; font-weight: 700; color: #111827; }
+  .tt-card__date { font-size: .82rem; color: #8a93a3; font-weight: 500; }
+
+  .tt-table { width: 100%; border-collapse: collapse; }
+  .tt-table thead th {
+    text-align: left; font-size: .72rem; font-weight: 700; color: #9aa1ad;
+    text-transform: uppercase; letter-spacing: .05em; padding: .7rem 1.25rem;
+    background: #fafbfc; border-bottom: 1px solid #f0f1f4; white-space: nowrap;
+  }
+  .tt-table tbody td { padding: .5rem 1.1rem; border-bottom: 1px solid #f4f5f7;
+    vertical-align: middle; }
+  .tt-table tbody tr { transition: background .1s; }
+  .tt-table tbody tr:hover { background: #fbfbfd; }
+  .tt-table .ta-c { text-align: center; }
+  .tt-table .ta-r { text-align: right; }
+
+  /* project cell: dot + select */
+  .tt-proj { display: flex; align-items: center; gap: .5rem; }
+  .tt-proj__dot { width: 10px; height: 10px; border-radius: 50%; flex: none; background: #cbd5e1; }
+
+  /* always-editable cells */
+  .tt-cell-input { width: 100%; border: 1px solid transparent; background: transparent;
+    padding: .42rem .55rem; border-radius: 8px; font-size: .88rem; color: #1f2937;
+    transition: border-color .12s, background .12s; }
+  .tt-cell-input:hover { border-color: #e3e6ec; background: #fff; }
+  .tt-cell-input:focus { border-color: #4f46e5; background: #fff; outline: none;
+    box-shadow: 0 0 0 3px rgba(79,70,229,.1); }
+  .tt-cell-input::placeholder { color: #b6bdc7; }
+  .tt-cell-select { cursor: pointer; min-width: 120px; }
+  .tt-cell-time { width: 138px; }
+  /* duration pill */
+  .tt-dur { font-family: 'SFMono-Regular', Consolas, monospace; font-weight: 700;
+    font-size: .9rem; color: #1f2937; background: #f3f4f6; border-radius: 7px;
+    padding: .3rem .6rem; display: inline-block; min-width: 84px; text-align: center; }
+  /* ghost delete */
+  .tt-del { background: transparent; border: none; cursor: pointer; color: #c2c8d0;
+    width: 32px; height: 32px; border-radius: 8px; font-size: 1.15rem;
+    display: inline-flex; align-items: center; justify-content: center; transition: all .12s; }
+  .tt-del:hover { background: #fef2f2; color: #ef4444; }
+
+  .tt-foot td { padding: .85rem 1.25rem; background: #fafbfc; border-top: 1px solid #eceef2; }
+  .tt-foot__label { font-weight: 600; color: #6b7280; font-size: .85rem; }
+  .tt-foot__total { font-family: 'SFMono-Regular', Consolas, monospace; font-weight: 700;
+    font-size: 1rem; color: #111827; }
+
+  /* empty state */
+  .tt-empty { padding: 3.5rem 1rem; text-align: center; }
+  .tt-empty__icon { font-size: 3rem; color: #d1d5db; }
+  .tt-empty__text { color: #9ca3af; margin-top: .6rem; font-size: .92rem; }
+
+  @media (max-width: 768px) {
+    .tt-stats { grid-template-columns: 1fr; }
+    .tt-bar__form { flex-wrap: wrap; }
+    .tt-bar__desc { flex: 1 1 100%; order: -1; }
+  }
+</style>
+
+<div class="oh-wrapper tt-page">
+  <!-- Page header -->
+  <div class="tt-header">
+    <div>
+      <h1 class="tt-header__title">{% trans "Time Tracker" %}</h1>
+      <p class="tt-header__sub">{{ today|date:"l, d F Y" }}</p>
+    </div>
+  </div>
+
+  <!-- Summary stats -->
+  {% include "time_tracker/tracker/stats.html" %}
+
+  <!-- Clockify-style timer bar (self-swapping HTMX fragment) -->
+  {% include "time_tracker/tracker/tracker_bar_fragment.html" %}
+
+  <!-- Today's entries -->
+  <div class="tt-card">
+    <div class="tt-card__head">
+      <span class="tt-card__title">{% trans "Today's Entries" %}</span>
+      <span class="tt-card__date">{{ today|date:"D, d M Y" }}</span>
+    </div>
+    <div id="tt-entries-list">
+      {% include "time_tracker/tracker/entry_list_rows.html" %}
+    </div>
+  </div>
+</div>
+{% endblock %}

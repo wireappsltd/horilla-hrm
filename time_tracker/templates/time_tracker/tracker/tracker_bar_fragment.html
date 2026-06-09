@@ -1,0 +1,111 @@
+{% load i18n %}
+<div class="tt-bar" id="tt-tracker-bar">
+  {% if active_timer %}
+  {# ============================ RUNNING STATE ============================ #}
+  <div class="tt-bar__form">
+    <input type="text" class="tt-bar__desc"
+           value="{{ active_timer.description }}"
+           placeholder="{% trans 'What are you working on?' %}" readonly>
+
+    {% if active_timer.project_id %}
+    <span class="tt-bar__project-sel" style="padding:.45rem .7rem;">
+      <span class="tt-dot" style="background:{{ project_color }}"></span>
+      {{ active_timer.project_id.title }}
+    </span>
+    {% endif %}
+
+    <span class="tt-bar__divider"></span>
+
+    <span class="tt-live" title="{% trans 'Recording' %}"></span>
+    <div class="tt-bar__time" data-tt-counter
+         data-started-at="{{ active_timer.started_at|date:'c' }}">00:00:00</div>
+
+    <button type="button" class="tt-bar__btn tt-bar__btn--stop"
+            hx-post="{% url 'time_tracker:tt-timer-stop' %}"
+            hx-target="#tt-tracker-bar"
+            hx-swap="outerHTML"
+            hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
+      {% trans "STOP" %}
+    </button>
+  </div>
+
+  {% else %}
+  {# ============================ STOPPED STATE ============================ #}
+  <form class="tt-bar__form"
+        hx-post="{% url 'time_tracker:tt-timer-start' %}"
+        hx-target="#tt-tracker-bar"
+        hx-swap="outerHTML"
+        hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
+    {% csrf_token %}
+    <input type="hidden" name="project_id" id="tt-project-id" value="">
+    <span id="tt-tags-hidden"></span>
+
+    <!-- Description -->
+    <input type="text" name="description" class="tt-bar__desc"
+           placeholder="{% trans 'What are you working on?' %}" autocomplete="off">
+
+    <!-- Project picker -->
+    <div class="tt-bar__field">
+      <button type="button" class="tt-bar__project-btn" id="tt-project-btn">
+        <span id="tt-project-label" class="tt-bar__project-add">
+          <ion-icon name="add-circle-outline"></ion-icon> {% trans "Project" %}
+        </span>
+      </button>
+      <div class="tt-bar__dropdown" id="tt-project-dropdown">
+        <input type="text" class="tt-bar__search" id="tt-project-search"
+               placeholder="{% trans 'Search projects…' %}">
+        <div class="tt-bar__list">
+          <div class="tt-bar__item" data-tt-project data-id="" data-title="" data-color="#cbd5e1">
+            <span class="tt-dot" style="background:#cbd5e1"></span>{% trans "No project" %}
+          </div>
+          {% for p in projects %}
+          <div class="tt-bar__item" data-tt-project
+               data-id="{{ p.id }}" data-title="{{ p.title }}" data-color="{{ p.color }}">
+            <span class="tt-dot" style="background:{{ p.color }}"></span>{{ p.title }}
+          </div>
+          {% empty %}
+          <div class="tt-bar__empty">{% trans "No projects available" %}</div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <!-- Tags picker -->
+    <div class="tt-bar__field">
+      <button type="button" class="tt-bar__icon" id="tt-tags-btn" title="{% trans 'Tags' %}">
+        <ion-icon name="pricetag-outline"></ion-icon>
+        <span class="tt-bar__icon-count" id="tt-tags-count" style="display:none;"></span>
+      </button>
+      <div class="tt-bar__dropdown tt-bar__dropdown--tags" id="tt-tags-dropdown">
+        <div class="tt-bar__list">
+          {% for t in tags %}
+          <label class="tt-bar__item">
+            <input type="checkbox" data-tt-tag value="{{ t.id }}">
+            <span class="tt-dot" style="background:{{ t.color }}"></span>{{ t.name }}
+          </label>
+          {% empty %}
+          <div class="tt-bar__empty">{% trans "No tags" %}</div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <span class="tt-bar__divider"></span>
+
+    <!-- Duration placeholder -->
+    <div class="tt-bar__time">00:00:00</div>
+
+    <!-- START -->
+    <button type="submit" class="tt-bar__btn tt-bar__btn--start">
+      {% trans "START" %}
+    </button>
+  </form>
+  {% endif %}
+</div>
+
+{% if oob_entries %}
+<div id="tt-entries-list" class="oh-card__body p-0" hx-swap-oob="true">
+  {% include "time_tracker/tracker/entry_list_rows.html" %}
+</div>
+{% include "time_tracker/tracker/tracker_oob.html" %}
+{% endif %}

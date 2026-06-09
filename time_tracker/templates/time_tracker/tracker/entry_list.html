@@ -1,0 +1,151 @@
+{% extends "index.html" %}
+{% load i18n %}
+{% load static %}
+
+{% block content %}
+<div class="oh-wrapper">
+  <div class="oh-titlebar">
+    <h1 class="oh-titlebar__title">{% trans "Time Entries" %}</h1>
+    <div class="oh-titlebar__actions">
+      <button class="oh-btn oh-btn--primary oh-btn--sm"
+              hx-get="{% url 'time_tracker:time-entry-create' %}"
+              hx-target="#tt-entry-modal-body"
+              hx-swap="innerHTML"
+              onclick="document.getElementById('tt-entry-modal').classList.add('oh-modal--show')">
+        <ion-icon name="add-outline" class="mr-1"></ion-icon>
+        {% trans "Add Entry" %}
+      </button>
+    </div>
+  </div>
+
+  <!-- Filters -->
+  <div class="oh-card mb-3">
+    <div class="oh-card__body">
+      <form method="get" class="oh-form oh-form--inline">
+        <div class="oh-form__group">
+          <label class="oh-label">{% trans "From" %}</label>
+          {{ filter.form.date__gte }}
+        </div>
+        <div class="oh-form__group">
+          <label class="oh-label">{% trans "To" %}</label>
+          {{ filter.form.date__lte }}
+        </div>
+        <div class="oh-form__group">
+          <label class="oh-label">{% trans "Employee" %}</label>
+          {{ filter.form.employee_id }}
+        </div>
+        <div class="oh-form__group">
+          <label class="oh-label">{% trans "Project" %}</label>
+          {{ filter.form.project_id }}
+        </div>
+        <div class="oh-form__group">
+          <label class="oh-label">{% trans "Status" %}</label>
+          {{ filter.form.status }}
+        </div>
+        <div class="oh-form__group align-self-end">
+          <button type="submit" class="oh-btn oh-btn--secondary oh-btn--sm">
+            {% trans "Filter" %}
+          </button>
+          <a href="{% url 'time_tracker:time-entry-list' %}" class="oh-btn oh-btn--light oh-btn--sm ml-1">
+            {% trans "Clear" %}
+          </a>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Entries table -->
+  <div class="oh-card">
+    <div class="oh-card__body p-0">
+      {% if entries %}
+      <table class="oh-table oh-table--hover w-100">
+        <thead>
+          <tr>
+            <th class="oh-table__head">{% trans "Date" %}</th>
+            <th class="oh-table__head">{% trans "Employee" %}</th>
+            <th class="oh-table__head">{% trans "Project" %}</th>
+            <th class="oh-table__head">{% trans "Task" %}</th>
+            <th class="oh-table__head">{% trans "Description" %}</th>
+            <th class="oh-table__head">{% trans "Duration" %}</th>
+            <th class="oh-table__head">{% trans "Billable" %}</th>
+            <th class="oh-table__head">{% trans "Status" %}</th>
+            <th class="oh-table__head text-right">{% trans "Actions" %}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for entry in entries %}
+          <tr class="oh-table__row">
+            <td class="oh-table__cell">{{ entry.date|date:"d M Y" }}</td>
+            <td class="oh-table__cell">{{ entry.employee_id }}</td>
+            <td class="oh-table__cell">
+              {% if entry.project_id %}{{ entry.project_id.title }}{% else %}&mdash;{% endif %}
+            </td>
+            <td class="oh-table__cell">
+              {% if entry.task_id %}{{ entry.task_id.title }}{% else %}&mdash;{% endif %}
+            </td>
+            <td class="oh-table__cell">{{ entry.description|truncatechars:40 }}</td>
+            <td class="oh-table__cell"><strong>{{ entry.duration_display }}</strong></td>
+            <td class="oh-table__cell">
+              {% if entry.is_billable %}
+              <ion-icon name="checkmark-circle-outline" class="text-success"></ion-icon>
+              {% else %}
+              <ion-icon name="close-circle-outline" class="text-muted"></ion-icon>
+              {% endif %}
+            </td>
+            <td class="oh-table__cell">
+              <span class="oh-badge oh-badge--small
+                {% if entry.status == 'approved' %}oh-badge--success
+                {% elif entry.status == 'rejected' %}oh-badge--danger
+                {% elif entry.status == 'submitted' %}oh-badge--warning
+                {% elif entry.status == 'locked' %}oh-badge--secondary
+                {% else %}oh-badge--light{% endif %}">
+                {{ entry.get_status_display }}
+              </span>
+            </td>
+            <td class="oh-table__cell text-right">
+              {% if not entry.is_locked %}
+              <button class="oh-btn oh-btn--light oh-btn--sm mr-1"
+                      hx-get="{% url 'time_tracker:time-entry-update' entry.pk %}"
+                      hx-target="#tt-entry-modal-body"
+                      hx-swap="innerHTML"
+                      onclick="document.getElementById('tt-entry-modal').classList.add('oh-modal--show')">
+                <ion-icon name="create-outline"></ion-icon>
+              </button>
+              <button class="oh-btn oh-btn--light oh-btn--sm"
+                      hx-post="{% url 'time_tracker:time-entry-delete' entry.pk %}"
+                      hx-confirm="{% trans 'Delete this time entry?' %}"
+                      hx-target="closest tr"
+                      hx-swap="outerHTML swap:300ms">
+                <ion-icon name="trash-outline" class="text-danger"></ion-icon>
+              </button>
+              {% else %}
+              <ion-icon name="lock-closed-outline" class="text-muted"></ion-icon>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="oh-empty-state py-5 text-center">
+        <ion-icon name="time-outline" style="font-size:3rem;" class="text-muted"></ion-icon>
+        <p class="oh-empty-state__text mt-2">{% trans "No time entries found." %}</p>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- Entry Modal -->
+<div class="oh-modal" id="tt-entry-modal" role="dialog" aria-hidden="true">
+  <div class="oh-modal__dialog" style="max-width: 600px;" id="tt-entry-modal-body"></div>
+</div>
+
+<script>
+  document.getElementById('tt-entry-modal').addEventListener('click', function(e) {
+    if (e.target === this) {
+      this.classList.remove('oh-modal--show');
+    }
+  });
+</script>
+{% endblock %}

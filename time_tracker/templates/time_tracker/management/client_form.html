@@ -1,0 +1,55 @@
+{% load i18n %}
+{% load widget_tweaks %}
+<div class="oh-modal__content">
+  <div class="oh-modal__header">
+    <h5 class="oh-modal__title">
+      {% if client %}{% trans "Edit Client" %}{% else %}{% trans "Add Client" %}{% endif %}
+    </h5>
+  </div>
+  <div class="oh-modal__body">
+    <form method="post"
+          {% if client %}
+          hx-post="{% url 'time_tracker:client-update' client.pk %}"
+          {% else %}
+          hx-post="{% url 'time_tracker:client-create' %}"
+          {% endif %}
+          hx-target="this"
+          hx-swap="outerHTML">
+      {% csrf_token %}
+      <div class="oh-form">
+        <div class="oh-form__group">
+          <label class="oh-label oh-label--required">{% trans "Name" %}</label>
+          {% render_field form.name %}
+        </div>
+        <div class="oh-form__group">
+          <label class="oh-label">{% trans "Email" %}</label>
+          {% render_field form.email %}
+        </div>
+        <div class="oh-form__group oh-form__group--full">
+          <label class="oh-label">{% trans "Address" %}</label>
+          {% render_field form.address %}
+        </div>
+        <div class="oh-form__group">
+          <label class="oh-label">{% trans "Currency" %}</label>
+          {% render_field form.currency %}
+        </div>
+        <div class="oh-form__group">
+          <label class="oh-label">{% trans "Default Rate" %}</label>
+          {% render_field form.default_rate %}
+        </div>
+        <div class="oh-form__group">
+          <label class="oh-label">{% trans "Color" %}</label>
+          {% render_field form.color %}
+        </div>
+      </div>
+      {% for error in form.non_field_errors %}
+      <div class="oh-alert oh-alert--danger mt-2">{{ error }}</div>
+      {% endfor %}
+      <div class="oh-modal__footer">
+        <button type="submit" class="oh-btn oh-btn--primary">
+          {% if client %}{% trans "Update" %}{% else %}{% trans "Save" %}{% endif %}
+        </button>
+      </div>
+    </form>
+  </div>
+</div>

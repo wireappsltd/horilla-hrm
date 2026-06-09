@@ -1,0 +1,69 @@
+{% load i18n %}
+<tr class="tt-row-editing" id="tt-entry-{{ entry.pk }}">
+  <td colspan="7" style="padding:0;">
+    <div class="tt-editbar">
+      <!-- Description -->
+      <input type="text" name="description" class="tt-editbar__desc"
+             value="{{ entry.description }}" placeholder="{% trans 'What are you working on?' %}">
+
+      <!-- Project (colored dot + select) -->
+      <div class="tt-editbar__project">
+        <span class="tt-editbar__dot" id="tt-dot-{{ entry.pk }}"
+              style="background:{{ project_color|default:'#cbd5e1' }};"></span>
+        <select name="project_id" class="tt-editbar__select"
+                onchange="var o=this.options[this.selectedIndex];document.getElementById('tt-dot-{{ entry.pk }}').style.background=o.getAttribute('data-color')||'#cbd5e1';">
+          <option value="" data-color="#cbd5e1">{% trans "Project" %}</option>
+          {% for p in projects %}
+          <option value="{{ p.id }}" data-color="{{ p.color }}"
+            {% if entry.project_id and entry.project_id.pk == p.id %}selected{% endif %}>
+            {{ p.title }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <span class="tt-editbar__divider"></span>
+
+      <!-- Start / End times -->
+      <div class="tt-editbar__times">
+        <input type="time" name="start_time" class="tt-editbar__time"
+               value="{{ entry.start_time|time:'H:i' }}">
+        <span class="tt-editbar__dash">–</span>
+        <input type="time" name="end_time" class="tt-editbar__time"
+               value="{{ entry.end_time|time:'H:i' }}">
+      </div>
+
+      <!-- Date -->
+      <div class="tt-editbar__date" title="{% trans 'Date' %}">
+        <ion-icon name="calendar-outline"></ion-icon>
+        <input type="date" name="date" class="tt-editbar__dateinput"
+               value="{{ entry.date|date:'Y-m-d' }}">
+      </div>
+
+      <span class="tt-editbar__divider"></span>
+
+      <!-- Duration (read-only, recomputed on save) -->
+      <div class="tt-editbar__duration">{{ entry.duration_display }}</div>
+
+      <!-- Save -->
+      <button class="tt-editbar__save"
+              hx-post="{% url 'time_tracker:time-entry-update' entry.pk %}"
+              hx-include="closest tr"
+              hx-target="#tt-entries-list"
+              hx-swap="innerHTML"
+              hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+              title="{% trans 'Save' %}">
+        <ion-icon name="checkmark-outline"></ion-icon>
+      </button>
+
+      <!-- Cancel -->
+      <button class="tt-editbar__cancel"
+              hx-get="{% url 'time_tracker:time-entry-row' entry.pk %}"
+              hx-target="#tt-entry-{{ entry.pk }}"
+              hx-swap="outerHTML"
+              title="{% trans 'Cancel' %}">
+        <ion-icon name="close-outline"></ion-icon>
+      </button>
+    </div>
+  </td>
+</tr>
