@@ -119,7 +119,7 @@ from horilla.filters import HorillaPaginator
 from horilla.group_by import group_by_queryset
 from horilla.horilla_settings import HORILLA_DATE_FORMATS
 from horilla.methods import get_horilla_model_class
-from horilla_audit.methods import log_activity
+from horilla_audit.methods import log_activity, log_form_changes
 from horilla_audit.models import AccountBlockUnblock, HistoryTrackingFields
 from horilla_documents.forms import (
     DocumentForm,
@@ -320,6 +320,13 @@ def self_info_update(request):
                 if not inst.badge_id:
                     inst.badge_id = badge_id
                 inst.save()
+                log_form_changes(
+                    request.user,
+                    module="employee",
+                    action="Personal information updated",
+                    form=form,
+                    target=inst,
+                )
                 messages.success(request, _("Profile updated."))
                 return redirect("employee-profile")
             else:
@@ -333,6 +340,14 @@ def self_info_update(request):
                 bank = bank_form.save(commit=False)
                 bank.employee_id = employee
                 bank.save()
+                log_form_changes(
+                    request.user,
+                    module="employee",
+                    action="Bank information updated",
+                    form=bank_form,
+                    target=employee,
+                    mask_fields=("account_number", "swift_code"),
+                )
                 messages.success(request, _("Bank details updated."))
                 return redirect("employee-profile")
             else:
@@ -1069,6 +1084,14 @@ def employee_profile_bank_details(request):
         bank_info = form.save(commit=False)
         bank_info.employee_id = employee
         bank_info.save()
+        log_form_changes(
+            request.user,
+            module="employee",
+            action="Bank information updated",
+            form=form,
+            target=employee,
+            mask_fields=("account_number", "swift_code"),
+        )
         messages.success(request, _("Bank details updated"))
     else:
         for field, errors in form.errors.items():
@@ -1091,6 +1114,13 @@ def employee_profile_update(request):
             form = EmployeeForm(request.POST, request.FILES, instance=employee)
             if form.is_valid():
                 form.save()
+                log_form_changes(
+                    request.user,
+                    module="employee",
+                    action="Personal information updated",
+                    form=form,
+                    target=employee,
+                )
                 messages.success(request, _("Profile updated."))
     return redirect("/employee/employee-profile")
 
@@ -1589,6 +1619,13 @@ def employee_view_update(request, obj_id, **kwargs):
                 form = EmployeeForm(request.POST, instance=employee)
                 if form.is_valid():
                     form.save()
+                    log_form_changes(
+                        request.user,
+                        module="employee",
+                        action="Personal information updated",
+                        form=form,
+                        target=employee,
+                    )
                     messages.success(
                         request, _("Employee personal information updated.")
                     )
@@ -1643,6 +1680,14 @@ def employee_view_update(request, obj_id, **kwargs):
                     instance = bank_form.save(commit=False)
                     instance.employee_id = employee
                     instance.save()
+                    log_form_changes(
+                        request.user,
+                        module="employee",
+                        action="Bank information updated",
+                        form=bank_form,
+                        target=employee,
+                        mask_fields=("account_number", "swift_code"),
+                    )
                     messages.success(request, _("Employee bank details updated."))
         return render(
             request,
@@ -1791,6 +1836,14 @@ def employee_create_update_personal_info(request, obj_id=None):
     form = EmployeeForm(request.POST, request.FILES, instance=employee)
     if form.is_valid():
         form.save()
+        if obj_id is not None:
+            log_form_changes(
+                request.user,
+                module="employee",
+                action="Personal information updated",
+                form=form,
+                target=employee,
+            )
         if obj_id is None:
             messages.success(request, _("New Employee Added."))
             form = EmployeeForm(request.POST, instance=form.instance)
@@ -1914,6 +1967,14 @@ def employee_update_bank_details(request, obj_id=None):
         bank_info = form.save(commit=False)
         bank_info.employee_id = employee
         bank_info.save()
+        log_form_changes(
+            request.user,
+            module="employee",
+            action="Bank information updated",
+            form=form,
+            target=employee,
+            mask_fields=("account_number", "swift_code"),
+        )
         return HttpResponse(
             """
             <div class="oh-alert-container">
