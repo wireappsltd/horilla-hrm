@@ -175,6 +175,7 @@ class RequiredFieldConfigForm(ModelForm):
     class Meta:
         model = RequiredFieldConfig
         fields = [
+            "approval_required",
             "require_project",
             "require_task",
             "require_client",
@@ -184,6 +185,9 @@ class RequiredFieldConfigForm(ModelForm):
             "idle_timeout_minutes",
         ]
         widgets = {
+            "approval_required": forms.CheckboxInput(
+                attrs={"class": "oh-switch__checkbox"}
+            ),
             "require_project": forms.CheckboxInput(
                 attrs={"class": "oh-switch__checkbox"}
             ),
