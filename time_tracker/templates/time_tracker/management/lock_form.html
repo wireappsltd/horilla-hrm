@@ -1,0 +1,28 @@
+{% load i18n %}
+<form method="post" action="{% url 'time_tracker:lock-create' %}"
+      hx-post="{% url 'time_tracker:lock-create' %}"
+      hx-target="body"
+      hx-swap="none">
+  {% csrf_token %}
+  <div style="display:flex;flex-direction:column;gap:.75rem;">
+    <div>
+      <label style="font-size:.78rem;font-weight:600;color:#64748b;display:block;margin-bottom:.3rem;">{{ form.date_from.label }}</label>
+      {{ form.date_from }}
+      {% if form.date_from.errors %}<div style="color:#ef4444;font-size:.75rem;">{{ form.date_from.errors }}</div>{% endif %}
+    </div>
+    <div>
+      <label style="font-size:.78rem;font-weight:600;color:#64748b;display:block;margin-bottom:.3rem;">{{ form.date_to.label }}</label>
+      {{ form.date_to }}
+      {% if form.date_to.errors %}<div style="color:#ef4444;font-size:.75rem;">{{ form.date_to.errors }}</div>{% endif %}
+    </div>
+    <div>
+      <label style="font-size:.78rem;font-weight:600;color:#64748b;display:block;margin-bottom:.3rem;">{{ form.employee_id.label }}</label>
+      {{ form.employee_id }}
+    </div>
+    <div>
+      <label style="font-size:.78rem;font-weight:600;color:#64748b;display:block;margin-bottom:.3rem;">{{ form.reason.label }}</label>
+      {{ form.reason }}
+    </div>
+    <button type="submit" class="oh-btn oh-btn--primary w-100">{% trans "Lock Period" %}</button>
+  </div>
+</form>
