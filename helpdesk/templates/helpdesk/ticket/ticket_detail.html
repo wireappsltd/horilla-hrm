@@ -4,6 +4,27 @@
 
 {% block content %}
 <style>
+    /* Consistent padding for ISO workflow action buttons
+       (Approve / Reject / Yes / Mark Awaiting Acknowledgement) so the
+       button text is not cramped against the borders. */
+    .iso-action-btn {
+        padding: 8px 16px !important;
+    }
+
+    /* Equal sizing for the Approve / Reject pair so they match
+       regardless of label length. */
+    .iso-action-btn--equal {
+        min-width: 120px;
+        justify-content: center;
+        text-align: center;
+    }
+
+    /* Keep the action button group away from the right edge of the
+       header so the buttons don't look cut off against the panel. */
+    .iso-action-group {
+        margin-right: 16px;
+    }
+
     .oh-profile__avatar-limit-height {
         height: 30px !important;
     }
@@ -154,29 +175,29 @@
                     </span>
                     {% if password_reset_request %}
                     {# ── ISO workflow action buttons (contextual by status AND role) ── #}
-                    <div class="d-flex align-items-center gap-2 ms-4">
+                    <div class="d-flex align-items-center gap-2 ms-4 iso-action-group">
                         {% if password_reset_request.iso_status == 'PENDING' and is_iso_officer and request.user.employee_get != ticket.employee_id %}
                             {# Approve / Reject — ISO User Group only, status Pending. #}
-                            <button type="button" class="oh-btn oh-btn--success"
+                            <button type="button" class="oh-btn oh-btn--success iso-action-btn iso-action-btn--equal"
                                 title="{% trans 'Approve' %}"
                                 onclick="openIsoApproveModal('{% url 'iso-review-password-reset' password_reset_request.id %}');">
                                 <ion-icon name="checkmark-outline" class="me-1"></ion-icon>{% trans "Approve" %}
                             </button>
-                            <button type="button" class="oh-btn oh-btn--danger"
+                            <button type="button" class="oh-btn oh-btn--danger iso-action-btn iso-action-btn--equal"
                                 title="{% trans 'Reject' %}"
                                 onclick="openIsoRejectModal('{% url 'iso-review-password-reset' password_reset_request.id %}');">
                                 <ion-icon name="close-outline" class="me-1"></ion-icon>{% trans "Reject" %}
                             </button>
                         {% elif password_reset_request.iso_status == 'IN_ACTION' and is_iso_officer %}
                             {# Mark Awaiting Acknowledgement — ISO User Group only, status In Action. #}
-                            <button type="button" class="oh-btn oh-btn--secondary"
+                            <button type="button" class="oh-btn oh-btn--secondary iso-action-btn"
                                 title="{% trans 'Mark Awaiting Acknowledgement' %}"
                                 onclick="openIsoMarkAwaitingModal('{% url 'password-reset-mark-awaiting' password_reset_request.id %}');">
                                 <ion-icon name="send-outline" class="me-1"></ion-icon>{% trans "Mark Awaiting Acknowledgement" %}
                             </button>
                         {% elif password_reset_request.iso_status == 'AWAITING_ACKNOWLEDGEMENT' and request.user.employee_get == ticket.employee_id %}
                             {# Requestor acknowledgement — original requestor only (confirm = close). #}
-                            <button type="button" class="oh-btn oh-btn--success"
+                            <button type="button" class="oh-btn oh-btn--success iso-action-btn"
                                 title="{% trans 'Yes – Fulfilled' %}"
                                 onclick="openIsoAcknowledgeModal('{% url 'password-reset-acknowledge' password_reset_request.id %}');">
                                 <ion-icon name="checkmark-done-outline" class="me-1"></ion-icon>{% trans "Yes" %}
@@ -1187,7 +1208,7 @@
                 <div class="oh-form__group">
                     <label class="oh-label oh-label--mandatory">{% trans "Comment" %}</label>
                     <textarea name="comment" id="isoMarkAwaitingComment" class="oh-input w-100" rows="3"
-                        placeholder="{% trans 'Describe the action performed...' %}" required></textarea>
+                        placeholder="{% trans 'Add a comment.' %}" required></textarea>
                     <span id="isoMarkAwaitingError" class="oh-text--danger" style="font-size:12px; display:none;">{% trans "This field is required." %}</span>
                 </div>
                 <div class="d-flex justify-content-end mt-3 gap-2">

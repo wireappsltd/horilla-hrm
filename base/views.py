@@ -187,6 +187,7 @@ from horilla.horilla_settings import (
 )
 from horilla.methods import get_horilla_model_class, remove_dynamic_url
 from horilla_audit.forms import HistoryTrackingFieldsForm
+from horilla_audit.methods import log_activity
 from horilla_audit.models import AccountBlockUnblock, AuditTag, HistoryTrackingFields
 from notifications.models import Notification
 from notifications.signals import notify
@@ -821,6 +822,17 @@ class HorillaPasswordResetView(PasswordResetView):
                 "extra_email_context": self.extra_email_context,
             }
             form.save(**opts)
+            log_activity(
+                self.request.user,
+                module="helpdesk",
+                action="Password reset requested",
+                target=user,
+                changes={
+                    "target_user": username,
+                    "request_type": "self",
+                    "status": "Requested",
+                },
+            )
             if self.request.user.is_authenticated:
                 messages.success(
                     self.request, _("Password reset link sent successfully")
@@ -829,6 +841,17 @@ class HorillaPasswordResetView(PasswordResetView):
 
             return redirect(reverse_lazy("reset-send-success"))
 
+        log_activity(
+            self.request.user,
+            module="helpdesk",
+            action="Password reset failed",
+            changes={
+                "target_user": username,
+                "request_type": "self",
+                "status": "Failed",
+                "reason": "User not found",
+            },
+        )
         messages.info(self.request, _("No user found with the username"))
         return redirect("forgot-password")
 
@@ -867,14 +890,47 @@ class EmployeePasswordResetView(PasswordResetView):
                     "extra_email_context": self.extra_email_context,
                 }
                 form.save(**opts)
+                log_activity(
+                    self.request.user,
+                    module="helpdesk",
+                    action="Password reset requested",
+                    target=user,
+                    changes={
+                        "target_user": username,
+                        "request_type": "admin",
+                        "status": "Requested",
+                    },
+                )
                 messages.success(
                     self.request, _("Password reset link sent successfully to {}").format(user.email)
                 )
             else:
+                log_activity(
+                    self.request.user,
+                    module="helpdesk",
+                    action="Password reset failed",
+                    changes={
+                        "target_user": username,
+                        "request_type": "admin",
+                        "status": "Failed",
+                        "reason": "User not found",
+                    },
+                )
                 messages.error(self.request, _("No user with the given username"))
             return HttpResponseRedirect(self.request.META.get("HTTP_REFERER", "/"))
 
         except Exception as e:
+            log_activity(
+                self.request.user,
+                module="helpdesk",
+                action="Password reset failed",
+                changes={
+                    "target_user": form.cleaned_data.get("email") if form.is_valid() else None,
+                    "request_type": "admin",
+                    "status": "Failed",
+                    "reason": str(e)[:200],
+                },
+            )
             messages.error(self.request, f"Something went wrong.....")
             return HttpResponseRedirect(self.request.META.get("HTTP_REFERER", "/"))
 
@@ -882,6 +938,45 @@ class EmployeePasswordResetView(PasswordResetView):
 setattr(PasswordResetConfirmView, "template_name", "reset_password.html")
 setattr(PasswordResetConfirmView, "form_class", ResetPasswordForm)
 setattr(PasswordResetConfirmView, "success_url", "/")
+
+
+# Audit-log password reset completion + expired/invalid token attempts.
+_original_form_valid = PasswordResetConfirmView.form_valid
+_original_dispatch = PasswordResetConfirmView.dispatch
+
+
+def _audit_form_valid(self, form):
+    response = _original_form_valid(self, form)
+    log_activity(
+        self.request.user,
+        module="helpdesk",
+        action="Password reset completed",
+        target=self.user,
+        changes={
+            "target_user": self.user.username if self.user else None,
+            "status": "Completed",
+        },
+    )
+    return response
+
+
+def _audit_dispatch(self, *args, **kwargs):
+    response = _original_dispatch(self, *args, **kwargs)
+    if getattr(self, "validlink", True) is False and self.request.method == "GET":
+        log_activity(
+            self.request.user,
+            module="helpdesk",
+            action="Password reset expired",
+            changes={
+                "status": "Expired",
+                "reason": "Invalid or expired token",
+            },
+        )
+    return response
+
+
+setattr(PasswordResetConfirmView, "form_valid", _audit_form_valid)
+setattr(PasswordResetConfirmView, "dispatch", _audit_dispatch)
 
 
 @login_required

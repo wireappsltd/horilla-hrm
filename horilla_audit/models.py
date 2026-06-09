@@ -127,3 +127,28 @@ class HistoryTrackingFields(HorillaModel):
 class AccountBlockUnblock(HorillaModel):
     is_enabled = models.BooleanField(default=False, null=True, blank=True)
     objects = models.Manager()
+
+
+class ActivityLog(models.Model):
+    """Action-based audit log for sensitive user activity (downloads, exports, etc.)."""
+
+    user = models.ForeignKey(
+        "auth.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="activity_logs",
+    )
+    module = models.CharField(max_length=50, db_index=True)
+    action = models.CharField(max_length=200)
+    target_type = models.CharField(max_length=100, blank=True, default="")
+    target_id = models.CharField(max_length=100, blank=True, default="")
+    changes = models.JSONField(null=True, blank=True)
+    timestamp = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        app_label = "horilla_audit"
+        ordering = ("-timestamp",)
+
+    def __str__(self) -> str:
+        return f"{self.user} {self.action} @ {self.timestamp:%Y-%m-%d %H:%M:%S}"

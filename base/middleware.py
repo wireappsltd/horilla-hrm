@@ -2,11 +2,15 @@
 middleware.py
 """
 
+import time
+
 from django.apps import apps
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import logout
 from django.core.cache import cache
 from django.db.models import Q
+from django.http import HttpResponse
 from django.shortcuts import redirect
 from django.utils.translation import gettext_lazy as _
 
@@ -236,6 +240,48 @@ class NoBrowserCacheMiddleware:
             response["Pragma"] = "no-cache"
             response["Expires"] = "0"
         return response
+
+
+class InactivityTimeoutMiddleware:
+
+    SESSION_KEY = "last_activity"
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+        self.timeout = getattr(settings, "SESSION_IDLE_TIMEOUT", 1800)
+
+    def __call__(self, request):
+        if (
+            self.timeout
+            and self.timeout > 0
+            and getattr(request, "user", None)
+            and request.user.is_authenticated
+        ):
+            now = time.time()
+            last_activity = request.session.get(self.SESSION_KEY)
+
+            if last_activity and (now - last_activity) > self.timeout:
+                logout(request)
+                messages.info(
+                    request,
+                    _("You have been logged out due to inactivity."),
+                )
+                # Signal HTMX/AJAX callers to perform a full redirect to login
+                # instead of swapping a partial response into the page.
+                login_redirect = redirect("login")
+                if (
+                    request.headers.get("HX-Request")
+                    or request.headers.get("x-requested-with") == "XMLHttpRequest"
+                ):
+                    response = HttpResponse(status=204)
+                    response["HX-Redirect"] = login_redirect["Location"]
+                    return response
+                return login_redirect
+
+            # Refresh the activity timestamp for the current request.
+            request.session[self.SESSION_KEY] = now
+
+        return self.get_response(request)
 
 
 class TwoFactorAuthMiddleware:

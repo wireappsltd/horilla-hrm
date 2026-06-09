@@ -32,7 +32,7 @@ from horilla_audit.models import HorillaAuditInfo, HorillaAuditLog
 from leave.methods import (
     calculate_requested_days,
     company_leave_dates_list,
-    holiday_dates_list,  is_carryforward_valid,
+    holiday_dates_list,
 )
 
 logger = logging.getLogger(__name__)
@@ -471,10 +471,6 @@ class AvailableLeave(HorillaModel):
 
     def update_carryforward(self):
         if self.leave_type_id.carryforward_type != "no carryforward":
-            # Only the unused portion of the current period (available_days)
-            # rolls over. Previously-carried-forward days do NOT compound —
-            # otherwise carryforward_days grows by total_days every reset
-            # whenever carryforward_max is unset (defaults to math.inf).
             unused_current_period = max(self.available_days, 0)
             carryforward_max = self.leave_type_id.carryforward_max
             self.carryforward_days = min(carryforward_max, unused_current_period)
@@ -1098,37 +1094,27 @@ class LeaveRequest(HorillaModel):
             leave_type_id=leave_type,
             requested_days=requested_days,
         )
-        leave_dates = leave_requested_dates(self.start_date, self.end_date)
-        month_year = [f"{date.year}-{date.strftime('%m')}" for date in leave_dates]
-        today = datetime.today()
-        unique_dates = list(set(month_year))
-        current_month = today.strftime("%Y-%m")
-        if current_month in unique_dates:
-            unique_dates.remove(current_month)
-
-        forcated_days = available_leave.forcasted_leaves(self.start_date)
         leave_type = available_leave.leave_type_id
 
-        total_leave_days = available_leave.available_days
+        # Validate strictly against the employee's real remaining balance so it
+        # can never go negative. We deliberately mirror the figure shown on the
+        # leave card -- AvailableLeave.balance_leaves() -- which is the maximum
+        # allotment (total_days + carryforward + used carryforward) minus leaves
+        # already taken (approved) minus leaves still pending. Forecasted future
+        # accruals are intentionally NOT counted here: letting employees borrow
+        # against days that have not accrued yet is what produced the negative
+        # balance in the first place.
+        #
+        # balance_leaves() already subtracts every other pending request; the
+        # request being validated here is not saved yet, so it is not part of
+        # that figure and must fit within it.
+        if getattr(leave_type, "limit_leave", True):
+            available_for_request = available_leave.balance_leaves()
 
-        if leave_type.carryforward_type == "carryforward":
-            total_leave_days += min(
-                available_leave.carryforward_days or 0,
-                leave_type.carryforward_max or available_leave.carryforward_days or 0,
-            )
-
-        elif leave_type.carryforward_type == "carryforward expire":
-            if is_carryforward_valid(leave_type, self.start_date):
-                total_leave_days += min(
-                    available_leave.carryforward_days or 0,
-                    leave_type.carryforward_max or available_leave.carryforward_days or 0,
+            if not effective_requested_days <= available_for_request:
+                raise ValidationError(
+                    _("Does not have sufficient leave balance for the requested dates.")
                 )
-
-        total_leave_days += forcated_days
-        if not effective_requested_days <= total_leave_days:
-            raise ValidationError(
-                _("Does not have sufficient leave balance for the requested dates.")
-            )
 
         # Get employee department and job if available
         work_info = EmployeeWorkInformation.objects.filter(
