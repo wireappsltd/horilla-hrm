@@ -8,6 +8,7 @@ from django.urls import include, path
 
 from payroll.models.models import Contract, Payslip
 from payroll.views import views
+from payroll.views import report_views
 
 urlpatterns = [
     path("", include("payroll.urls.component_urls")),
@@ -196,5 +197,31 @@ urlpatterns = [
         "activate-auto-payslip-generate",
         views.activate_auto_payslip_generate,
         name="activate-auto-payslip-generate",
+    ),
+    # ===========================Payroll Reports================================
+    path(
+        "payroll-reports/",
+        report_views.view_payroll_reports,
+        name="view-payroll-reports",
+    ),
+    path(
+        "filter-payroll-reports/",
+        report_views.filter_payroll_reports,
+        name="filter-payroll-reports",
+    ),
+    path(
+        "create-payroll-report",
+        report_views.create_payroll_report,
+        name="create-payroll-report",
+    ),
+    path(
+        "delete-payroll-report/<int:report_id>",
+        report_views.delete_payroll_report,
+        name="delete-payroll-report",
+    ),
+    path(
+        "download-payroll-report/<int:report_id>",
+        report_views.download_payroll_report,
+        name="download-payroll-report",
     ),
 ]

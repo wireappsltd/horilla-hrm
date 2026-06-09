@@ -34,6 +34,7 @@ from payroll.models.models import (
     MultipleCondition,
     Payslip,
     PayslipAutoGenerate,
+    PayrollReport,
     Reimbursement,
     ReimbursementMultipleAttachment,
 )
@@ -1238,3 +1239,49 @@ class PayslipAutoGenerateForm(ModelForm):
         context = {"form": self}
         table_html = render_to_string("common_form.html", context)
         return table_html
+
+
+# ===========================Payroll Reports================================
+class PayrollReportForm(Form):
+    """
+    Form used to create a payroll statutory report (e.g. ETF Monthly
+    Contribution) for a selected month.
+    """
+
+    report_type = forms.ChoiceField(
+        choices=PayrollReport.REPORT_TYPE_CHOICES,
+        label=_("Report Type"),
+    )
+    month = forms.CharField(
+        label=_("Month"),
+        widget=forms.DateInput(attrs={"type": "month"}),
+        help_text=_("Select the payroll period (month/year) for the report."),
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Use plain (non select2) styling so the fields render correctly inside
+        # the modal even before any select2 initialisation runs.
+        self.fields["report_type"].widget.attrs.update({"class": "oh-select w-100"})
+        self.fields["month"].widget.attrs.update({"class": "oh-input w-100"})
+
+    def clean_month(self):
+        """
+        Validate the ``month`` value (``YYYY-MM``) and convert it to the
+        period's start and end dates.
+        """
+        import calendar
+        from datetime import date
+
+        value = self.cleaned_data.get("month")
+        try:
+            year, month = map(int, value.split("-"))
+            start_date = date(year, month, 1)
+            last_day = calendar.monthrange(year, month)[1]
+            end_date = date(year, month, last_day)
+        except (ValueError, AttributeError):
+            raise forms.ValidationError(_("Enter a valid month."))
+        self.cleaned_data["start_date"] = start_date
+        self.cleaned_data["end_date"] = end_date
+        return value
+
