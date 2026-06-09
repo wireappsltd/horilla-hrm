@@ -1,0 +1,80 @@
+{% load i18n %}
+{% url 'time_tracker:time-entry-update' entry.pk as update_url %}
+<tr id="tt-entry-{{ entry.pk }}">
+  <!-- Project -->
+  <td>
+    {% if entry.is_locked %}
+    <span class="tt-proj">
+      <span class="tt-proj__dot"></span>
+      {% if entry.project_id %}{{ entry.project_id.title }}{% else %}—{% endif %}
+    </span>
+    {% else %}
+    <div class="tt-proj">
+      <span class="tt-proj__dot" data-tt-dot></span>
+      <select name="project_id" data-tt-projsel class="tt-cell-input tt-cell-select"
+              hx-post="{{ update_url }}" hx-trigger="change"
+              hx-include="closest tr" hx-swap="none"
+              hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
+        <option value="" data-color="#cbd5e1">{% trans "No project" %}</option>
+        {% for p in projects %}
+        <option value="{{ p.id }}" data-color="{{ p.color }}"
+          {% if entry.project_id and entry.project_id.pk == p.id %}selected{% endif %}>
+          {{ p.title }}
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+    {% endif %}
+  </td>
+
+  <!-- Description -->
+  <td>
+    <input type="text" name="description" class="tt-cell-input"
+           value="{{ entry.description }}" placeholder="{% trans 'Add description' %}"
+           {% if entry.is_locked %}readonly{% else %}
+           hx-post="{{ update_url }}" hx-trigger="change"
+           hx-include="closest tr" hx-swap="none"
+           hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'{% endif %}>
+  </td>
+
+  <!-- Start -->
+  <td class="ta-c">
+    <input type="time" name="start_time" class="tt-cell-input tt-cell-time"
+           value="{{ entry.start_time|time:'H:i' }}"
+           {% if entry.is_locked %}readonly{% else %}
+           hx-post="{{ update_url }}" hx-trigger="change"
+           hx-include="closest tr" hx-swap="none"
+           hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'{% endif %}>
+  </td>
+
+  <!-- End -->
+  <td class="ta-c">
+    <input type="time" name="end_time" class="tt-cell-input tt-cell-time"
+           value="{{ entry.end_time|time:'H:i' }}"
+           {% if entry.is_locked %}readonly{% else %}
+           hx-post="{{ update_url }}" hx-trigger="change"
+           hx-include="closest tr" hx-swap="none"
+           hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'{% endif %}>
+  </td>
+
+  <!-- Duration -->
+  <td class="ta-c">
+    <span class="tt-dur" id="tt-dur-{{ entry.pk }}">{{ entry.duration_display }}</span>
+  </td>
+
+  <!-- Actions -->
+  <td class="ta-r">
+    {% if not entry.is_locked %}
+    <button class="tt-del"
+            hx-post="{% url 'time_tracker:time-entry-delete' entry.pk %}"
+            hx-target="#tt-entries-list" hx-swap="innerHTML"
+            hx-confirm="{% trans 'Delete this entry?' %}"
+            hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+            title="{% trans 'Delete' %}">
+      <ion-icon name="trash-outline"></ion-icon>
+    </button>
+    {% else %}
+    <ion-icon name="lock-closed-outline" class="text-muted" title="{% trans 'Locked' %}"></ion-icon>
+    {% endif %}
+  </td>
+</tr>

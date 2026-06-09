@@ -1,0 +1,83 @@
+{% extends "settings.html" %}
+{% load i18n %}
+
+{% block settings %}
+{% include "time_tracker/management/_tt_settings_style.html" %}
+
+<div class="tt-set">
+  <div class="tt-header">
+    <div>
+      <h1 class="tt-header__title">{% trans "Time Tracker" %}</h1>
+      <p class="tt-header__sub">{% trans "Manage colour-coded tags for time entries." %}</p>
+    </div>
+    <button class="tt-btn tt-btn--primary"
+            hx-get="{% url 'time_tracker:tag-create' %}"
+            hx-target="#tt-tag-modal-body"
+            hx-swap="innerHTML"
+            onclick="document.getElementById('tt-tag-modal').classList.add('oh-modal--show')">
+      <ion-icon name="add-outline"></ion-icon> {% trans "Add Tag" %}
+    </button>
+  </div>
+
+  {% include "time_tracker/management/_tt_settings_tabs.html" with active="tags" %}
+
+  <div class="tt-card">
+    {% if tags %}
+    <table class="tt-table">
+      <thead>
+        <tr>
+          <th style="width:80px;">{% trans "Colour" %}</th>
+          <th>{% trans "Name" %}</th>
+          <th class="ta-r">{% trans "Actions" %}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for tag in tags %}
+        <tr id="tt-tag-{{ tag.pk }}">
+          <td><span class="tt-swatch" style="background:{{ tag.color }};"></span></td>
+          <td><span class="tt-tag-pill" style="background:{{ tag.color }};">{{ tag.name }}</span></td>
+          <td class="ta-r" style="white-space:nowrap;">
+            <button class="tt-icon-btn"
+                    hx-get="{% url 'time_tracker:tag-update' tag.pk %}"
+                    hx-target="#tt-tag-modal-body" hx-swap="innerHTML"
+                    onclick="document.getElementById('tt-tag-modal').classList.add('oh-modal--show')"
+                    title="{% trans 'Edit' %}">
+              <ion-icon name="create-outline"></ion-icon>
+            </button>
+            <button class="tt-icon-btn tt-icon-btn--danger"
+                    hx-post="{% url 'time_tracker:tag-delete' tag.pk %}"
+                    hx-confirm="{% trans 'Delete this tag?' %}"
+                    hx-target="#tt-tag-{{ tag.pk }}" hx-swap="outerHTML swap:300ms"
+                    title="{% trans 'Delete' %}">
+              <ion-icon name="trash-outline"></ion-icon>
+            </button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="tt-empty">
+      <ion-icon name="pricetags-outline" class="tt-empty__icon"></ion-icon>
+      <p class="tt-empty__text">{% trans "No tags yet." %}</p>
+      <button class="tt-btn tt-btn--primary"
+              hx-get="{% url 'time_tracker:tag-create' %}"
+              hx-target="#tt-tag-modal-body" hx-swap="innerHTML"
+              onclick="document.getElementById('tt-tag-modal').classList.add('oh-modal--show')">
+        <ion-icon name="add-outline"></ion-icon> {% trans "Add your first tag" %}
+      </button>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Tag Modal -->
+<div class="oh-modal" id="tt-tag-modal" role="dialog" aria-hidden="true">
+  <div class="oh-modal__dialog" style="max-width:380px;" id="tt-tag-modal-body"></div>
+</div>
+<script>
+  document.getElementById('tt-tag-modal').addEventListener('click', function(e) {
+    if (e.target === this) this.classList.remove('oh-modal--show');
+  });
+</script>
+{% endblock settings %}

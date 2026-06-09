@@ -1,0 +1,32 @@
+{% load i18n %}
+{% if entries %}
+<table class="tt-table">
+  <thead>
+    <tr>
+      <th style="width:18%;">{% trans "Project" %}</th>
+      <th>{% trans "Description" %}</th>
+      <th class="ta-c" style="width:150px;">{% trans "Start" %}</th>
+      <th class="ta-c" style="width:150px;">{% trans "End" %}</th>
+      <th class="ta-c" style="width:120px;">{% trans "Duration" %}</th>
+      <th class="ta-r" style="width:70px;">{% trans "Actions" %}</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for entry in entries %}
+    {% include "time_tracker/tracker/entry_row.html" %}
+    {% endfor %}
+  </tbody>
+  <tfoot>
+    <tr class="tt-foot">
+      <td colspan="4" class="ta-r"><span class="tt-foot__label">{% trans "Today's Total" %}</span></td>
+      <td class="ta-c"><span class="tt-foot__total" id="tt-today-total">{{ today_total|default:"—" }}</span></td>
+      <td></td>
+    </tr>
+  </tfoot>
+</table>
+{% else %}
+<div class="tt-empty">
+  <ion-icon name="time-outline" class="tt-empty__icon"></ion-icon>
+  <p class="tt-empty__text">{% trans "No entries yet today — start the timer above to track your time." %}</p>
+</div>
+{% endif %}

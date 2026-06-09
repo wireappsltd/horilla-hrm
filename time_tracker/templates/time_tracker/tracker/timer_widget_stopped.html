@@ -1,0 +1,20 @@
+{% load i18n %}
+<div id="tt-widget" class="oh-navbar__tt-widget">
+  <div class="oh-navbar__tt-stopped" style="display:inline-flex;align-items:center;gap:6px;">
+    <input type="text"
+           name="description"
+           id="tt-quick-desc"
+           placeholder="{% trans 'What are you working on?' %}"
+           class="oh-navbar__tt-input"
+           autocomplete="off">
+    <button class="oh-btn oh-btn--secondary oh-btn--sm"
+            title="{% trans 'Start Timer' %}"
+            hx-post="/time-tracker/timer/start/"
+            hx-target="#tt-timer-widget-container"
+            hx-swap="innerHTML"
+            hx-include="#tt-quick-desc"
+            hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
+      <ion-icon name="play-circle-outline"></ion-icon>
+    </button>
+  </div>
+</div>
