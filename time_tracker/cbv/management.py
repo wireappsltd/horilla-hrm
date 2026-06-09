@@ -15,6 +15,8 @@ from horilla.decorators import login_required, permission_required
 from time_tracker.forms import ClientForm, RequiredFieldConfigForm, TagForm
 from time_tracker.models import Client, RequiredFieldConfig, Tag
 
+# Lock management is handled in approvals.py — imported here for URL routing only.
+
 
 # ---------------------------------------------------------------------------
 # Settings
