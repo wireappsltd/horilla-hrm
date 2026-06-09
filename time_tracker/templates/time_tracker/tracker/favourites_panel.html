@@ -1,0 +1,110 @@
+{% load i18n %}{% comment %}Fragment template — no extends{% endcomment %}
+<div id="tt-favourites-panel">
+<style>
+#tt-favourites-panel { }
+.tt-fav-list { list-style:none; margin:0; padding:0; }
+.tt-fav-item { display:flex; align-items:center; gap:.5rem; padding:.45rem .6rem; border-radius:8px; cursor:pointer; transition:background .15s; }
+.tt-fav-item:hover { background:#f1f5f9; }
+.tt-fav-dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; background:#6366f1; }
+.tt-fav-name { font-size:.825rem; font-weight:600; color:#1e293b; flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.tt-fav-sub  { font-size:.72rem; color:#94a3b8; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.tt-fav-del  { background:none; border:none; color:#cbd5e1; cursor:pointer; padding:0 .15rem; font-size:.9rem; line-height:1; display:none; }
+.tt-fav-item:hover .tt-fav-del { display:block; color:#ef4444; }
+.tt-fav-empty { color:#94a3b8; font-size:.8rem; text-align:center; padding:1rem; }
+.tt-fav-save-form { border-top:1px solid #f1f5f9; padding-top:.75rem; margin-top:.5rem; }
+.tt-fav-save-form label { font-size:.75rem; font-weight:600; color:#64748b; display:block; margin-bottom:.35rem; }
+.tt-fav-row { display:flex; gap:.5rem; }
+</style>
+
+{% if favourites %}
+<ul class="tt-fav-list">
+  {% for fav in favourites %}
+  <li class="tt-fav-item" data-fav-id="{{ fav.pk }}"
+      hx-get="{% url 'time_tracker:favourite-apply' fav.pk %}"
+      hx-trigger="click"
+      hx-on::after-request="ttApplyFavourite(event.detail.xhr.response)">
+    <span class="tt-fav-dot"
+          style="background:{% if fav.project_id %}#6366f1{% else %}#cbd5e1{% endif %}"></span>
+    <div style="flex:1;min-width:0;">
+      <div class="tt-fav-name">{{ fav.name }}</div>
+      <div class="tt-fav-sub">
+        {% if fav.project_id %}{{ fav.project_id.title }}{% else %}{% trans "No project" %}{% endif %}
+        {% if fav.description %} · {{ fav.description|truncatechars:30 }}{% endif %}
+      </div>
+    </div>
+    <form method="post" action="{% url 'time_tracker:favourite-delete' fav.pk %}" style="display:inline;">
+      {% csrf_token %}
+      <button type="submit" class="tt-fav-del" title="{% trans 'Remove' %}"
+              onclick="event.stopPropagation();return confirm('{% trans 'Remove favourite?' %}')">
+        ×
+      </button>
+    </form>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<div class="tt-fav-empty">{% trans "No favourites saved yet." %}</div>
+{% endif %}
+
+<div class="tt-fav-save-form">
+  <form hx-post="{% url 'time_tracker:favourite-create' %}"
+        hx-target="#tt-favourites-panel"
+        hx-swap="outerHTML">
+    {% csrf_token %}
+    <label for="tt-fav-name-input">{% trans "Save current timer as favourite" %}</label>
+    <div class="tt-fav-row">
+      <input type="hidden" name="project_id" id="tt-fav-project-id">
+      <input type="hidden" name="task_id"    id="tt-fav-task-id">
+      <input type="hidden" name="client_id"  id="tt-fav-client-id">
+      <input type="hidden" name="description" id="tt-fav-desc">
+      <input type="hidden" name="is_billable" id="tt-fav-billable">
+      <input type="text" id="tt-fav-name-input" name="name" class="oh-input"
+             style="flex:1;font-size:.8rem;padding:.35rem .6rem;"
+             placeholder="{% trans 'Favourite name…' %}" required>
+      <button type="submit" class="oh-btn oh-btn--secondary"
+              style="padding:.35rem .75rem;font-size:.8rem;">
+        {% trans "Save" %}
+      </button>
+    </div>
+  </form>
+</div>
+</div>
+
+<script>
+function ttApplyFavourite(responseText) {
+  try {
+    const data = JSON.parse(responseText);
+    // Populate bar hidden inputs (picked up by existing tracker bar JS)
+    const bar = document.querySelector('[data-tt-bar]') || document.body;
+    const setVal = (sel, val) => {
+      const el = document.querySelector(sel);
+      if (el) { el.value = val; el.dispatchEvent(new Event('change')); }
+    };
+    setVal('[name="project_id"]', data.project_id || '');
+    setVal('[name="task_id"]',    data.task_id    || '');
+    setVal('[name="client_id"]',  data.client_id  || '');
+    setVal('[name="description"]', data.description || '');
+    const descInput = document.querySelector('[data-tt-desc], input[name="tt-quick-desc"]');
+    if (descInput) descInput.value = data.description || '';
+    // Billable toggle
+    const billBtn = document.querySelector('[data-tt-billable]');
+    if (billBtn) {
+      if (data.is_billable) billBtn.classList.add('active');
+      else billBtn.classList.remove('active');
+    }
+    // Close favourites panel
+    const panel = document.querySelector('#tt-favs-drawer');
+    if (panel) panel.removeAttribute('open');
+  } catch(e) {}
+}
+
+// Pre-fill fav form with current bar state on open
+document.getElementById('tt-fav-name-input')?.closest('form')?.addEventListener('focusin', () => {
+  const get = (sel) => document.querySelector(sel)?.value || '';
+  document.getElementById('tt-fav-project-id').value = get('[name="project_id"]');
+  document.getElementById('tt-fav-task-id').value    = get('[name="task_id"]');
+  document.getElementById('tt-fav-client-id').value  = get('[name="client_id"]');
+  document.getElementById('tt-fav-desc').value       = get('[name="tt-quick-desc"], [name="description"]');
+  document.getElementById('tt-fav-billable').value   = document.querySelector('[data-tt-billable]')?.classList.contains('active') ? 'on' : '';
+});
+</script>
