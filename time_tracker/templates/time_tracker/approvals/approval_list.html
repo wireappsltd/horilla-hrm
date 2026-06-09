@@ -1,0 +1,105 @@
+{% extends "index.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Timesheet Approvals" %}{% endblock %}
+
+{% block content %}
+<style>
+.tt-approval { background:#fff; border-radius:12px; overflow:hidden; }
+.tt-approval-header { padding:1.25rem 1.5rem; border-bottom:1px solid #e2e8f0; display:flex; align-items:center; gap:1rem; }
+.tt-approval-header h2 { margin:0; font-size:1.1rem; font-weight:700; color:#1e293b; flex:1; }
+.tt-sub-table { width:100%; border-collapse:collapse; }
+.tt-sub-table th { padding:.75rem 1rem; text-align:left; font-size:.75rem; font-weight:600; color:#94a3b8; letter-spacing:.06em; text-transform:uppercase; border-bottom:2px solid #e2e8f0; }
+.tt-sub-table td { padding:.75rem 1rem; border-bottom:1px solid #f1f5f9; font-size:.875rem; color:#374151; vertical-align:middle; }
+.tt-sub-table tr:hover td { background:#f8fafc; }
+.tt-status-badge { display:inline-block; padding:.2rem .65rem; border-radius:20px; font-size:.7rem; font-weight:600; }
+.tt-status-pending  { background:#fef3c7; color:#92400e; }
+.tt-status-approved { background:#dcfce7; color:#166534; }
+.tt-status-rejected { background:#fee2e2; color:#991b1b; }
+.tt-section-title { padding:.75rem 1.25rem; font-size:.8rem; font-weight:700; color:#64748b; letter-spacing:.05em; text-transform:uppercase; background:#f8fafc; border-bottom:1px solid #e2e8f0; }
+.tt-action-btn { padding:.3rem .75rem; border-radius:7px; font-size:.8rem; font-weight:500; border:none; cursor:pointer; text-decoration:none; display:inline-block; }
+.tt-btn-approve { background:#22c55e; color:#fff; }
+.tt-btn-reject  { background:#ef4444; color:#fff; }
+.tt-btn-view    { background:#e0e7ff; color:#4338ca; }
+.tt-empty { text-align:center; padding:2.5rem; color:#94a3b8; }
+</style>
+
+<div class="tt-approval oh-card">
+  <div class="tt-approval-header">
+    <h2>{% trans "Timesheet Approvals" %}</h2>
+  </div>
+
+  {% if is_manager and pending %}
+  <div class="tt-section-title">{% trans "Pending Review" %} ({{ pending|length }})</div>
+  <table class="tt-sub-table">
+    <thead>
+      <tr>
+        <th>{% trans "Employee" %}</th>
+        <th>{% trans "Period" %}</th>
+        <th>{% trans "Submitted" %}</th>
+        <th>{% trans "Hours" %}</th>
+        <th>{% trans "Entries" %}</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for sub in pending %}
+      <tr>
+        <td><strong>{{ sub.employee_id }}</strong></td>
+        <td>{{ sub.period_start|date:"N j" }} – {{ sub.period_end|date:"N j, Y" }}</td>
+        <td style="color:#94a3b8;">{{ sub.submitted_at|date:"N j, g:i a" }}</td>
+        <td>{{ sub.total_display|default:"—" }}</td>
+        <td>{{ sub.entry_count }}</td>
+        <td style="white-space:nowrap;">
+          <a href="{% url 'time_tracker:approval-detail' sub.pk %}" class="tt-action-btn tt-btn-view">{% trans "Review" %}</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% elif is_manager %}
+  <div class="tt-empty">
+    <i class="bi bi-check2-circle" style="font-size:2rem;display:block;margin-bottom:.5rem;color:#22c55e;"></i>
+    {% trans "No timesheets pending review." %}
+  </div>
+  {% endif %}
+
+  <div class="tt-section-title" style="margin-top:.5rem;">{% trans "All Submissions" %}</div>
+  {% if all_submissions %}
+  <table class="tt-sub-table">
+    <thead>
+      <tr>
+        {% if is_manager %}<th>{% trans "Employee" %}</th>{% endif %}
+        <th>{% trans "Period" %}</th>
+        <th>{% trans "Submitted" %}</th>
+        <th>{% trans "Status" %}</th>
+        <th>{% trans "Reviewed by" %}</th>
+        <th>{% trans "Notes" %}</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for sub in all_submissions %}
+      <tr>
+        {% if is_manager %}<td>{{ sub.employee_id }}</td>{% endif %}
+        <td>{{ sub.period_start|date:"N j" }} – {{ sub.period_end|date:"N j, Y" }}</td>
+        <td style="color:#94a3b8;font-size:.8rem;">{{ sub.submitted_at|date:"N j, Y" }}</td>
+        <td>
+          <span class="tt-status-badge tt-status-{{ sub.status }}">
+            {{ sub.get_status_display }}
+          </span>
+        </td>
+        <td style="color:#94a3b8;font-size:.8rem;">{{ sub.reviewed_by|default:"—" }}</td>
+        <td style="color:#64748b;font-size:.8rem;">{{ sub.notes|truncatechars:40|default:"" }}</td>
+        <td>
+          <a href="{% url 'time_tracker:approval-detail' sub.pk %}" class="tt-action-btn tt-btn-view">{% trans "View" %}</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="tt-empty">{% trans "No submissions yet." %}</div>
+  {% endif %}
+</div>
+{% endblock %}
