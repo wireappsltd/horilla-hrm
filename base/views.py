@@ -187,7 +187,7 @@ from horilla.horilla_settings import (
 )
 from horilla.methods import get_horilla_model_class, remove_dynamic_url
 from horilla_audit.forms import HistoryTrackingFieldsForm
-from horilla_audit.methods import log_activity
+from horilla_audit.methods import log_activity, log_login
 from horilla_audit.models import AccountBlockUnblock, AuditTag, HistoryTrackingFields
 from notifications.models import Notification
 from notifications.signals import notify
@@ -654,6 +654,12 @@ def login_user(request):
         # also count toward the login lockout counter (defence in depth).
         if not verify_turnstile_token(request):
             increment_login_attempts(username)
+            log_login(
+                username=username,
+                ip_address=_client_ip(request),
+                status="failed",
+                failure_reason="captcha_failed",
+            )
             messages.error(
                 request,
                 _(
@@ -675,6 +681,12 @@ def login_user(request):
             if attempts >= LOGIN_MAX_ATTEMPTS:
                 set_login_lockout(username)
                 request.session["login_lockout_username"] = username
+                log_login(
+                    username=username,
+                    ip_address=_client_ip(request),
+                    status="failed",
+                    failure_reason="too_many_attempts",
+                )
                 messages.error(
                     request,
                     _(
@@ -688,8 +700,22 @@ def login_user(request):
 
             user_object = User.objects.filter(username=username).first()
             if user_object and not user_object.is_active:
+                log_login(
+                    username=username,
+                    ip_address=_client_ip(request),
+                    status="failed",
+                    failure_reason="account_blocked",
+                    user=user_object,
+                )
                 messages.warning(request, _("Access Denied: Your account is blocked."))
             else:
+                log_login(
+                    username=username,
+                    ip_address=_client_ip(request),
+                    status="failed",
+                    failure_reason="invalid_credentials",
+                    user=user_object,
+                )
                 messages.error(request, _("Invalid username or password."))
             return redirect("login")
 
@@ -701,12 +727,26 @@ def login_user(request):
 
         employee = getattr(user, "employee_get", None)
         if employee is None:
+            log_login(
+                username=username,
+                ip_address=_client_ip(request),
+                status="failed",
+                failure_reason="no_employee",
+                user=user,
+            )
             messages.error(
                 request,
                 _("An employee related to this user's credentials does not exist."),
             )
             return redirect("login")
         if not employee.is_active:
+            log_login(
+                username=username,
+                ip_address=_client_ip(request),
+                status="failed",
+                failure_reason="employee_archived",
+                user=user,
+            )
             messages.warning(
                 request,
                 _(
@@ -722,6 +762,13 @@ def login_user(request):
                 employee_id=employee, contract_status="active", is_active=True
             ).exists()
             if not has_active_contract:
+                log_login(
+                    username=username,
+                    ip_address=_client_ip(request),
+                    status="failed",
+                    failure_reason="no_active_contract",
+                    user=user,
+                )
                 messages.warning(
                     request,
                     _(
@@ -735,6 +782,13 @@ def login_user(request):
         lockout_remaining = get_otp_lockout_remaining(user)
         if lockout_remaining > 0:
             minutes = int((lockout_remaining + 59) // 60)
+            log_login(
+                username=username,
+                ip_address=_client_ip(request),
+                status="failed",
+                failure_reason="otp_lockout",
+                user=user,
+            )
             messages.error(
                 request,
                 _(
@@ -746,6 +800,12 @@ def login_user(request):
             return redirect("login")
 
         login(request, user)
+        log_login(
+            username=username,
+            ip_address=_client_ip(request),
+            status="success",
+            user=user,
+        )
 
         messages.success(request, _("Login successful."))
 
