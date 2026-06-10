@@ -347,22 +347,62 @@
                         <span class="oh-helpdesk__card-title">{% trans "Documents" %}</span>
                     </div>
                     <div class="oh-helpdesk__card-body oh-scrollable-container">
-                        <div class="yc-doc-grid">
-                            {% for doc in asset_allocation.assign_images.all %}
-                                {% include 'request_allocation/_yearly_checkup_doc_tile.html' with doc=doc %}
-                            {% endfor %}
-                            {% for doc in asset_allocation.return_images.all %}
-                                {% include 'request_allocation/_yearly_checkup_doc_tile.html' with doc=doc %}
-                            {% endfor %}
-                            {% for log in checkup_logs %}
-                                {% for doc in log.images.all %}
-                                    {% include 'request_allocation/_yearly_checkup_doc_tile.html' with doc=doc %}
-                                {% endfor %}
-                            {% endfor %}
-                            {% if not asset_allocation.assign_images.all and not asset_allocation.return_images.all and not checkup_logs %}
-                                <span class="text-muted small">{% trans "No documents attached." %}</span>
+
+                        <!-- Assign condition images -->
+                        <div class="mb-3">
+                            <p class="text-muted small fw-semibold mb-1 text-uppercase" style="letter-spacing:.04em;">
+                                {% trans "Assign Condition Images" %}
+                            </p>
+                            {% if asset_allocation.assign_images.all %}
+                                <div class="yc-doc-grid">
+                                    {% for doc in asset_allocation.assign_images.all %}
+                                        {% include 'request_allocation/_yearly_checkup_doc_tile.html' with doc=doc %}
+                                    {% endfor %}
+                                </div>
+                            {% else %}
+                                <span class="text-muted small">{% trans "No images" %}</span>
                             {% endif %}
                         </div>
+
+                        <!-- Return condition images -->
+                        <div class="mb-3">
+                            <p class="text-muted small fw-semibold mb-1 text-uppercase" style="letter-spacing:.04em;">
+                                {% trans "Return Condition Images" %}
+                            </p>
+                            {% if asset_allocation.return_images.all %}
+                                <div class="yc-doc-grid">
+                                    {% for doc in asset_allocation.return_images.all %}
+                                        {% include 'request_allocation/_yearly_checkup_doc_tile.html' with doc=doc %}
+                                    {% endfor %}
+                                </div>
+                            {% else %}
+                                <span class="text-muted small">{% trans "No images" %}</span>
+                            {% endif %}
+                        </div>
+
+                        <!-- Check-up images, one sub-section per submission -->
+                        <div class="mb-1">
+                            <p class="text-muted small fw-semibold mb-1 text-uppercase" style="letter-spacing:.04em;">
+                                {% trans "Check-up Images" %}
+                            </p>
+                            {% with has_checkup_images=False %}
+                            {% for log in checkup_logs %}
+                                {% if log.images.all %}
+                                    <p class="text-muted small mb-1">
+                                        {% trans "Check-up on" %} {{ log.checkup_date|date:"M d, Y" }}
+                                    </p>
+                                    <div class="yc-doc-grid mb-2">
+                                        {% for doc in log.images.all %}
+                                            {% include 'request_allocation/_yearly_checkup_doc_tile.html' with doc=doc %}
+                                        {% endfor %}
+                                    </div>
+                                {% endif %}
+                            {% empty %}
+                                <span class="text-muted small">{% trans "No check-up images" %}</span>
+                            {% endfor %}
+                            {% endwith %}
+                        </div>
+
                     </div>
                 </div>
             </div>
