@@ -44,11 +44,53 @@
     box-shadow: 0 2px 8px rgba(16,24,40,.05); margin-bottom: 1.25rem;
   }
   .tt-bar__form { display: flex; align-items: center; gap: .5rem; padding: .5rem .75rem; }
+  .tt-bar__desc-wrap { position: relative; flex: 1 1 auto; min-width: 120px; }
   .tt-bar__desc {
-    flex: 1 1 auto; min-width: 120px; border: none; outline: none;
+    width: 100%; border: none; outline: none;
     font-size: .98rem; padding: .6rem .35rem; background: transparent; color: #111827;
   }
   .tt-bar__desc::placeholder { color: #9ca3af; }
+
+  /* ── Description autocomplete dropdown ── */
+  .tt-ac-drop {
+    display: none;
+    position: absolute;
+    top: calc(100% + 6px);
+    left: -.5rem; right: -.5rem;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    box-shadow: 0 8px 28px rgba(0,0,0,.12);
+    z-index: 300;
+    overflow: hidden;
+    max-height: 320px;
+    overflow-y: auto;
+  }
+  .tt-ac-drop.open { display: block; }
+  .tt-ac-item {
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+    padding: .6rem .875rem;
+    cursor: pointer;
+    transition: background .1s;
+    border-bottom: 1px solid #f8fafc;
+  }
+  .tt-ac-item:last-child { border-bottom: none; }
+  .tt-ac-item:hover, .tt-ac-item.active { background: #f5f7ff; }
+  .tt-ac-text { flex: 1; min-width: 0; }
+  .tt-ac-desc {
+    font-size: .9rem; color: #111827;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .tt-ac-match { font-weight: 700; color: #6366f1; }
+  .tt-ac-proj {
+    display: flex; align-items: center; gap: .25rem;
+    font-size: .72rem; color: #64748b; margin-top: .1rem;
+    white-space: nowrap;
+  }
+  .tt-ac-proj-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+
   .tt-bar__field { position: relative; }
   .tt-bar__project-btn {
     background: transparent; border: none; cursor: pointer; display: flex;
@@ -168,12 +210,72 @@
   .tt-empty__icon { font-size: 3rem; color: #d1d5db; }
   .tt-empty__text { color: #9ca3af; margin-top: .6rem; font-size: .92rem; }
 
+  /* ===================== Mode toggle ===================== */
+  .tt-mode-grp {
+    display: flex; align-items: center;
+    border: 1px solid #e8ebf0; border-radius: 9px; overflow: hidden; flex-shrink: 0;
+  }
+  .tt-mode-btn {
+    width: 34px; height: 34px; border: none; background: transparent;
+    cursor: pointer; color: #94a3b8; font-size: .95rem;
+    display: flex; align-items: center; justify-content: center;
+    transition: background .12s, color .12s;
+  }
+  .tt-mode-btn + .tt-mode-btn { border-left: 1px solid #e8ebf0; }
+  .tt-mode-active { background: #4f46e5 !important; color: #fff !important; }
+  .tt-mode-btn:not(.tt-mode-active):hover { background: #f5f7ff; color: #4f46e5; }
+
+  /* ===================== Manual entry inline fields ===================== */
+  .tt-mf-date {
+    border: 1px solid #e8ebf0; border-radius: 8px;
+    padding: .44rem .6rem; font-size: .82rem; color: #374151;
+    background: #fff; cursor: pointer; outline: none; font-family: inherit;
+    transition: border-color .15s, box-shadow .15s; min-width: 128px; flex-shrink: 0;
+  }
+  .tt-mf-date:focus { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,.1); }
+
+  .tt-mf-time {
+    font-family: 'SFMono-Regular', Consolas, monospace;
+    font-size: .9rem; font-weight: 600; color: #111827;
+    border: 1px solid #e8ebf0; border-radius: 8px;
+    padding: .44rem .5rem; outline: none; width: 120px;
+    text-align: center; background: #fff; flex-shrink: 0;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .tt-mf-time:focus { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,.1); }
+  .tt-mf-time::-webkit-calendar-picker-indicator { cursor: pointer; opacity: .5; }
+  .tt-mf-time::-webkit-calendar-picker-indicator:hover { opacity: 1; }
+
+  .tt-mf-sep { color: #b0b8c4; font-size: .95rem; font-weight: 600; flex-shrink: 0; }
+
+  .tt-mf-dur {
+    font-family: 'SFMono-Regular', Consolas, monospace;
+    font-size: .78rem; font-weight: 700; color: #4f46e5;
+    background: #eef2ff; border-radius: 6px;
+    padding: .3rem .55rem; white-space: nowrap; min-width: 46px; text-align: center;
+    flex-shrink: 0;
+  }
+
+  .tt-mf-select {
+    border: 1px solid #e8ebf0; border-radius: 8px;
+    padding: .44rem .65rem; font-size: .85rem; color: #374151;
+    background: #fff; cursor: pointer; outline: none; font-family: inherit;
+    transition: border-color .15s; min-width: 110px; max-width: 170px; flex-shrink: 0;
+  }
+  .tt-mf-select:focus { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,.1); }
+
   @media (max-width: 768px) {
     .tt-stats { grid-template-columns: 1fr; }
-    .tt-bar__form { flex-wrap: wrap; }
-    .tt-bar__desc { flex: 1 1 100%; order: -1; }
+    .tt-bar__form { flex-wrap: wrap; gap: .4rem; }
+    .tt-bar__desc-wrap { order: -1; flex: 1 1 100%; }
+    .tt-mf-date, .tt-mf-time { flex: 1 1 calc(50% - .5rem); width: auto; min-width: unset; }
+    .tt-mf-select { flex: 1 1 100%; max-width: 100%; }
+    .tt-mode-grp { margin-left: auto; }
   }
 </style>
+
+<!-- Idle timeout config for JS -->
+<script>window.TT_IDLE_TIMEOUT_MINUTES = {{ idle_timeout_minutes|default:10 }};</script>
 
 <div class="oh-wrapper tt-page">
   <!-- Page header -->
@@ -181,6 +283,27 @@
     <div>
       <h1 class="tt-header__title">{% trans "Time Tracker" %}</h1>
       <p class="tt-header__sub">{{ today|date:"l, d F Y" }}</p>
+    </div>
+    <div style="display:flex;gap:.6rem;align-items:center;">
+      <!-- Favourites drawer trigger -->
+      <details id="tt-favs-drawer" style="position:relative;">
+        <summary style="list-style:none;padding:.5rem .9rem;background:#f1f5f9;border-radius:9px;cursor:pointer;font-size:.82rem;font-weight:600;color:#475569;display:flex;align-items:center;gap:.4rem;">
+          <i class="bi bi-star"></i> {% trans "Favourites" %}
+          {% if favourites %}<span style="background:#6366f1;color:#fff;border-radius:10px;padding:0 .4rem;font-size:.7rem;">{{ favourites|length }}</span>{% endif %}
+        </summary>
+        <div style="position:absolute;right:0;top:calc(100% + 6px);width:280px;background:#fff;border:1px solid #e2e8f0;border-radius:12px;box-shadow:0 12px 30px rgba(0,0,0,.12);padding:.75rem;z-index:100;"
+             hx-get="{% url 'time_tracker:favourites-list' %}"
+             hx-trigger="toggle from:details#tt-favs-drawer"
+             hx-target="this"
+             hx-swap="innerHTML">
+          <div style="color:#94a3b8;font-size:.8rem;text-align:center;padding:.5rem;">{% trans "Loading…" %}</div>
+        </div>
+      </details>
+      <!-- Calendar shortcut -->
+      <a href="{% url 'time_tracker:calendar-day' %}"
+         style="padding:.5rem .9rem;background:#f1f5f9;border-radius:9px;font-size:.82rem;font-weight:600;color:#475569;text-decoration:none;display:flex;align-items:center;gap:.4rem;">
+        <i class="bi bi-calendar3"></i> {% trans "Calendar" %}
+      </a>
     </div>
   </div>
 

@@ -9,7 +9,7 @@ from django.utils.translation import gettext_lazy as _
 
 from base.forms import ModelForm
 
-from .models import Client, RequiredFieldConfig, Tag, TimeEntry
+from .models import Client, Favourite, RequiredFieldConfig, Tag, TimeEntry, TimesheetLock
 
 
 class TimeEntryForm(ModelForm):
@@ -128,6 +128,45 @@ class ClientForm(ModelForm):
         }
 
 
+class FavouriteForm(ModelForm):
+    """Form for creating and editing Favourite (saved entry template) records."""
+
+    class Meta:
+        model = Favourite
+        fields = [
+            "name",
+            "project_id",
+            "task_id",
+            "client_id",
+            "description",
+            "is_billable",
+            "tag_ids",
+        ]
+        widgets = {
+            "name": forms.TextInput(attrs={"class": "oh-input w-100"}),
+            "project_id": forms.Select(attrs={"class": "oh-select oh-select-2 w-100"}),
+            "task_id": forms.Select(attrs={"class": "oh-select oh-select-2 w-100"}),
+            "client_id": forms.Select(attrs={"class": "oh-select oh-select-2 w-100"}),
+            "description": forms.Textarea(attrs={"class": "oh-input w-100", "rows": 2}),
+            "is_billable": forms.CheckboxInput(attrs={"class": "oh-switch__checkbox"}),
+            "tag_ids": forms.SelectMultiple(attrs={"class": "oh-select oh-select-2 w-100"}),
+        }
+
+
+class TimesheetLockForm(ModelForm):
+    """Form for creating a TimesheetLock."""
+
+    class Meta:
+        model = TimesheetLock
+        fields = ["employee_id", "date_from", "date_to", "reason"]
+        widgets = {
+            "employee_id": forms.Select(attrs={"class": "oh-select oh-select-2 w-100"}),
+            "date_from": forms.DateInput(attrs={"type": "date", "class": "oh-input w-100"}),
+            "date_to": forms.DateInput(attrs={"type": "date", "class": "oh-input w-100"}),
+            "reason": forms.TextInput(attrs={"class": "oh-input w-100"}),
+        }
+
+
 class RequiredFieldConfigForm(ModelForm):
     """
     Form for managing per-company RequiredFieldConfig.
@@ -136,14 +175,19 @@ class RequiredFieldConfigForm(ModelForm):
     class Meta:
         model = RequiredFieldConfig
         fields = [
+            "approval_required",
             "require_project",
             "require_task",
             "require_client",
             "require_description",
             "require_tags",
             "force_timer_only",
+            "idle_timeout_minutes",
         ]
         widgets = {
+            "approval_required": forms.CheckboxInput(
+                attrs={"class": "oh-switch__checkbox"}
+            ),
             "require_project": forms.CheckboxInput(
                 attrs={"class": "oh-switch__checkbox"}
             ),
@@ -161,5 +205,8 @@ class RequiredFieldConfigForm(ModelForm):
             ),
             "force_timer_only": forms.CheckboxInput(
                 attrs={"class": "oh-switch__checkbox"}
+            ),
+            "idle_timeout_minutes": forms.NumberInput(
+                attrs={"class": "oh-input w-100", "min": "1", "max": "120"}
             ),
         }

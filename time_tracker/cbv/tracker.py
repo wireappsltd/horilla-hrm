@@ -21,7 +21,7 @@ from horilla.decorators import login_required
 from time_tracker.filters import TimeEntryFilter
 from time_tracker.forms import TimeEntryForm
 from time_tracker.methods import format_seconds
-from time_tracker.models import ActiveTimer, TimeEntry
+from time_tracker.models import ActiveTimer, RequiredFieldConfig, TimeEntry, is_entry_locked
 
 # Deterministic project colour palette (index = project.pk % len)
 _PROJECT_COLORS = [
@@ -334,6 +334,17 @@ def timer_stop(request):
         )
 
     end_time = timezone.now()
+
+    # Close any open break first
+    open_break = timer.breaks.filter(end_time__isnull=True).first()
+    if open_break:
+        open_break.end_time = end_time
+        open_break.save()
+
+    # Total break seconds to deduct from effective duration
+    from django.db.models import Sum as _Sum
+    total_break_secs = timer.breaks.aggregate(t=_Sum("duration_seconds"))["t"] or 0
+
     entry = TimeEntry(
         employee_id=employee,
         project_id=timer.project_id,
@@ -347,6 +358,13 @@ def timer_stop(request):
         status="draft",
     )
     entry.save()
+
+    # Adjust duration for breaks
+    if total_break_secs > 0:
+        entry.duration_seconds = max(0, entry.duration_seconds - total_break_secs)
+        TimeEntry.objects.filter(pk=entry.pk).update(
+            duration_seconds=entry.duration_seconds
+        )
 
     # Copy tags from timer to entry
     if timer.tag_ids.exists():
@@ -406,6 +424,99 @@ def timer_heartbeat(request):
     return HttpResponse(status=204)
 
 
+@login_required
+def description_suggestions(request):
+    """
+    GET ?q=<text> — return up to 8 distinct past descriptions matching the query.
+    Used by the tracker bar autocomplete.
+    """
+    q = request.GET.get("q", "").strip()
+    if len(q) < 1:
+        return JsonResponse({"suggestions": []})
+
+    employee = _get_employee(request)
+    if not employee:
+        return JsonResponse({"suggestions": []})
+
+    # Fetch most-recent entries that match, then deduplicate by description text
+    entries = (
+        TimeEntry.objects.filter(employee_id=employee, description__icontains=q)
+        .exclude(description="")
+        .order_by("-date", "-id")
+        .select_related("project_id")[:60]
+    )
+
+    seen = set()
+    results = []
+    for entry in entries:
+        key = entry.description.strip().lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        results.append({
+            "description": entry.description,
+            "project_id": entry.project_id_id or "",
+            "project_name": entry.project_id.title if entry.project_id else "",
+            "project_color": _project_color(entry.project_id) or "#6366f1",
+        })
+        if len(results) >= 8:
+            break
+
+    return JsonResponse({"suggestions": results})
+
+
+@login_required
+def manual_entry_create(request):
+    """
+    POST — Create a manual TimeEntry (no timer) directly from the tracker bar.
+    Expects: description, project_id, date (YYYY-MM-DD),
+             start_time (HH:MM), end_time (HH:MM).
+    Returns the stopped bar fragment + OOB entries refresh.
+    """
+    if request.method != "POST":
+        return HttpResponse(status=405)
+
+    employee = _get_employee(request)
+    if not employee:
+        return HttpResponse(status=403)
+
+    description = request.POST.get("description", "").strip()
+    project_id_val = request.POST.get("project_id") or None
+    date_str = request.POST.get("date", "")
+    start_str = request.POST.get("start_time", "")
+    end_str = request.POST.get("end_time", "")
+
+    try:
+        entry_date = datetime.strptime(date_str.strip(), "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        entry_date = date.today()
+
+    project = None
+    if project_id_val:
+        try:
+            from project.models import Project
+            project = Project.objects.filter(pk=int(project_id_val)).first()
+        except (ValueError, TypeError):
+            pass
+
+    start_time = _combine_time(entry_date, start_str)
+    end_time = _combine_time(entry_date, end_str)
+
+    entry = TimeEntry(
+        employee_id=employee,
+        description=description,
+        project_id=project,
+        date=entry_date,
+        start_time=start_time,
+        end_time=end_time,
+        status="draft",
+    )
+    entry.save()
+
+    messages.success(request, _("Time entry added."))
+    return _render_tracker_bar_stopped(request, employee, with_entries=True)
+
+
 class TrackerPageView(TemplateView):
     """
     Main tracker page — shows today's entries and timer controls.
@@ -442,6 +553,27 @@ class TrackerPageView(TemplateView):
 
         # Shared Clockify-bar context (projects, tags, bar_config, etc.)
         context.update(_bar_context(employee, active_timer))
+
+        # Idle timeout config
+        config = RequiredFieldConfig.objects.first()
+        idle_timeout = config.idle_timeout_minutes if config else 10
+
+        # Favourites for this employee
+        from time_tracker.models import Favourite
+        favourites = (
+            Favourite.objects.filter(employee_id=employee).select_related(
+                "project_id"
+            )
+            if employee
+            else Favourite.objects.none()
+        )
+
+        # Manager "add for others" — show employee selector if permitted
+        can_log_for_others = (
+            self.request.user.is_superuser
+            or self.request.user.has_perm("time_tracker.add_timeentry")
+        )
+
         context.update(
             {
                 "entries": entries,
@@ -449,6 +581,9 @@ class TrackerPageView(TemplateView):
                 "today_total": today_total,
                 "stats": _tracker_stats(employee),
                 "form": TimeEntryForm(),
+                "idle_timeout_minutes": idle_timeout,
+                "favourites": favourites,
+                "can_log_for_others": can_log_for_others,
             }
         )
         return context
@@ -494,7 +629,9 @@ def time_entry_create(request):
 
 
 def _can_edit_entry(request, entry):
-    """True if the current user may edit/delete the given entry."""
+    """True if the current user may edit/delete the given entry (lock check included)."""
+    if is_entry_locked(entry):
+        return False
     if request.user.is_superuser:
         return True
     employee = _get_employee(request)

@@ -1,0 +1,107 @@
+{% extends "index.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Timesheet Locks" %}{% endblock %}
+
+{% block content %}
+<style>
+.tt-locks { background:#fff; border-radius:12px; overflow:hidden; }
+.tt-locks-header { padding:1.25rem 1.5rem; border-bottom:1px solid #e2e8f0; display:flex; align-items:center; gap:1rem; }
+.tt-locks-header h2 { margin:0; font-size:1.1rem; font-weight:700; color:#1e293b; flex:1; }
+.tt-lock-table { width:100%; border-collapse:collapse; }
+.tt-lock-table th { padding:.65rem 1rem; text-align:left; font-size:.72rem; font-weight:600; color:#94a3b8; letter-spacing:.06em; text-transform:uppercase; border-bottom:2px solid #e2e8f0; }
+.tt-lock-table td { padding:.7rem 1rem; border-bottom:1px solid #f1f5f9; font-size:.875rem; color:#374151; vertical-align:middle; }
+.tt-lock-table tr:hover td { background:#f8fafc; }
+.tt-lock-range { font-weight:600; color:#1e293b; }
+.tt-del-btn { padding:.3rem .7rem; background:#fee2e2; color:#991b1b; border:none; border-radius:6px; font-size:.78rem; cursor:pointer; font-weight:500; }
+.tt-del-btn:hover { background:#fecaca; }
+.tt-create-form { padding:1.5rem; border-top:2px solid #e2e8f0; background:#f8fafc; }
+.tt-create-form h3 { margin:0 0 1rem; font-size:.9rem; font-weight:700; color:#1e293b; }
+.tt-form-row { display:flex; gap:1rem; flex-wrap:wrap; align-items:flex-end; }
+.tt-form-col { flex:1; min-width:160px; }
+.tt-form-col label { display:block; font-size:.78rem; font-weight:600; color:#64748b; margin-bottom:.35rem; }
+.tt-save-btn { padding:.55rem 1.25rem; background:#6366f1; color:#fff; border:none; border-radius:8px; font-size:.875rem; font-weight:600; cursor:pointer; }
+.tt-empty { text-align:center; padding:2.5rem; color:#94a3b8; }
+</style>
+
+<div class="tt-locks oh-card">
+  <div class="tt-locks-header">
+    <h2>{% trans "Timesheet Locks" %}</h2>
+  </div>
+
+  {% if locks %}
+  <table class="tt-lock-table">
+    <thead>
+      <tr>
+        <th>{% trans "Date Range" %}</th>
+        <th>{% trans "Employee" %}</th>
+        <th>{% trans "Reason" %}</th>
+        <th>{% trans "Locked by" %}</th>
+        <th>{% trans "Locked at" %}</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for lock in locks %}
+      <tr>
+        <td class="tt-lock-range">
+          {{ lock.date_from|date:"N j, Y" }} – {{ lock.date_to|date:"N j, Y" }}
+        </td>
+        <td>{{ lock.employee_id|default:"All employees" }}</td>
+        <td style="color:#64748b;">{{ lock.reason|default:"—" }}</td>
+        <td style="color:#94a3b8;font-size:.8rem;">{{ lock.locked_by }}</td>
+        <td style="color:#94a3b8;font-size:.8rem;">{{ lock.locked_at|date:"N j, Y" }}</td>
+        <td>
+          <form method="post" action="{% url 'time_tracker:lock-delete' lock.pk %}">
+            {% csrf_token %}
+            <button type="submit" class="tt-del-btn"
+                    onclick="return confirm('{% trans 'Remove this lock?' %}')">
+              {% trans "Remove" %}
+            </button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="tt-empty">
+    <i class="bi bi-unlock" style="font-size:2rem;display:block;margin-bottom:.5rem;"></i>
+    {% trans "No locks configured." %}
+  </div>
+  {% endif %}
+
+  <div class="tt-create-form">
+    <h3>{% trans "Add New Lock" %}</h3>
+    <form method="post" action="{% url 'time_tracker:lock-create' %}">
+      {% csrf_token %}
+      <div class="tt-form-row">
+        <div class="tt-form-col">
+          <label>{{ form.date_from.label }}</label>
+          {{ form.date_from }}
+        </div>
+        <div class="tt-form-col">
+          <label>{{ form.date_to.label }}</label>
+          {{ form.date_to }}
+        </div>
+        <div class="tt-form-col">
+          <label>{{ form.employee_id.label }}</label>
+          {{ form.employee_id }}
+        </div>
+        <div class="tt-form-col" style="flex:2;">
+          <label>{{ form.reason.label }}</label>
+          {{ form.reason }}
+        </div>
+        <div>
+          <button type="submit" class="tt-save-btn">{% trans "Lock Period" %}</button>
+        </div>
+      </div>
+      {% if form.errors %}
+      <div style="color:#ef4444;font-size:.8rem;margin-top:.5rem;">
+        {{ form.errors }}
+      </div>
+      {% endif %}
+    </form>
+  </div>
+</div>
+{% endblock %}

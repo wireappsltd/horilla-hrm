@@ -4,6 +4,7 @@ time_tracker/methods.py
 Utility functions for the Time Tracker app.
 """
 
+import calendar
 from datetime import date, timedelta
 from collections import defaultdict
 
@@ -121,6 +122,92 @@ def format_seconds(seconds: int) -> str:
     m = (seconds % 3600) // 60
     s = seconds % 60
     return f"{h:02d}:{m:02d}:{s:02d}"
+
+
+def month_grid_context(employee, year: int, month: int) -> dict:
+    """
+    Build a monthly grid context for the month timesheet view.
+
+    Returns a dict with:
+        weeks: list of week rows, each a list of 7 day dicts
+        month_total_seconds: int
+        month_total_display: str
+    Each day dict: {date, day_num, is_today, is_weekend, is_other_month,
+                    total_seconds, display, has_entries}
+    """
+    from time_tracker.models import TimeEntry
+
+    today = date.today()
+    # First day of month, last day of month
+    first_day = date(year, month, 1)
+    last_day = date(year, month, calendar.monthrange(year, month)[1])
+
+    # Expand to full weeks (Mon–Sun)
+    grid_start = first_day - timedelta(days=first_day.weekday())
+    grid_end = last_day + timedelta(days=(6 - last_day.weekday()))
+
+    entries = TimeEntry.objects.filter(
+        employee_id=employee,
+        date__gte=grid_start,
+        date__lte=grid_end,
+    ).values("date", "duration_seconds")
+
+    day_totals = defaultdict(int)
+    for e in entries:
+        day_totals[e["date"]] += e["duration_seconds"]
+
+    month_total = 0
+    weeks = []
+    current = grid_start
+    while current <= grid_end:
+        week = []
+        for _ in range(7):
+            secs = day_totals.get(current, 0)
+            if current.month == month:
+                month_total += secs
+            week.append(
+                {
+                    "date": current,
+                    "day_num": current.day,
+                    "is_today": current == today,
+                    "is_weekend": current.weekday() >= 5,
+                    "is_other_month": current.month != month,
+                    "total_seconds": secs,
+                    "display": format_seconds_hhmm(secs) if secs else "",
+                    "has_entries": secs > 0,
+                }
+            )
+            current += timedelta(days=1)
+        weeks.append(week)
+
+    return {
+        "weeks": weeks,
+        "month_total_seconds": month_total,
+        "month_total_display": format_seconds_hhmm(month_total),
+    }
+
+
+def get_leave_dates_for_period(employee, date_from: date, date_to: date) -> set:
+    """Return set of leave dates for the employee within the given period."""
+    leave_dates = set()
+    try:
+        from leave.models import LeaveRequest
+
+        leave_requests = LeaveRequest.objects.filter(
+            employee_id=employee,
+            start_date__lte=date_to,
+            end_date__gte=date_from,
+            status="approved",
+        )
+        for lr in leave_requests:
+            current = max(lr.start_date, date_from)
+            end = min(lr.end_date, date_to)
+            while current <= end:
+                leave_dates.add(current)
+                current += timedelta(days=1)
+    except Exception:
+        pass
+    return leave_dates
 
 
 def format_seconds_hhmm(seconds: int) -> str:

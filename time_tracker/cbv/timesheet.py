@@ -1,9 +1,10 @@
 """
 time_tracker/cbv/timesheet.py
 
-Views for the weekly timesheet grid.
+Views for the weekly timesheet grid and monthly overview.
 """
 
+import calendar
 from datetime import date, timedelta
 
 from django.shortcuts import redirect, render
@@ -13,7 +14,14 @@ from django.views.generic import TemplateView
 from horilla.decorators import login_required
 
 from time_tracker.cbv.tracker import _project_color
-from time_tracker.methods import format_seconds_hhmm, get_week_bounds, week_grid_context
+from time_tracker.methods import (
+    format_seconds_hhmm,
+    get_leave_dates_for_period,
+    get_week_bounds,
+    month_grid_context,
+    week_grid_context,
+)
+from time_tracker.models import RequiredFieldConfig, TimesheetSubmission
 
 
 def _get_employee(request):
@@ -149,6 +157,19 @@ def timesheet_week(request):
     current_week_label = f"{today_iso[0]}-W{today_iso[1]:02d}"
     this_week_label = f"{year}-W{week_num:02d}"
 
+    # Approval config
+    config = RequiredFieldConfig.objects.first()
+    approval_required = config.approval_required if config else True
+
+    # Existing submission for this week (if any)
+    submission = None
+    if employee:
+        submission = TimesheetSubmission.objects.filter(
+            employee_id=employee,
+            period_start=week_start,
+            period_end=week_end,
+        ).exclude(status="rejected").first()
+
     context = {
         **grid,
         "rows": rows,
@@ -170,6 +191,99 @@ def timesheet_week(request):
         "daily_avg_display": format_seconds_hhmm(daily_avg),
         "days_worked": days_worked,
         "project_count": project_count,
+        # approval
+        "approval_required": approval_required,
+        "submission": submission,
     }
 
     return render(request, "time_tracker/timesheet/week_grid.html", context)
+
+
+@login_required
+def timesheet_month(request):
+    """
+    GET — Monthly timesheet overview.
+    Query param: ?month=YYYY-MM  (defaults to current month)
+    """
+    today = date.today()
+    month_param = request.GET.get("month", "")
+    try:
+        parts = month_param.split("-")
+        year, month_num = int(parts[0]), int(parts[1])
+    except (ValueError, IndexError, AttributeError):
+        year, month_num = today.year, today.month
+
+    employee = _get_employee(request)
+    grid = {}
+    leave_dates = set()
+
+    if employee:
+        grid = month_grid_context(employee, year, month_num)
+        first_day = date(year, month_num, 1)
+        last_day = date(year, month_num, calendar.monthrange(year, month_num)[1])
+        leave_dates = get_leave_dates_for_period(employee, first_day, last_day)
+        # Mark leave days in the grid
+        for week in grid.get("weeks", []):
+            for day in week:
+                day["is_leave"] = day["date"] in leave_dates
+
+    # Navigation
+    if month_num == 1:
+        prev_year, prev_month = year - 1, 12
+    else:
+        prev_year, prev_month = year, month_num - 1
+    if month_num == 12:
+        next_year, next_month = year + 1, 1
+    else:
+        next_year, next_month = year, month_num + 1
+
+    # Also compute submit status for each week in this month
+    weeks_in_month = []
+    if employee:
+        from time_tracker.models import TimesheetSubmission
+        first_day = date(year, month_num, 1)
+        last_day = date(year, month_num, calendar.monthrange(year, month_num)[1])
+        # Get all submissions whose periods overlap this month
+        submissions = {
+            (s.period_start, s.period_end): s
+            for s in TimesheetSubmission.objects.filter(
+                employee_id=employee,
+                period_start__lte=last_day,
+                period_end__gte=first_day,
+            )
+        }
+        # Enumerate ISO weeks that touch this month
+        current = first_day
+        seen_weeks = set()
+        while current <= last_day:
+            iso = current.isocalendar()
+            key = (iso[0], iso[1])
+            if key not in seen_weeks:
+                seen_weeks.add(key)
+                ws, we = get_week_bounds(iso[0], iso[1])
+                sub = submissions.get((ws, we))
+                weeks_in_month.append(
+                    {
+                        "label": f"{iso[0]}-W{iso[1]:02d}",
+                        "start": ws,
+                        "end": we,
+                        "submission": sub,
+                        "submission_status": sub.status if sub else None,
+                    }
+                )
+            current += timedelta(days=1)
+
+    context = {
+        **grid,
+        "year": year,
+        "month": month_num,
+        "month_name": date(year, month_num, 1).strftime("%B %Y"),
+        "prev_month": f"{prev_year}-{prev_month:02d}",
+        "next_month": f"{next_year}-{next_month:02d}",
+        "current_month": f"{today.year}-{today.month:02d}",
+        "today": today,
+        "employee": employee,
+        "weeks_in_month": weeks_in_month,
+        "day_headers": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+    }
+    return render(request, "time_tracker/timesheet/month_grid.html", context)

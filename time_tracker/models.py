@@ -15,6 +15,15 @@ from horilla.horilla_middlewares import _thread_locals
 from horilla.models import HorillaModel
 
 
+def _assign_company(instance):
+    """Assign company_id from session on new records."""
+    request = getattr(_thread_locals, "request", None)
+    if request:
+        cid = request.session.get("selected_company")
+        if cid and cid != "all":
+            instance.company_id = Company.find(cid)
+
+
 class Tag(HorillaModel):
     """
     Tag model for categorising time entries.
@@ -40,12 +49,8 @@ class Tag(HorillaModel):
         return self.name
 
     def save(self, *args, **kwargs):
-        is_new = self.pk is None
-        request = getattr(_thread_locals, "request", None)
-        if is_new and request:
-            cid = request.session.get("selected_company")
-            if cid and cid != "all":
-                self.company_id = Company.find(cid)
+        if self.pk is None:
+            _assign_company(self)
         super().save(*args, **kwargs)
 
 
@@ -87,12 +92,119 @@ class Client(HorillaModel):
         return self.name
 
     def save(self, *args, **kwargs):
-        is_new = self.pk is None
-        request = getattr(_thread_locals, "request", None)
-        if is_new and request:
-            cid = request.session.get("selected_company")
-            if cid and cid != "all":
-                self.company_id = Company.find(cid)
+        if self.pk is None:
+            _assign_company(self)
+        super().save(*args, **kwargs)
+
+
+class TimesheetSubmission(HorillaModel):
+    """A grouped submission of time entries for a period, awaiting manager approval."""
+
+    SUBMISSION_STATUS = [
+        ("pending", _("Pending")),
+        ("approved", _("Approved")),
+        ("rejected", _("Rejected")),
+    ]
+
+    employee_id = models.ForeignKey(
+        "employee.Employee",
+        on_delete=models.CASCADE,
+        related_name="tt_submissions",
+        verbose_name=_("Employee"),
+    )
+    period_start = models.DateField(verbose_name=_("Period Start"))
+    period_end = models.DateField(verbose_name=_("Period End"))
+    submitted_at = models.DateTimeField(
+        default=timezone.now, verbose_name=_("Submitted At")
+    )
+    status = models.CharField(
+        choices=SUBMISSION_STATUS,
+        max_length=20,
+        default="pending",
+        verbose_name=_("Status"),
+    )
+    reviewed_by = models.ForeignKey(
+        "employee.Employee",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="tt_reviewed_submissions",
+        verbose_name=_("Reviewed By"),
+    )
+    reviewed_at = models.DateTimeField(
+        null=True, blank=True, verbose_name=_("Reviewed At")
+    )
+    notes = models.TextField(blank=True, default="", verbose_name=_("Notes"))
+    company_id = models.ForeignKey(
+        "base.Company",
+        null=True,
+        editable=False,
+        on_delete=models.PROTECT,
+        verbose_name=_("Company"),
+    )
+    objects = HorillaCompanyManager("company_id")
+
+    class Meta:
+        ordering = ["-submitted_at"]
+        verbose_name = _("Timesheet Submission")
+        verbose_name_plural = _("Timesheet Submissions")
+
+    def __str__(self):
+        return f"{self.employee_id} – {self.period_start} to {self.period_end}"
+
+    def save(self, *args, **kwargs):
+        if self.pk is None:
+            _assign_company(self)
+        super().save(*args, **kwargs)
+
+
+class TimesheetLock(HorillaModel):
+    """Locks a date range so entries in that range cannot be modified."""
+
+    employee_id = models.ForeignKey(
+        "employee.Employee",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="tt_personal_locks",
+        help_text=_("Leave blank to lock for all employees."),
+        verbose_name=_("Employee"),
+    )
+    date_from = models.DateField(verbose_name=_("Date From"))
+    date_to = models.DateField(verbose_name=_("Date To"))
+    locked_by = models.ForeignKey(
+        "employee.Employee",
+        on_delete=models.PROTECT,
+        related_name="tt_created_locks",
+        verbose_name=_("Locked By"),
+    )
+    locked_at = models.DateTimeField(
+        default=timezone.now, verbose_name=_("Locked At")
+    )
+    reason = models.CharField(
+        max_length=300, blank=True, verbose_name=_("Reason")
+    )
+    company_id = models.ForeignKey(
+        "base.Company",
+        null=True,
+        editable=False,
+        on_delete=models.PROTECT,
+        verbose_name=_("Company"),
+    )
+    objects = HorillaCompanyManager("company_id")
+
+    class Meta:
+        ordering = ["-locked_at"]
+        verbose_name = _("Timesheet Lock")
+        verbose_name_plural = _("Timesheet Locks")
+
+    def __str__(self):
+        who = str(self.employee_id) if self.employee_id else "All"
+        return f"Lock [{self.date_from} – {self.date_to}] for {who}"
+
+    def save(self, *args, **kwargs):
+        if self.pk is None:
+            _assign_company(self)
         super().save(*args, **kwargs)
 
 
@@ -170,6 +282,14 @@ class TimeEntry(HorillaModel):
         verbose_name=_("Status"),
     )
     is_locked = models.BooleanField(default=False, verbose_name=_("Locked"))
+    submission = models.ForeignKey(
+        "TimesheetSubmission",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="entries",
+        verbose_name=_("Submission"),
+    )
     custom_fields = models.JSONField(
         default=dict, blank=True, verbose_name=_("Custom Fields")
     )
@@ -200,17 +320,12 @@ class TimeEntry(HorillaModel):
         return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
     def save(self, *args, **kwargs):
-        is_new = self.pk is None
         # Compute duration from start/end times
         if self.start_time and self.end_time:
             delta = self.end_time - self.start_time
             self.duration_seconds = max(0, int(delta.total_seconds()))
-        # Assign company on create
-        request = getattr(_thread_locals, "request", None)
-        if is_new and request:
-            cid = request.session.get("selected_company")
-            if cid and cid != "all":
-                self.company_id = Company.find(cid)
+        if self.pk is None:
+            _assign_company(self)
         super().save(*args, **kwargs)
 
 
@@ -353,6 +468,19 @@ class RequiredFieldConfig(HorillaModel):
         verbose_name=_("Force Timer Only"),
         help_text=_("When enabled, manual time entry is disabled."),
     )
+    idle_timeout_minutes = models.PositiveIntegerField(
+        default=10,
+        verbose_name=_("Idle Timeout (minutes)"),
+        help_text=_("Minutes of inactivity before the idle prompt appears."),
+    )
+    approval_required = models.BooleanField(
+        default=True,
+        verbose_name=_("Approval Required"),
+        help_text=_(
+            "When enabled, employees must submit timesheets for manager approval. "
+            "When disabled, submitted timesheets are automatically approved."
+        ),
+    )
     objects = HorillaCompanyManager("company_id")
 
     class Meta:
@@ -364,10 +492,75 @@ class RequiredFieldConfig(HorillaModel):
         return f"Config for {self.company_id}"
 
     def save(self, *args, **kwargs):
-        is_new = self.pk is None
-        request = getattr(_thread_locals, "request", None)
-        if is_new and request:
-            cid = request.session.get("selected_company")
-            if cid and cid != "all":
-                self.company_id = Company.find(cid)
+        if self.pk is None:
+            _assign_company(self)
         super().save(*args, **kwargs)
+
+
+class Favourite(HorillaModel):
+    """Saved project/task/description combo for one-tap time entry creation."""
+
+    employee_id = models.ForeignKey(
+        "employee.Employee",
+        on_delete=models.CASCADE,
+        related_name="tt_favourites",
+        verbose_name=_("Employee"),
+    )
+    name = models.CharField(max_length=200, verbose_name=_("Name"))
+    project_id = models.ForeignKey(
+        "project.Project",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        verbose_name=_("Project"),
+    )
+    task_id = models.ForeignKey(
+        "project.Task",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        verbose_name=_("Task"),
+    )
+    client_id = models.ForeignKey(
+        Client,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        verbose_name=_("Client"),
+    )
+    description = models.TextField(
+        blank=True, default="", verbose_name=_("Description")
+    )
+    is_billable = models.BooleanField(default=False, verbose_name=_("Billable"))
+    tag_ids = models.ManyToManyField(Tag, blank=True, verbose_name=_("Tags"))
+
+    class Meta:
+        ordering = ["name"]
+        verbose_name = _("Favourite")
+        verbose_name_plural = _("Favourites")
+
+    def __str__(self):
+        return f"{self.name} ({self.employee_id})"
+
+
+def is_entry_locked(entry) -> bool:
+    """Return True if the entry is individually locked or falls within a TimesheetLock range."""
+    if entry.is_locked:
+        return True
+    return TimesheetLock.objects.filter(
+        company_id=entry.company_id,
+        date_from__lte=entry.date,
+        date_to__gte=entry.date,
+    ).filter(
+        models.Q(employee_id__isnull=True) | models.Q(employee_id=entry.employee_id)
+    ).exists()
+
+
+def is_date_locked(employee, d, company_id=None) -> bool:
+    """Return True if the given date is covered by a TimesheetLock for the employee."""
+    qs = TimesheetLock.objects.filter(date_from__lte=d, date_to__gte=d)
+    if company_id:
+        qs = qs.filter(company_id=company_id)
+    return qs.filter(
+        models.Q(employee_id__isnull=True) | models.Q(employee_id=employee)
+    ).exists()
