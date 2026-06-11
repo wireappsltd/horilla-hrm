@@ -37,9 +37,9 @@ env = environ.Env(
         ["https://pmo-alpha.vercel.app"],
     ),
     # Validity period (in seconds) of password reset links/tokens.
-    # Defaults to 15 minutes. Tokens are also invalidated automatically
+    # Defaults to 10 minutes. Tokens are also invalidated automatically
     # once the password has been successfully changed.
-    PASSWORD_RESET_TIMEOUT=(int, 900),
+    PASSWORD_RESET_TIMEOUT=(int, 600),
     # Number of seconds of user inactivity after which the session is
     # automatically logged out. Defaults to 10 minutes.
     SESSION_IDLE_TIMEOUT=(int, 600),
