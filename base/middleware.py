@@ -246,6 +246,13 @@ class InactivityTimeoutMiddleware:
 
     SESSION_KEY = "last_activity"
 
+    # Paths hit by automated client-side polling (not real user activity).
+    # These requests are still subject to the timeout check, but they do
+    # not refresh the activity timestamp.
+    EXEMPT_REFRESH_PATHS = (
+        "/time-tracker/timer/heartbeat/",
+    )
+
     def __init__(self, get_response):
         self.get_response = get_response
         self.timeout = getattr(settings, "SESSION_IDLE_TIMEOUT", 600)
@@ -278,8 +285,10 @@ class InactivityTimeoutMiddleware:
                     return response
                 return login_redirect
 
-            # Refresh the activity timestamp for the current request.
-            request.session[self.SESSION_KEY] = now
+            # Refresh the activity timestamp for the current request,
+            # unless it originates from automated background polling.
+            if request.path not in self.EXEMPT_REFRESH_PATHS:
+                request.session[self.SESSION_KEY] = now
 
         return self.get_response(request)
 
