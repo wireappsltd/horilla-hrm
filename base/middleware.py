@@ -253,6 +253,13 @@ class InactivityTimeoutMiddleware:
         "/time-tracker/timer/heartbeat/",
     )
 
+    # Path prefixes hit by automated client-side polling. Any request whose
+    # path starts with one of these prefixes will not refresh the activity
+    # timestamp (e.g. the notification badge poller fires every 15 seconds).
+    EXEMPT_REFRESH_PREFIXES = (
+        "/inbox/notifications/api/",
+    )
+
     def __init__(self, get_response):
         self.get_response = get_response
         self.timeout = getattr(settings, "SESSION_IDLE_TIMEOUT", 600)
@@ -287,10 +294,19 @@ class InactivityTimeoutMiddleware:
 
             # Refresh the activity timestamp for the current request,
             # unless it originates from automated background polling.
-            if request.path not in self.EXEMPT_REFRESH_PATHS:
+            if not self._is_exempt_from_refresh(request.path):
                 request.session[self.SESSION_KEY] = now
 
         return self.get_response(request)
+
+    def _is_exempt_from_refresh(self, path):
+        """
+        Return True when the request path belongs to automated background
+        polling and therefore must not count as user activity.
+        """
+        if path in self.EXEMPT_REFRESH_PATHS:
+            return True
+        return path.startswith(self.EXEMPT_REFRESH_PREFIXES)
 
 
 class TwoFactorAuthMiddleware:
