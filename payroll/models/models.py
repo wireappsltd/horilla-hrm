@@ -1993,8 +1993,10 @@ class PayrollReport(HorillaModel):
     """
 
     REPORT_ETF_MONTHLY = "etf_monthly"
+    REPORT_ETF_BI_ANNUAL = "etf_bi_annual"
     REPORT_TYPE_CHOICES = [
         (REPORT_ETF_MONTHLY, _("ETF Monthly Contribution")),
+        (REPORT_ETF_BI_ANNUAL, _("ETF Bi-Annual (Form II Return)")),
     ]
 
     report_type = models.CharField(
@@ -2022,8 +2024,14 @@ class PayrollReport(HorillaModel):
     def get_report_name(self):
         """
         Returns the human readable report name including the period month/year.
-        e.g. ``ETF Monthly Contribution - March 2026``
+        e.g. ``ETF Monthly Contribution - March 2026`` or, for bi-annual
+        returns, ``ETF Bi-Annual (Form II Return) - Jan-Jun 2026``.
         """
+        if self.report_type == self.REPORT_ETF_BI_ANNUAL:
+            half = "Jan-Jun" if self.start_date.month <= 6 else "Jul-Dec"
+            return (
+                f"{self.get_report_type_display()} - {half} {self.start_date.year}"
+            )
         return f"{self.get_report_type_display()} - {self.start_date.strftime('%B %Y')}"
 
     def get_generated_by(self):
