@@ -594,6 +594,29 @@ class Employee(models.Model):
 
         return cache.get(f"online_user_{user.id}") is not None
 
+    @property
+    def total_experience_display(self):
+        prior_months = int(float(self.experience or 0) * 12)
+        company_months = 0
+        work_info = getattr(self, "employee_work_info", None)
+        if work_info and work_info.date_joining:
+            today = datetime.now().date()
+            joining = work_info.date_joining
+            m = (today.year - joining.year) * 12 + (today.month - joining.month)
+            if today.day < joining.day:
+                m -= 1
+            company_months = max(0, m)
+        total_months = prior_months + company_months
+        if total_months == 0 and self.experience is None and company_months == 0:
+            return None
+        years, months = divmod(total_months, 12)
+        parts = []
+        if years:
+            parts.append(f"{years} yr{'s' if years != 1 else ''}")
+        if months:
+            parts.append(f"{months} mo{'s' if months != 1 else ''}")
+        return " ".join(parts) if parts else "< 1 month"
+
     class Meta:
         """
         Recruitment model
@@ -877,6 +900,23 @@ class EmployeeWorkInformation(models.Model):
         self.experience = experience
         self.save()
         return self
+
+    @property
+    def company_experience_display(self):
+        if not self.date_joining:
+            return None
+        today = datetime.now().date()
+        months = (today.year - self.date_joining.year) * 12 + (today.month - self.date_joining.month)
+        if today.day < self.date_joining.day:
+            months -= 1
+        months = max(0, months)
+        years, rem_months = divmod(months, 12)
+        parts = []
+        if years:
+            parts.append(f"{years} yr{'s' if years != 1 else ''}")
+        if rem_months:
+            parts.append(f"{rem_months} mo{'s' if rem_months != 1 else ''}")
+        return " ".join(parts) if parts else "< 1 month"
 
 
 class EmployeeBankDetails(HorillaModel):
