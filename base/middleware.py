@@ -248,7 +248,7 @@ class InactivityTimeoutMiddleware:
 
     def __init__(self, get_response):
         self.get_response = get_response
-        self.timeout = getattr(settings, "SESSION_IDLE_TIMEOUT", 1800)
+        self.timeout = getattr(settings, "SESSION_IDLE_TIMEOUT", 600)
 
     def __call__(self, request):
         if (
