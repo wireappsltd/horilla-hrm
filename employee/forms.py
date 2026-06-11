@@ -922,6 +922,7 @@ excel_columns = [
     ("employee_last_name", trans("Last Name")),
     ("email", trans("Email")),
     ("phone", trans("Phone")),
+    ("nic", trans("NIC")),
     ("experience", trans("Experience")),
     ("gender", trans("Gender")),
     ("dob", trans("Date of Birth")),
