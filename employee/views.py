@@ -1842,7 +1842,7 @@ def employee_create_update_personal_info(request, obj_id=None):
                 module="employee",
                 action="Personal information updated",
                 form=form,
-                target=employee,
+                target=form.instance,
             )
         if obj_id is None:
             messages.success(request, _("New Employee Added."))
