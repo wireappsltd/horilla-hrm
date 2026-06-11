@@ -8,6 +8,7 @@ from django.contrib import admin
 
 from payroll.models.models import (
     Allowance,
+    ApitT10Log,
     Contract,
     Deduction,
     FilingStatus,
@@ -35,3 +36,4 @@ admin.site.register(ReimbursementrequestComment)
 admin.site.register(MultipleCondition)
 admin.site.register(PayslipAutoGenerate)
 admin.site.register(PayrollReport)
+admin.site.register(ApitT10Log)

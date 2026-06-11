@@ -58,6 +58,11 @@ SUBMENUS = [
         "redirect": reverse("view-payroll-reports"),
         "accessibility": "payroll.sidebar.reports_accessibility",
     },
+    {
+        "menu": trans("APIT T10"),
+        "redirect": reverse("view-apit-t10"),
+        "accessibility": "payroll.sidebar.reports_accessibility",
+    },
 ]
 
 

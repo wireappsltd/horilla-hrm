@@ -1,0 +1,81 @@
+{% load i18n %}
+{% load static %}
+{% if messages %}
+    <div class="oh-wrapper">
+        {% for message in messages %}
+            <div class="oh-alert-container">
+                <div class="oh-alert oh-alert--animated {{ message.tags }}">{{ message }}</div>
+            </div>
+        {% endfor %}
+    </div>
+{% endif %}
+{% if employees %}
+    <div class="oh-sticky-table">
+        <div class="oh-sticky-table__table">
+            <div class="oh-sticky-table__thead">
+                <div class="oh-sticky-table__tr">
+                    <div class="oh-sticky-table__th">{% trans "Employee" %}</div>
+                    <div class="oh-sticky-table__th">{% trans "Employee ID" %}</div>
+                    <div class="oh-sticky-table__th">{% trans "NIC" %}</div>
+                    <div class="oh-sticky-table__th">{% trans "Department" %}</div>
+                    <div class="oh-sticky-table__th">{% trans "Year of Assessment" %}</div>
+                    <div class="oh-sticky-table__th">{% trans "Download" %}</div>
+                </div>
+            </div>
+            <div class="oh-sticky-table__tbody">
+                {% for employee in employees %}
+                    <div class="oh-sticky-table__tr">
+                        <div class="oh-sticky-table__td">{{ employee.get_full_name }}</div>
+                        <div class="oh-sticky-table__td">{{ employee.badge_id|default:"-" }}</div>
+                        <div class="oh-sticky-table__td">{{ employee.nic|default:"-" }}</div>
+                        <div class="oh-sticky-table__td">
+                            {{ employee.employee_work_info.department_id|default:"-" }}
+                        </div>
+                        <div class="oh-sticky-table__td">{{ selected_year }}</div>
+                        <div class="oh-sticky-table__td">
+                            <a class="oh-btn oh-btn--secondary-outline oh-btn--small"
+                                href="{% url 'download-apit-t10' employee.id %}?assessment_year={{ selected_year|urlencode }}">
+                                <ion-icon name="download-outline" class="me-1"></ion-icon>
+                                {% trans "Download PDF" %}
+                            </a>
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    <!-- start of pagination -->
+    <div class="oh-pagination">
+        <span class="oh-pagination__page">
+            {% trans "Page" %} {{ employees.number }} {% trans "of" %} {{ employees.paginator.num_pages }}.
+        </span>
+        <nav class="oh-pagination__nav">
+            <ul class="oh-pagination__items">
+                {% if employees.has_previous %}
+                    <li class="oh-pagination__item oh-pagination__item--wide">
+                        <a hx-target="#apit-t10-container"
+                            hx-get="{% url 'filter-apit-t10' %}?apit_page={{ employees.previous_page_number }}&assessment_year={{ selected_year|urlencode }}&department={{ selected_department }}&search={{ search|urlencode }}"
+                            class="oh-pagination__link">{% trans "Previous" %}</a>
+                    </li>
+                {% endif %}
+                {% if employees.has_next %}
+                    <li class="oh-pagination__item oh-pagination__item--wide">
+                        <a hx-target="#apit-t10-container"
+                            hx-get="{% url 'filter-apit-t10' %}?apit_page={{ employees.next_page_number }}&assessment_year={{ selected_year|urlencode }}&department={{ selected_department }}&search={{ search|urlencode }}"
+                            class="oh-pagination__link">{% trans "Next" %}</a>
+                    </li>
+                {% endif %}
+            </ul>
+        </nav>
+    </div>
+    <!-- end of pagination -->
+{% else %}
+    <div class="oh-empty">
+        <img src="{% static 'images/ui/search.svg' %}" class="oh-404__image" alt="No records found." />
+        <h1 class="oh-empty__title">{% trans "No Records found." %}</h1>
+        <p class="oh-empty__subtitle">
+            {% trans "No employees match the current filters." %}
+        </p>
+    </div>
+{% endif %}
+
