@@ -49,6 +49,25 @@ def log_activity(user, module, action, target=None, changes=None):
         logger.exception("Failed to write ActivityLog entry")
 
 
+def log_login(username, ip_address, status, failure_reason="", user=None):
+    """Record a login attempt (success or failure) to LoginLog.
+
+    Never raises — audit failures must not block authentication.
+    """
+    from horilla_audit.models import LoginLog
+
+    try:
+        LoginLog.objects.create(
+            username=username,
+            ip_address=ip_address or None,
+            status=status,
+            failure_reason=failure_reason,
+            user=user if user is not None and getattr(user, "pk", None) else None,
+        )
+    except Exception:
+        logger.exception("Failed to write LoginLog entry")
+
+
 class Bot:
     def __init__(self) -> None:
         self.__str__()

@@ -27,9 +27,94 @@
         {% endfor %}
     </ul>
 
+    {% if is_login_log %}
+    <div class="d-flex align-items-center gap-2 px-4 mb-3">
+        <span class="text-muted small">{% trans "Filter:" %}</span>
+        <a href="?module=logins"
+           class="oh-btn oh-btn--sm {% if not status_filter %}oh-btn--primary{% else %}oh-btn--secondary{% endif %}">
+            {% trans "All" %}
+        </a>
+        <a href="?module=logins&status=failed"
+           class="oh-btn oh-btn--sm {% if status_filter == 'failed' %}oh-btn--danger{% else %}oh-btn--secondary{% endif %}">
+            {% trans "Failed" %}
+        </a>
+        <a href="?module=logins&status=success"
+           class="oh-btn oh-btn--sm {% if status_filter == 'success' %}oh-btn--success{% else %}oh-btn--secondary{% endif %}">
+            {% trans "Success" %}
+        </a>
+    </div>
+    {% endif %}
+
     <div class="oh-card shadow-sm p-2 mx-4">
 
         <div class="oh-table-wrapper">
+            {% if is_login_log %}
+            <table class="oh-table oh-table--hover oh-table--striped">
+                <thead class="bg-light">
+                    <tr>
+                        <th class="py-3">{% trans "Timestamp" %}</th>
+                        <th class="py-3">{% trans "Username" %}</th>
+                        <th class="py-3">{% trans "IP Address" %}</th>
+                        <th class="py-3">{% trans "Status" %}</th>
+                        <th class="py-3">{% trans "Reason" %}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for log in page_obj %}
+                    <tr>
+                        <td class="align-middle text-nowrap">
+                            <span class="text-muted small">{{ log.timestamp|date:"Y-m-d" }}</span>
+                            <br>
+                            <strong>{{ log.timestamp|date:"H:i:s" }}</strong>
+                        </td>
+                        <td class="align-middle">
+                            <strong>{{ log.username }}</strong>
+                            {% if log.user %}
+                            <br>
+                            <span class="text-muted small">{{ log.user.get_full_name|default:log.user.username }}</span>
+                            {% endif %}
+                        </td>
+                        <td class="align-middle">
+                            {% if log.ip_address %}
+                                <span class="font-monospace small">{{ log.ip_address }}</span>
+                            {% else %}
+                                <span class="text-muted">&mdash;</span>
+                            {% endif %}
+                        </td>
+                        <td class="align-middle">
+                            {% if log.status == "failed" %}
+                                <span class="badge bg-danger-subtle text-danger px-2 py-1">
+                                    <ion-icon name="close-circle-outline"></ion-icon>
+                                    {% trans "Failed" %}
+                                </span>
+                            {% else %}
+                                <span class="badge bg-success-subtle text-success px-2 py-1">
+                                    <ion-icon name="checkmark-circle-outline"></ion-icon>
+                                    {% trans "Success" %}
+                                </span>
+                            {% endif %}
+                        </td>
+                        <td class="align-middle">
+                            {% if log.failure_reason %}
+                                <span class="text-muted small">{{ log.failure_reason|title|cut:"_" }}</span>
+                            {% else %}
+                                <span class="text-muted">&mdash;</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="5" class="text-center py-5 text-muted">
+                            <ion-icon name="log-in-outline" style="font-size: 2.5rem; opacity: 0.4;"></ion-icon>
+                            <div class="mt-2">
+                                {% trans "No login log entries yet." %}
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
             <table class="oh-table oh-table--hover oh-table--striped">
                 <thead class="bg-light">
                     <tr>
@@ -105,12 +190,13 @@
                     {% endfor %}
                 </tbody>
             </table>
+            {% endif %}
         </div>
 
         {% if page_obj.paginator.num_pages > 1 %}
         <div class="d-flex justify-content-center align-items-center mt-3 mb-2">
             {% if page_obj.has_previous %}
-            <a href="?module={{ active_module }}&page={{ page_obj.previous_page_number }}"
+            <a href="?module={{ active_module }}{% if is_login_log and status_filter %}&status={{ status_filter }}{% endif %}&page={{ page_obj.previous_page_number }}"
                class="oh-btn oh-btn--secondary mx-1">
                 &laquo; {% trans "Prev" %}
             </a>
@@ -120,7 +206,7 @@
                 {% trans "of" %} {{ page_obj.paginator.num_pages }}
             </span>
             {% if page_obj.has_next %}
-            <a href="?module={{ active_module }}&page={{ page_obj.next_page_number }}"
+            <a href="?module={{ active_module }}{% if is_login_log and status_filter %}&status={{ status_filter }}{% endif %}&page={{ page_obj.next_page_number }}"
                class="oh-btn oh-btn--secondary mx-1">
                 {% trans "Next" %} &raquo;
             </a>
