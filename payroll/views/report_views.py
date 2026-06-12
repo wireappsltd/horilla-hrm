@@ -196,8 +196,40 @@ def download_payroll_report(request, report_id):
     report = get_object_or_404(PayrollReport, id=report_id)
     if report.report_type == PayrollReport.REPORT_ETF_MONTHLY:
         return _build_etf_monthly_contribution_file(report)
+    if report.report_type == PayrollReport.REPORT_ETF_BI_ANNUAL:
+        return _build_etf_bi_annual_file(report)
     messages.error(request, _("Unsupported report type."))
     return redirect("view-payroll-reports")
+
+
+def _build_etf_bi_annual_file(report):
+    """
+    Build the ETF Bi-Annual Form II Return ``.xlsx`` (Form II + Reconciliation +
+    Summary sheets) for the given report and return it as a download response.
+    """
+    from payroll.views.etf_report_views import (
+        build_etf_form_ii_context,
+        _build_workbook,
+    )
+
+    period_key = "H1" if report.start_date.month <= 6 else "H2"
+    year = report.start_date.year
+    context = build_etf_form_ii_context(year, period_key, report.company_id)
+    workbook = _build_workbook(context)
+
+    buffer = BytesIO()
+    workbook.save(buffer)
+    buffer.seek(0)
+    half = "Jan-Jun" if period_key == "H1" else "Jul-Dec"
+    file_name = f"ETF Form II Return - {half} {year}.xlsx"
+    response = HttpResponse(
+        buffer.getvalue(),
+        content_type=(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        ),
+    )
+    response["Content-Disposition"] = f'attachment; filename="{file_name}"'
+    return response
 
 
 def _get_payslips_for_period(report):

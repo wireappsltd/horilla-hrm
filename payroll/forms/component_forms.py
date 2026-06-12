@@ -1244,18 +1244,36 @@ class PayslipAutoGenerateForm(ModelForm):
 # ===========================Payroll Reports================================
 class PayrollReportForm(Form):
     """
-    Form used to create a payroll statutory report (e.g. ETF Monthly
-    Contribution) for a selected month.
+    Form used to create a payroll statutory report. Supports:
+      * ETF Monthly Contribution  -> pick a month (YYYY-MM)
+      * ETF Bi-Annual (Form II)   -> pick a half-year period + year
     """
+
+    HALF_YEAR_CHOICES = [
+        ("H1", _("January - June")),
+        ("H2", _("July - December")),
+    ]
 
     report_type = forms.ChoiceField(
         choices=PayrollReport.REPORT_TYPE_CHOICES,
         label=_("Report Type"),
     )
     month = forms.CharField(
+        required=False,
         label=_("Month"),
         widget=forms.DateInput(attrs={"type": "month"}),
         help_text=_("Select the payroll period (month/year) for the report."),
+    )
+    half_year = forms.ChoiceField(
+        required=False,
+        choices=HALF_YEAR_CHOICES,
+        label=_("Half-Year Period"),
+        help_text=_("Half-year contribution period for the Form II return."),
+    )
+    year = forms.IntegerField(
+        required=False,
+        label=_("Year"),
+        widget=forms.NumberInput(attrs={"min": 2000, "max": 2100}),
     )
 
     def __init__(self, *args, **kwargs):
@@ -1264,24 +1282,49 @@ class PayrollReportForm(Form):
         # the modal even before any select2 initialisation runs.
         self.fields["report_type"].widget.attrs.update({"class": "oh-select w-100"})
         self.fields["month"].widget.attrs.update({"class": "oh-input w-100"})
+        self.fields["half_year"].widget.attrs.update({"class": "oh-select w-100"})
+        self.fields["year"].widget.attrs.update({"class": "oh-input w-100"})
+        from datetime import date
 
-    def clean_month(self):
+        self.fields["year"].initial = date.today().year
+
+    def clean(self):
         """
-        Validate the ``month`` value (``YYYY-MM``) and convert it to the
-        period's start and end dates.
+        Validate the period inputs based on the selected ``report_type`` and
+        populate ``start_date`` / ``end_date`` in ``cleaned_data``.
         """
         import calendar
         from datetime import date
 
-        value = self.cleaned_data.get("month")
-        try:
-            year, month = map(int, value.split("-"))
-            start_date = date(year, month, 1)
-            last_day = calendar.monthrange(year, month)[1]
-            end_date = date(year, month, last_day)
-        except (ValueError, AttributeError):
-            raise forms.ValidationError(_("Enter a valid month."))
-        self.cleaned_data["start_date"] = start_date
-        self.cleaned_data["end_date"] = end_date
-        return value
+        cleaned_data = super().clean()
+        report_type = cleaned_data.get("report_type")
+
+        if report_type == PayrollReport.REPORT_ETF_BI_ANNUAL:
+            half_year = cleaned_data.get("half_year")
+            year = cleaned_data.get("year")
+            if not half_year:
+                self.add_error("half_year", _("This field is required."))
+            if not year:
+                self.add_error("year", _("This field is required."))
+            if half_year and year:
+                if half_year == "H1":
+                    cleaned_data["start_date"] = date(year, 1, 1)
+                    cleaned_data["end_date"] = date(year, 6, 30)
+                else:
+                    cleaned_data["start_date"] = date(year, 7, 1)
+                    cleaned_data["end_date"] = date(year, 12, 31)
+        else:
+            value = cleaned_data.get("month")
+            if not value:
+                self.add_error("month", _("This field is required."))
+            else:
+                try:
+                    year, month = map(int, value.split("-"))
+                    start_date = date(year, month, 1)
+                    last_day = calendar.monthrange(year, month)[1]
+                    cleaned_data["start_date"] = start_date
+                    cleaned_data["end_date"] = date(year, month, last_day)
+                except (ValueError, AttributeError):
+                    self.add_error("month", _("Enter a valid month."))
+        return cleaned_data
 
