@@ -2358,10 +2358,43 @@ def asset_yearly_checkup_list(request):
     )
     if not _is_asset_admin(request.user):
         qs = qs.filter(assigned_to_employee_id=request.user.employee_get)
-    qs = qs.order_by("yearly_checkup_date", "-id")
 
+    search = request.GET.get("search", "").strip()
+    if search:
+        qs = qs.filter(
+            Q(asset_id__asset_name__icontains=search)
+            | Q(assigned_to_employee_id__employee_first_name__icontains=search)
+            | Q(assigned_to_employee_id__employee_last_name__icontains=search)
+        )
+
+    status_filter = request.GET.get("status", "").strip()
+    if status_filter == "complete":
+        qs = qs.filter(checkup_completed=True)
+    elif status_filter == "overdue":
+        qs = qs.filter(
+            checkup_completed=False,
+            yearly_checkup_date__lte=date.today(),
+            return_date__isnull=True,
+        )
+    elif status_filter == "pending":
+        qs = qs.exclude(checkup_completed=True).exclude(
+            yearly_checkup_date__lte=date.today(),
+            return_date__isnull=True,
+        )
+
+    qs = qs.order_by("yearly_checkup_date", "-id")
     page_obj = Paginator(qs, get_pagination()).get_page(request.GET.get("page"))
-    context = {"allocations": page_obj}
+    context = {
+        "allocations": page_obj,
+        "search": search,
+        "status_filter": status_filter,
+    }
+    if request.headers.get("HX-Request"):
+        return render(
+            request,
+            "request_allocation/_yearly_checkup_rows.html",
+            context,
+        )
     return render(
         request,
         "request_allocation/yearly_checkup_list.html",
