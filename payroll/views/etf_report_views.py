@@ -149,6 +149,27 @@ def _is_active_in_period(employee, period_start, period_end):
     return True
 
 
+def _payslip_etf_values(payslip):
+    """
+    Return ``(earnings, contribution)`` for a payslip, matching the amounts
+    shown on the payslip itself.
+
+    The contribution always comes from the stored ``employer_etf_amount``
+    (the exact figure printed on the payslip and used by the monthly ETF
+    report). Earnings are the ETF base, i.e. basic pay less loss of pay,
+    so that ``earnings x 3%`` lines up with the contribution column.
+    """
+    pay_head_data = payslip.pay_head_data or {}
+    loss_of_pay = float(pay_head_data.get("loss_of_pay") or 0)
+    earnings = float(payslip.basic_pay or payslip.contract_wage or 0) - loss_of_pay
+    contribution = float(payslip.employer_etf_amount or 0)
+    if not contribution:
+        # Fallback for legacy payslips generated before the ETF amount was
+        # stored on the Payslip record.
+        contribution = round(earnings * ETF_RATE, 2)
+    return round(earnings, 2), contribution
+
+
 def _build_report_context(request, year, period_key):
     """Thin request-based wrapper around :func:`build_etf_form_ii_context`."""
     company = _get_selected_company(request)
@@ -195,9 +216,10 @@ def build_etf_form_ii_context(year, period_key, company=None):
                 "months": [{"earnings": 0.0, "contribution": 0.0} for _m in months],
             },
         )
-        # Total Earnings is the gross/basic salary for the month.
-        earnings = float(payslip.basic_pay or payslip.contract_wage or 0)
-        contribution = round(earnings * ETF_RATE, 2)
+        # Earnings/contribution are taken from the payslip itself so the
+        # Form II figures always match the issued payslips (and the monthly
+        # ETF contribution report).
+        earnings, contribution = _payslip_etf_values(payslip)
         record["months"][month_index]["earnings"] += earnings
         record["months"][month_index]["contribution"] += contribution
 
