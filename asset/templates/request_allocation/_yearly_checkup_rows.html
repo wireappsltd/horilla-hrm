@@ -1,0 +1,124 @@
+{% load i18n %}
+{% if allocations %}
+    <div class="oh-table_sticky--wrapper">
+        <div id="yearly-checkup-table" data-table-name="yearly_checkup_table">
+            <div class="oh-sticky-table">
+                <div class="oh-sticky-table__table">
+                    <div class="oh-sticky-table__thead">
+                        <div class="oh-sticky-table__tr">
+                            <div class="oh-sticky-table__th yc-col--asset">{% trans "Asset" %}</div>
+                            <div class="oh-sticky-table__th yc-col--user">{% trans "Allocated User" %}</div>
+                            <div class="oh-sticky-table__th yc-col--date">{% trans "Scheduled Date" %}</div>
+                            <div class="oh-sticky-table__th yc-col--status">{% trans "Check Up Status" %}</div>
+                            <div class="oh-sticky-table__th yc-col--last">{% trans "Last Submission" %}</div>
+                            <div class="oh-sticky-table__th oh-sticky-table__right yc-col--actions">{% trans "Actions" %}</div>
+                        </div>
+                    </div>
+                    <div class="oh-sticky-table__tbody">
+                        {% for allocation in allocations %}
+                            <div class="oh-sticky-table__tr"
+                                onclick="window.location.href = '{% url 'asset-yearly-checkup-detail' allocation.id %}'"
+                                style="cursor:pointer;">
+                                <div class="oh-sticky-table__sd yc-col--asset
+                                    {% if allocation.yearly_checkup_status == 'Complete' %}row-status--yellowgreen
+                                    {% elif allocation.yearly_checkup_status == 'Overdue' %}row-status--red
+                                    {% else %}row-status--orange{% endif %}">
+                                    <div class="oh-profile oh-profile--md">
+                                        <div class="oh-profile__avatar mr-1">
+                                            <img src="https://ui-avatars.com/api/?name={{ allocation.asset_id.asset_name }}&background=random"
+                                                class="oh-profile__image"
+                                                alt="{{ allocation.asset_id.asset_name }}" />
+                                        </div>
+                                        <span class="oh-profile__name oh-text--dark yc-ellipsis"
+                                            title="{{ allocation.asset_id.asset_name }}">
+                                            {{ allocation.asset_id.asset_name }}
+                                        </span>
+                                    </div>
+                                </div>
+                                <div class="oh-sticky-table__td yc-col--user">
+                                    <span class="yc-ellipsis"
+                                        title="{{ allocation.assigned_to_employee_id|default:'-' }}">
+                                        {{ allocation.assigned_to_employee_id|default:"-" }}
+                                    </span>
+                                </div>
+                                <div class="oh-sticky-table__td yc-col--date">
+                                    {{ allocation.yearly_checkup_date|default:"-" }}
+                                </div>
+                                <div class="oh-sticky-table__td yc-col--status">
+                                    {% if allocation.yearly_checkup_status == "Complete" %}
+                                        <span class="oh-badge oh-badge--success">{% trans "Complete" %}</span>
+                                    {% elif allocation.yearly_checkup_status == "Overdue" %}
+                                        <span class="oh-badge oh-badge--danger">{% trans "Overdue" %}</span>
+                                    {% else %}
+                                        <span class="oh-badge oh-badge--warning">{% trans "Pending" %}</span>
+                                    {% endif %}
+                                </div>
+                                <div class="oh-sticky-table__td yc-col--last">
+                                    {% with last_log=allocation.checkup_logs.first %}
+                                        {% if last_log %}
+                                            {{ last_log.checkup_date|date:"M d, Y" }}
+                                        {% else %}
+                                            <span class="text-muted">{% trans "Never" %}</span>
+                                        {% endif %}
+                                    {% endwith %}
+                                </div>
+                                <div class="oh-sticky-table__td oh-sticky-table__right yc-col--actions"
+                                    onclick="event.stopPropagation()">
+                                    <a class="oh-btn oh-btn--light-bkg p-3"
+                                        title="{% trans 'View' %}"
+                                        href="{% url 'asset-yearly-checkup-detail' allocation.id %}">
+                                        <ion-icon name="eye-outline"></ion-icon>
+                                    </a>
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% if allocations.has_other_pages %}
+        <div class="oh-pagination">
+            <nav class="oh-pagination__nav">
+                <div class="oh-pagination__input-container me-3">
+                    <span class="oh-pagination__label me-1">{% trans "Page" %}</span>
+                    <span class="oh-pagination__label">
+                        {{ allocations.number }} {% trans "of" %} {{ allocations.paginator.num_pages }}
+                    </span>
+                </div>
+                <ul class="oh-pagination__items">
+                    {% if allocations.has_previous %}
+                        <li class="oh-pagination__item oh-pagination__item--wide">
+                            <a class="oh-pagination__link"
+                                hx-get="{% url 'asset-yearly-checkup-submissions' %}?search={{ search }}&status={{ status_filter }}&page=1"
+                                hx-target="#yc-results">{% trans "First" %}</a>
+                        </li>
+                        <li class="oh-pagination__item oh-pagination__item--wide">
+                            <a class="oh-pagination__link"
+                                hx-get="{% url 'asset-yearly-checkup-submissions' %}?search={{ search }}&status={{ status_filter }}&page={{ allocations.previous_page_number }}"
+                                hx-target="#yc-results">{% trans "Previous" %}</a>
+                        </li>
+                    {% endif %}
+                    {% if allocations.has_next %}
+                        <li class="oh-pagination__item oh-pagination__item--wide">
+                            <a class="oh-pagination__link"
+                                hx-get="{% url 'asset-yearly-checkup-submissions' %}?search={{ search }}&status={{ status_filter }}&page={{ allocations.next_page_number }}"
+                                hx-target="#yc-results">{% trans "Next" %}</a>
+                        </li>
+                        <li class="oh-pagination__item oh-pagination__item--wide">
+                            <a class="oh-pagination__link"
+                                hx-get="{% url 'asset-yearly-checkup-submissions' %}?search={{ search }}&status={{ status_filter }}&page={{ allocations.paginator.num_pages }}"
+                                hx-target="#yc-results">{% trans "Last" %}</a>
+                        </li>
+                    {% endif %}
+                </ul>
+            </nav>
+        </div>
+    {% endif %}
+{% else %}
+    <div class="py-5 d-flex flex-column align-items-center text-center text-muted">
+        <ion-icon name="document-outline" style="font-size:42px;"></ion-icon>
+        <p class="mt-2 mb-0">{% trans "No asset allocations found." %}</p>
+    </div>
+{% endif %}
