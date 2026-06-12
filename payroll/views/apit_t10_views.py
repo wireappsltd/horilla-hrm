@@ -179,18 +179,30 @@ def _amount_in_words(amount):
     return f"{words} Only"
 
 
+PAYE_DEDUCTION_TITLES = ("paye tax", "paye", "apit", "apit tax")
+
+PAYE_DEDUCTION_KEYS = (
+    "pretax_deductions",
+    "post_tax_deductions",
+    "tax_deductions",
+    "net_deductions",
+)
+
+
 def _get_paye_tax_amount(payslip):
     """
     Return the total APIT/PAYE tax deducted on a payslip. The amount is stored
-    inside ``pay_head_data`` as a post tax deduction titled "PAYE Tax", with
+    inside ``pay_head_data`` as a deduction titled "PAYE Tax"/"APIT" (in any of
+    the deduction buckets, depending on how the component is configured), with
     any computed federal tax added on top.
     """
     data = payslip.pay_head_data or {}
     total = 0.0
-    for deduction in data.get("post_tax_deductions") or []:
-        title = str(deduction.get("title", "")).strip().lower()
-        if title in ("paye tax", "apit", "apit tax"):
-            total += float(deduction.get("amount") or 0)
+    for key in PAYE_DEDUCTION_KEYS:
+        for deduction in data.get(key) or []:
+            title = str(deduction.get("title", "")).strip().lower()
+            if title in PAYE_DEDUCTION_TITLES:
+                total += float(deduction.get("amount") or 0)
     total += float(data.get("federal_tax") or 0)
     return total
 
@@ -208,14 +220,17 @@ def _collect_certificate_data(employee, assessment_year):
         return None, _("Invalid year of assessment selected.")
     period_start, period_end = period
 
+    # Only confirmed payroll runs are certified - draft / review payslips
+    # do not represent remuneration actually paid.
     payslips = Payslip.objects.filter(
         employee_id=employee,
+        status__in=["confirmed", "paid"],
+        start_date__gte=period_start,
         start_date__lte=period_end,
-        end_date__gte=period_start,
     ).order_by("start_date")
     if not payslips.exists():
         return None, _(
-            "No payroll data found for %(employee)s for the "
+            "No confirmed payroll data found for %(employee)s for the "
             "%(year)s year of assessment."
         ) % {"employee": employee.get_full_name(), "year": assessment_year}
 
@@ -227,7 +242,10 @@ def _collect_certificate_data(employee, assessment_year):
 
     for payslip in payslips:
         data = payslip.pay_head_data or {}
-        gross_remuneration += float(payslip.gross_pay or 0)
+        # Prefer the stored payslip figure; fall back to the computed pay
+        # head data for older payslips where the model field was not set.
+        gross_pay = payslip.gross_pay or data.get("gross_pay") or 0
+        gross_remuneration += float(gross_pay)
         total_tax_deducted += _get_paye_tax_amount(payslip)
         for allowance in data.get("allowances") or []:
             amount = float(allowance.get("amount") or 0)
