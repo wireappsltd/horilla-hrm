@@ -787,6 +787,17 @@ class LeaveRequest(HorillaModel):
         verbose_name=_("Covering Person"),
         related_name="leave_approvals",
     )
+    reviewed_by = models.ForeignKey(
+        Employee,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        verbose_name=_("Actioned By"),
+        related_name="leave_requests_reviewed",
+    )
+    reviewed_at = models.DateTimeField(
+        null=True, blank=True, verbose_name=_("Actioned At")
+    )
 
     class Meta:
         ordering = ["-id"]
