@@ -60,7 +60,7 @@
                     placeholder="{% trans 'Search by asset or employee…' %}"
                     class="oh-input w-100"
                     hx-get="{% url 'asset-yearly-checkup-submissions' %}"
-                    hx-trigger="keyup changed delay:400ms, search"
+                    hx-trigger="keyup changed delay:400ms, search, yc-filter"
                     hx-target="#yc-results"
                     hx-include="#yc-status-filter"
                 />
@@ -91,7 +91,7 @@
 <script>
     function setYcStatus(val) {
         document.getElementById('yc-status-value').value = val;
-        htmx.trigger('#yc-search', 'keyup');
+        htmx.trigger(document.getElementById('yc-search'), 'yc-filter');
     }
 </script>
 
