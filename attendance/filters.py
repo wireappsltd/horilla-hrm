@@ -468,6 +468,7 @@ class AttendanceFilters(FilterSet):
             "is_validate_request",
             "is_validate_request_approved",
             "is_bulk_request",
+            "is_get_compensation_leave",
             "at_work_second__lte",
             "at_work_second__gte",
             "overtime_second__lte",
