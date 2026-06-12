@@ -734,6 +734,9 @@ class LoanAccountForm(ModelForm):
         super().__init__(*args, **kwargs)
         self.initial["provided_date"] = str(datetime.date.today())
         self.initial["installment_start_date"] = str(datetime.date.today())
+        for field_name in ("loan_amount", "installments", "installment_amount"):
+            if field_name in self.fields:
+                self.fields[field_name].widget.attrs["onwheel"] = "this.blur()"
         if self.instance.pk:
             self.verbose_name = self.instance.title
             fields_to_exclude = ["employee_id", "installment_start_date"]
