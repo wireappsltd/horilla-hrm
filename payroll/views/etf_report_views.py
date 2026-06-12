@@ -154,20 +154,26 @@ def _payslip_etf_values(payslip):
     Return ``(earnings, contribution)`` for a payslip, matching the amounts
     shown on the payslip itself.
 
-    The contribution always comes from the stored ``employer_etf_amount``
-    (the exact figure printed on the payslip and used by the monthly ETF
-    report). Earnings are the ETF base, i.e. basic pay less loss of pay,
-    so that ``earnings x 3%`` lines up with the contribution column.
+    The contribution is taken directly from the payslip's stored
+    ``pay_head_data`` (the exact figure printed on the payslip), falling back
+    to the ``employer_etf_amount`` model field and finally to the computed
+    ``earnings x 3%``. Earnings are the ETF base, i.e. basic pay less loss of
+    pay, so that ``earnings x 3%`` lines up with the contribution column.
     """
     pay_head_data = payslip.pay_head_data or {}
     loss_of_pay = float(pay_head_data.get("loss_of_pay") or 0)
     earnings = float(payslip.basic_pay or payslip.contract_wage or 0) - loss_of_pay
-    contribution = float(payslip.employer_etf_amount or 0)
+    try:
+        contribution = float(pay_head_data.get("employer_etf_amount") or 0)
+    except (TypeError, ValueError):
+        contribution = 0
+    if not contribution:
+        contribution = float(payslip.employer_etf_amount or 0)
     if not contribution:
         # Fallback for legacy payslips generated before the ETF amount was
-        # stored on the Payslip record.
+        # stored on the payslip.
         contribution = round(earnings * ETF_RATE, 2)
-    return round(earnings, 2), contribution
+    return round(earnings, 2), round(contribution, 2)
 
 
 def _build_report_context(request, year, period_key):

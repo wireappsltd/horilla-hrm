@@ -820,6 +820,16 @@ def save_payslip(**kwargs):
     instance.deduction = round(kwargs["deduction"], 2)
     instance.net_pay = round(kwargs["net_pay"], 2)
     instance.pay_head_data = kwargs["pay_data"]
+    pay_data = kwargs["pay_data"] or {}
+    instance.employee_epf_amount = round(
+        float(pay_data.get("employee_epf_amount") or 0), 2
+    )
+    instance.employer_epf_amount = round(
+        float(pay_data.get("employer_epf_amount") or 0), 2
+    )
+    instance.employer_etf_amount = round(
+        float(pay_data.get("employer_etf_amount") or 0), 2
+    )
     instance.save()
     instance.installment_ids.set(kwargs["installments"])
     return instance
