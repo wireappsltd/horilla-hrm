@@ -476,6 +476,10 @@ def leave_request_creation(request, type_id=None, emp_id=None):
                     leave_request.approved_available_days = 0
                     leave_request.approved_carryforward_days = 0
                 leave_request.status = "approved"
+                leave_request.reviewed_by = getattr(
+                    request.user, "employee_get", None
+                )
+                leave_request.reviewed_at = timezone.now()
             if save:
                 leave_request.created_by = request.user.employee_get
                 leave_request.save()
@@ -1066,6 +1070,8 @@ def leave_request_approve(request, id, emp_id=None):
                 leave_request.approved_available_days = 0
                 leave_request.approved_carryforward_days = 0
             leave_request.status = "approved"
+            leave_request.reviewed_by = getattr(request.user, "employee_get", None)
+            leave_request.reviewed_at = timezone.now()
             if not leave_request.multiple_approvals():
                 leave_request.save()
                 available_leave.save()
@@ -1246,6 +1252,10 @@ def leave_request_cancel(request, id, emp_id=None):
                 leave_request.approved_carryforward_days = 0
                 leave_request.status = "rejected"
                 leave_request.leave_clashes_count = 0
+                leave_request.reviewed_by = getattr(
+                    request.user, "employee_get", None
+                )
+                leave_request.reviewed_at = timezone.now()
 
                 if leave_request.multiple_approvals() and not request.user.is_superuser:
                     conditional_requests = leave_request.multiple_approvals()
@@ -1339,6 +1349,10 @@ def user_leave_cancel(request, id):
                 if form.is_valid():
                     leave_request.reject_reason = form.cleaned_data["reason"]
                     leave_request.status = "cancelled"
+                    leave_request.reviewed_by = getattr(
+                        request.user, "employee_get", None
+                    )
+                    leave_request.reviewed_at = timezone.now()
                     leave_request.save()
 
                     messages.success(
@@ -1359,6 +1373,8 @@ def user_leave_cancel(request, id):
             )
         elif leave_request.status == "requested":
             leave_request.status = "cancelled"
+            leave_request.reviewed_by = getattr(request.user, "employee_get", None)
+            leave_request.reviewed_at = timezone.now()
             leave_request.save()
             messages.success(request, _("Leave request cancelled successfully.."))
             return _trigger_leave_stats_refresh(
@@ -2342,6 +2358,8 @@ def user_leave_request(request, id):
                     leave_request.approved_available_days = 0
                     leave_request.approved_carryforward_days = 0
                 leave_request.status = "approved"
+                leave_request.reviewed_by = employee
+                leave_request.reviewed_at = timezone.now()
                 available_leave.save()
             if save:
                 leave_request.created_by = employee
@@ -3367,6 +3385,10 @@ def leave_request_create(request):
                         leave_request.approved_available_days = 0
                         leave_request.approved_carryforward_days = 0
                     leave_request.status = "approved"
+                    leave_request.reviewed_by = getattr(
+                        request.user, "employee_get", None
+                    )
+                    leave_request.reviewed_at = timezone.now()
                     available_leave.save()
                 if save:
                     leave_request.created_by = request.user.employee_get

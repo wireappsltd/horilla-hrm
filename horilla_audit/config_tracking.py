@@ -71,6 +71,26 @@ CONFIG_MODELS = [
 
 _MODEL_CONFIG = {}  # model class -> (module, friendly_label)
 
+# Per-model predicate: return True to SKIP logging an instance entirely. Used to
+# drop auto-generated artifacts (e.g. loan-spawned allowances / installment
+# deductions) that aren't user-facing salary components.
+_SKIP_BY_MODEL = {}  # model class -> callable(instance) -> bool
+
+# Per-model field names to drop from diffs, on top of _EXCLUDE_FIELDS — auto-managed
+# links the user never edits directly (e.g. LoanAccount.allowance_id).
+_EXTRA_EXCLUDE_BY_MODEL = {}  # model class -> set[str]
+
+# Salary / payroll component models. These land in the existing "payroll" tab so
+# salary changes are reviewable alongside payslip events.
+_PAYROLL_MODULE = "payroll"
+SALARY_MODELS = [
+    ("payroll", "Contract", _PAYROLL_MODULE, "Contract"),
+    ("payroll", "Allowance", _PAYROLL_MODULE, "Allowance"),
+    ("payroll", "Deduction", _PAYROLL_MODULE, "Deduction"),
+    ("payroll", "LoanAccount", _PAYROLL_MODULE, "Loan"),
+    ("payroll", "Reimbursement", _PAYROLL_MODULE, "Reimbursement"),
+]
+
 # Fields we never include in diffs — internal bookkeeping that flips on every save.
 _EXCLUDE_FIELDS = {
     "id",
@@ -101,9 +121,10 @@ def _get_current_actor():
 
 def _capture_field_values(instance):
     """Snapshot of comparable field values for diffing."""
+    extra = _EXTRA_EXCLUDE_BY_MODEL.get(type(instance), ())
     snapshot = {}
     for field in instance._meta.concrete_fields:
-        if field.name in _EXCLUDE_FIELDS:
+        if field.name in _EXCLUDE_FIELDS or field.name in extra:
             continue
         try:
             snapshot[field.name] = getattr(instance, field.attname, None)
@@ -112,16 +133,48 @@ def _capture_field_values(instance):
     return snapshot
 
 
-def _diff_values(old, new):
-    """Return {field: {from, to}} for differing fields only."""
+def _render_field(model, field_name, value):
+    """Return a (human label, display string) pair for a raw field value.
+
+    Resolves FK pks to their object string and choice values to their labels so
+    the diff reads as "Basic salary: 1000 -> 2000" rather than raw column data.
+    """
+    try:
+        field = model._meta.get_field(field_name)
+    except Exception:
+        field = None
+    label = field_name
+    if field is not None and getattr(field, "verbose_name", None):
+        label = str(field.verbose_name).capitalize()
+    if value is None or value == "":
+        return label, None
+    if field is not None:
+        if field.is_relation and field.related_model is not None:
+            try:
+                return label, str(field.related_model.objects.get(pk=value))
+            except Exception:
+                return label, str(value)
+        choices = getattr(field, "choices", None)
+        if choices:
+            try:
+                mapping = dict(choices)
+                if value in mapping:
+                    return label, str(mapping[value])
+            except (TypeError, ValueError):
+                pass
+    return label, str(value)
+
+
+def _diff_values(model, old, new):
+    """Return {label: {from, to}} for differing fields only."""
     diff = {}
     for key, new_value in new.items():
         old_value = old.get(key)
-        if old_value != new_value:
-            diff[key] = {
-                "from": str(old_value) if old_value is not None else None,
-                "to": str(new_value) if new_value is not None else None,
-            }
+        if old_value == new_value:
+            continue
+        label, old_disp = _render_field(model, key, old_value)
+        _, new_disp = _render_field(model, key, new_value)
+        diff[label] = {"from": old_disp, "to": new_disp}
     return diff
 
 
@@ -139,6 +192,9 @@ def _pre_save_handler(sender, instance, **kwargs):
 def _post_save_handler(sender, instance, created, **kwargs):
     config = _MODEL_CONFIG.get(sender)
     if not config:
+        return
+    skip = _SKIP_BY_MODEL.get(sender)
+    if skip and skip(instance):
         return
     user = _get_current_actor()
     if user is None or not getattr(user, "is_authenticated", False):
@@ -160,7 +216,7 @@ def _post_save_handler(sender, instance, created, **kwargs):
     if not old_values:
         return
     new_values = _capture_field_values(instance)
-    diff = _diff_values(old_values, new_values)
+    diff = _diff_values(sender, old_values, new_values)
     if not diff:
         return
     log_activity(
@@ -175,6 +231,9 @@ def _post_save_handler(sender, instance, created, **kwargs):
 def _post_delete_handler(sender, instance, **kwargs):
     config = _MODEL_CONFIG.get(sender)
     if not config:
+        return
+    skip = _SKIP_BY_MODEL.get(sender)
+    if skip and skip(instance):
         return
     user = _get_current_actor()
     if user is None or not getattr(user, "is_authenticated", False):
@@ -211,6 +270,9 @@ def _m2m_changed_handler(sender, instance, action, reverse, model, pk_set, **kwa
     config = _MODEL_CONFIG.get(parent_model)
     if not config:
         return
+    skip = _SKIP_BY_MODEL.get(parent_model)
+    if skip and skip(instance):
+        return
     user = _get_current_actor()
     if user is None or not getattr(user, "is_authenticated", False):
         return
@@ -234,8 +296,34 @@ def _m2m_changed_handler(sender, instance, action, reverse, model, pk_set, **kwa
     )
 
 
+def _register_model(
+    model, module, label, *, skip=None, extra_exclude=None, track_m2m=True
+):
+    """Connect audit signals for a single model. Idempotent via dispatch_uid."""
+    _MODEL_CONFIG[model] = (module, label)
+    if skip is not None:
+        _SKIP_BY_MODEL[model] = skip
+    if extra_exclude:
+        _EXTRA_EXCLUDE_BY_MODEL[model] = set(extra_exclude)
+    uid_base = f"audit_cfg_{model._meta.app_label}_{model._meta.model_name}"
+    pre_save.connect(_pre_save_handler, sender=model, dispatch_uid=f"{uid_base}_pre")
+    post_save.connect(_post_save_handler, sender=model, dispatch_uid=f"{uid_base}_post")
+    post_delete.connect(
+        _post_delete_handler, sender=model, dispatch_uid=f"{uid_base}_del"
+    )
+    if track_m2m:
+        for field in model._meta.many_to_many:
+            through = field.remote_field.through
+            _M2M_FIELD_BY_THROUGH[(through, model)] = field.name
+            m2m_changed.connect(
+                _m2m_changed_handler,
+                sender=through,
+                dispatch_uid=f"{uid_base}_m2m_{field.name}",
+            )
+
+
 def register_config_tracking():
-    """Connect signals for every model in CONFIG_MODELS. Idempotent via dispatch_uid."""
+    """Connect signals for every model in CONFIG_MODELS."""
     for app_label, model_name, module, label in CONFIG_MODELS:
         try:
             model = apps.get_model(app_label, model_name)
@@ -246,22 +334,40 @@ def register_config_tracking():
                 model_name,
             )
             continue
-        _MODEL_CONFIG[model] = (module, label)
-        uid_base = f"audit_cfg_{app_label}_{model_name}"
-        pre_save.connect(
-            _pre_save_handler, sender=model, dispatch_uid=f"{uid_base}_pre"
-        )
-        post_save.connect(
-            _post_save_handler, sender=model, dispatch_uid=f"{uid_base}_post"
-        )
-        post_delete.connect(
-            _post_delete_handler, sender=model, dispatch_uid=f"{uid_base}_del"
-        )
-        for field in model._meta.many_to_many:
-            through = field.remote_field.through
-            _M2M_FIELD_BY_THROUGH[(through, model)] = field.name
-            m2m_changed.connect(
-                _m2m_changed_handler,
-                sender=through,
-                dispatch_uid=f"{uid_base}_m2m_{field.name}",
+        _register_model(model, module, label)
+
+
+def register_salary_tracking():
+    """Connect signals for salary component models (-> the payroll tab).
+
+    M2M tracking is intentionally disabled: the only m2m on these models are
+    auto-managed links (loan installment deductions, attachments), which would
+    be noise. Loan-spawned allowance/installment artifacts are filtered via the
+    per-model skip predicates.
+    """
+    skips = {
+        "Allowance": lambda i: bool(getattr(i, "is_loan", False)),
+        "Deduction": lambda i: bool(getattr(i, "is_installment", False)),
+    }
+    extra_excludes = {
+        "LoanAccount": {"allowance_id", "rate", "is_fixed", "apply_on", "asset_id"},
+        "Reimbursement": {"allowance_id"},
+    }
+    for app_label, model_name, module, label in SALARY_MODELS:
+        try:
+            model = apps.get_model(app_label, model_name)
+        except LookupError:
+            logger.info(
+                "salary_tracking: model %s.%s not found; skipping",
+                app_label,
+                model_name,
             )
+            continue
+        _register_model(
+            model,
+            module,
+            label,
+            skip=skips.get(model_name),
+            extra_exclude=extra_excludes.get(model_name),
+            track_m2m=False,
+        )

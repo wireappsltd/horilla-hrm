@@ -884,7 +884,7 @@ class HorillaPasswordResetView(PasswordResetView):
             form.save(**opts)
             log_activity(
                 self.request.user,
-                module="helpdesk",
+                module="password_reset",
                 action="Password reset requested",
                 target=user,
                 changes={
@@ -903,7 +903,7 @@ class HorillaPasswordResetView(PasswordResetView):
 
         log_activity(
             self.request.user,
-            module="helpdesk",
+            module="password_reset",
             action="Password reset failed",
             changes={
                 "target_user": username,
@@ -952,7 +952,7 @@ class EmployeePasswordResetView(PasswordResetView):
                 form.save(**opts)
                 log_activity(
                     self.request.user,
-                    module="helpdesk",
+                    module="password_reset",
                     action="Password reset requested",
                     target=user,
                     changes={
@@ -967,7 +967,7 @@ class EmployeePasswordResetView(PasswordResetView):
             else:
                 log_activity(
                     self.request.user,
-                    module="helpdesk",
+                    module="password_reset",
                     action="Password reset failed",
                     changes={
                         "target_user": username,
@@ -982,7 +982,7 @@ class EmployeePasswordResetView(PasswordResetView):
         except Exception as e:
             log_activity(
                 self.request.user,
-                module="helpdesk",
+                module="password_reset",
                 action="Password reset failed",
                 changes={
                     "target_user": form.cleaned_data.get("email") if form.is_valid() else None,
@@ -1009,7 +1009,7 @@ def _audit_form_valid(self, form):
     response = _original_form_valid(self, form)
     log_activity(
         self.request.user,
-        module="helpdesk",
+        module="password_reset",
         action="Password reset completed",
         target=self.user,
         changes={
@@ -1025,7 +1025,7 @@ def _audit_dispatch(self, *args, **kwargs):
     if getattr(self, "validlink", True) is False and self.request.method == "GET":
         log_activity(
             self.request.user,
-            module="helpdesk",
+            module="password_reset",
             action="Password reset expired",
             changes={
                 "status": "Expired",

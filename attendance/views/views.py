@@ -122,6 +122,7 @@ from base.models import (
 )
 from employee.filters import EmployeeFilter
 from employee.models import Employee, EmployeeWorkInformation
+from horilla_audit.methods import log_activity
 from horilla.decorators import (
     hx_request_required,
     install_required,
@@ -1362,6 +1363,24 @@ def validation_condition_delete(request, obj_id):
     return redirect("/attendance/validation-condition-view")
 
 
+def _log_attendance_action(request, attendance, action):
+    """Record who validated/revalidated/approved an attendance and when.
+
+    Captures the actor (and timestamp via ActivityLog) plus the affected
+    employee and attendance date, surfaced in Audit Logs -> Attendance tab.
+    """
+    log_activity(
+        request.user,
+        module="attendance",
+        action=action,
+        target=attendance,
+        changes={
+            "Employee": str(attendance.employee_id),
+            "Attendance date": str(attendance.attendance_date),
+        },
+    )
+
+
 @login_required
 @require_http_methods(["POST"])
 @manager_can_enter("attendance.change_attendance")
@@ -1389,6 +1408,7 @@ def validate_bulk_attendance(request):
             attendance.attendance_validated = True
             attendance.save()
             validate_req_count += 1
+            _log_attendance_action(request, attendance, "Attendance validated")
 
             # Send notification
             notify.send(
@@ -1435,7 +1455,7 @@ def validate_this_attendance(request, obj_id):
         attendance.attendance_validated = True
         attendance.save()
         allocate_compensation_leave(request, attendance)
-        print("attendance validate ran")
+        _log_attendance_action(request, attendance, "Attendance validated")
         urlencode = request.GET.urlencode()
         modified_url = f"/attendance/attendance-view/?{urlencode}"
         messages.success(
@@ -1477,6 +1497,7 @@ def revalidate_this_attendance(request, obj_id):
     ):
         attendance.attendance_validated = False
         attendance.save()
+        _log_attendance_action(request, attendance, "Attendance revalidation requested")
         with contextlib.suppress(Exception):
             notify.send(
                 request.user.employee_get,
@@ -1512,6 +1533,7 @@ def approve_overtime(request, obj_id):
         attendance = Attendance.objects.get(id=obj_id)
         attendance.attendance_overtime_approve = True
         attendance.save()
+        _log_attendance_action(request, attendance, "Attendance overtime approved")
         urlencode = request.GET.urlencode()
         modified_url = f"/attendance/attendance-view/?{urlencode}"
         messages.success(
@@ -1553,6 +1575,7 @@ def approve_bulk_overtime(request):
             attendance = Attendance.objects.get(id=attendance_id)
             attendance.attendance_overtime_approve = True
             attendance.save()
+            _log_attendance_action(request, attendance, "Attendance overtime approved")
             messages.success(request, _("Overtime approved"))
             notify.send(
                 request.user.employee_get,

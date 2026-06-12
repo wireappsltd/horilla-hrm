@@ -6,6 +6,7 @@ This module is used to write methods related to the history
 
 import logging
 
+from django import forms
 from django.contrib.auth.models import User
 from django.core.paginator import Paginator
 from django.db import models
@@ -47,6 +48,76 @@ def log_activity(user, module, action, target=None, changes=None):
         )
     except Exception:
         logger.exception("Failed to write ActivityLog entry")
+
+
+def mask_sensitive(value):
+    """Mask all but the last 4 characters of a sensitive value.
+
+    Returns ``None`` for empty input so masked diffs collapse the same way as
+    unmasked ones (e.g. an empty "from" renders as "—" in the template).
+    """
+    if value in (None, ""):
+        return None
+    text = str(value)
+    if len(text) <= 4:
+        return "•" * len(text)
+    return "•" * (len(text) - 4) + text[-4:]
+
+
+def _readable_value(field, value):
+    """Render a raw form value as a human-readable string for the audit diff.
+
+    Resolves ``ModelChoiceField`` pks to their display string and maps choice
+    values to their labels. Returns ``None`` for empty values.
+    """
+    if value in (None, "", []):
+        return None
+    if isinstance(field, forms.ModelChoiceField):
+        if not hasattr(value, "pk"):
+            try:
+                value = field.queryset.get(pk=value)
+            except Exception:
+                return str(value)
+        return str(value)
+    choices = getattr(field, "choices", None)
+    if choices:
+        try:
+            mapping = dict(choices)
+            if value in mapping:
+                return str(mapping[value])
+        except (TypeError, ValueError):
+            pass
+    return str(value)
+
+
+def log_form_changes(user, module, action, form, target=None, mask_fields=None):
+    """Write an ActivityLog entry describing field-level changes from a form.
+
+    Call *after* a bound ``ModelForm`` has been validated/saved. Uses
+    ``form.changed_data`` to build a ``{label: {"from": old, "to": new}}`` diff
+    so the audit page renders old → new values. Field names listed in
+    ``mask_fields`` have both sides masked (all but last 4 chars).
+
+    No entry is written when nothing actually changed, keeping the log free of
+    empty "saved but unchanged" noise.
+    """
+    mask_fields = set(mask_fields or ())
+    diff = {}
+    for name in getattr(form, "changed_data", None) or []:
+        field = form.fields.get(name)
+        if field is None:
+            continue
+        old = _readable_value(field, form.initial.get(name))
+        new = _readable_value(field, form.cleaned_data.get(name))
+        if old == new:
+            continue
+        if name in mask_fields:
+            old = mask_sensitive(old)
+            new = mask_sensitive(new)
+        label = str(getattr(field, "label", None) or name)
+        diff[label] = {"from": old, "to": new}
+    if diff:
+        log_activity(user, module=module, action=action, target=target, changes=diff)
 
 
 def log_login(username, ip_address, status, failure_reason="", user=None):

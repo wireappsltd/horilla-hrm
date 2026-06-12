@@ -6,6 +6,10 @@ class HorillaAuditConfig(AppConfig):
     name = "horilla_audit"
 
     def ready(self):
-        from horilla_audit.config_tracking import register_config_tracking
+        from horilla_audit.config_tracking import (
+            register_config_tracking,
+            register_salary_tracking,
+        )
 
         register_config_tracking()
+        register_salary_tracking()
