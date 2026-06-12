@@ -195,9 +195,9 @@ def build_etf_form_ii_context(year, period_key, company=None):
     """
     months = PERIOD_CHOICES[period_key]["months"]
     period_start, period_end = _period_bounds(year, months)
-
     payslips = Payslip.objects.filter(
-        end_date__range=(period_start, period_end)
+        end_date__range=(period_start, period_end),
+        status="paid",
     ).select_related("employee_id", "employee_id__employee_work_info")
 
     if company is not None:
