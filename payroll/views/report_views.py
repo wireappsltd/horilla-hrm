@@ -251,6 +251,25 @@ def _get_payslips_for_period(report):
 
 
 
+def _get_payslip_etf_contribution(payslip):
+    """
+    Return the employer ETF contribution for a payslip.
+
+    The value is taken directly from the payslip's stored ``pay_head_data``
+    (the exact figure displayed/printed on the payslip). Falls back to the
+    ``employer_etf_amount`` model field for payslips whose pay head data does
+    not contain the amount.
+    """
+    pay_head_data = payslip.pay_head_data or {}
+    contribution = pay_head_data.get("employer_etf_amount")
+    if contribution in (None, ""):
+        contribution = payslip.employer_etf_amount or 0
+    try:
+        return round(float(contribution), 2)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def _get_banner_natural_size():
     """
     Return the banner image's natural ``(width, height)`` in pixels, or ``None``
@@ -385,14 +404,14 @@ def _build_etf_monthly_contribution_file(report):
     for payslip in payslips:
         employee = payslip.employee_id
         nic_passport = employee.nic or employee.passport or ""
-        total_contribution = float(payslip.employer_etf_amount or 0)
+        total_contribution = _get_payslip_etf_contribution(payslip)
 
         values = [
             nic_passport,
             employee.employee_last_name or "",
             employee.initials or "",
             employee.etf_epf_number or "",
-            round(total_contribution, 2),
+            total_contribution,
             _get_employer_number(employee, report),
             from_period,
             to_period,
