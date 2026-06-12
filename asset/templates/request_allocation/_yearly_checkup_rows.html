@@ -10,7 +10,6 @@
                             <div class="oh-sticky-table__th yc-col--user">{% trans "Allocated User" %}</div>
                             <div class="oh-sticky-table__th yc-col--date">{% trans "Scheduled Date" %}</div>
                             <div class="oh-sticky-table__th yc-col--status">{% trans "Check Up Status" %}</div>
-                            <div class="oh-sticky-table__th yc-col--last">{% trans "Last Submission" %}</div>
                             <div class="oh-sticky-table__th oh-sticky-table__right yc-col--actions">{% trans "Actions" %}</div>
                         </div>
                     </div>
@@ -52,15 +51,6 @@
                                     {% else %}
                                         <span class="oh-badge oh-badge--warning">{% trans "Pending" %}</span>
                                     {% endif %}
-                                </div>
-                                <div class="oh-sticky-table__td yc-col--last">
-                                    {% with last_log=allocation.checkup_logs.first %}
-                                        {% if last_log %}
-                                            {{ last_log.checkup_date|date:"M d, Y" }}
-                                        {% else %}
-                                            <span class="text-muted">{% trans "Never" %}</span>
-                                        {% endif %}
-                                    {% endwith %}
                                 </div>
                                 <div class="oh-sticky-table__td oh-sticky-table__right yc-col--actions"
                                     onclick="event.stopPropagation()">
