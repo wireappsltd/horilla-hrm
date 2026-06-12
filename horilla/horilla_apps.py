@@ -68,6 +68,7 @@ SIDEBARS = [
     "recruitment",
     "onboarding",
     "employee",
+    "time_tracker",
     "attendance",
     "leave",
     "payroll",
@@ -77,7 +78,6 @@ SIDEBARS = [
     "helpdesk",
     "project",
     "horilla_retention",
-    "time_tracker",
     "horilla_audit",
 ]
 

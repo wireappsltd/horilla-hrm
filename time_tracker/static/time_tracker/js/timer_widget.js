@@ -247,3 +247,192 @@
     initAll(document);
   });
 })();
+
+/* ==========================================================================
+ * Phase 2: Idle Detection + Break controls
+ * ========================================================================== */
+(function () {
+  "use strict";
+
+  var IDLE_TIMEOUT_MS = (window.TT_IDLE_TIMEOUT_MINUTES || 10) * 60 * 1000;
+  var HEARTBEAT_INTERVAL_MS = 30000;
+  var lastActivity = Date.now();
+  var idleModalShown = false;
+  var idleStart = null;
+  var heartbeatTimer = null;
+
+  function getCsrf() {
+    var el = document.querySelector("[name=csrfmiddlewaretoken]");
+    return el ? el.value : "";
+  }
+
+  function timerRunning() {
+    return !!document.querySelector("[data-tt-counter]");
+  }
+
+  // ---- Activity tracking ----
+  function resetActivity() {
+    lastActivity = Date.now();
+    if (idleModalShown) return;
+  }
+
+  ["mousemove", "keydown", "click", "touchstart", "scroll"].forEach(function (ev) {
+    document.addEventListener(ev, resetActivity, { passive: true });
+  });
+
+  // ---- Heartbeat ----
+  function sendHeartbeat() {
+    if (!timerRunning()) return;
+    fetch("/time-tracker/timer/heartbeat/", {
+      method: "POST",
+      headers: { "X-CSRFToken": getCsrf() },
+    });
+  }
+
+  function startHeartbeat() {
+    if (heartbeatTimer) return;
+    heartbeatTimer = setInterval(function () {
+      if (!timerRunning()) { stopHeartbeat(); return; }
+      var idle = Date.now() - lastActivity;
+      if (idle < IDLE_TIMEOUT_MS) {
+        sendHeartbeat();
+      } else if (!idleModalShown) {
+        idleStart = lastActivity + IDLE_TIMEOUT_MS;
+        showIdleModal();
+      }
+    }, HEARTBEAT_INTERVAL_MS);
+  }
+
+  function stopHeartbeat() {
+    clearInterval(heartbeatTimer);
+    heartbeatTimer = null;
+  }
+
+  // ---- Idle modal ----
+  function showIdleModal() {
+    if (idleModalShown) return;
+    idleModalShown = true;
+
+    var idleSecs = Math.round((Date.now() - idleStart) / 1000);
+    var modal = document.createElement("div");
+    modal.id = "tt-idle-modal";
+    modal.innerHTML = [
+      '<div style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;">',
+      '<div style="background:#fff;border-radius:14px;padding:2rem;max-width:400px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,.2);text-align:center;">',
+      '<div style="font-size:2rem;margin-bottom:.5rem;">⏸️</div>',
+      '<h3 style="margin:.5rem 0;font-size:1.1rem;font-weight:700;color:#1e293b;">You\'ve been idle</h3>',
+      '<p style="color:#64748b;font-size:.875rem;margin:.5rem 0 1.25rem;">',
+      'You\'ve been inactive for <strong id="tt-idle-dur">–</strong>. What do you want to do with this time?',
+      '</p>',
+      '<div style="display:flex;gap:.75rem;justify-content:center;flex-wrap:wrap;">',
+      '<button id="tt-idle-keep" style="padding:.6rem 1.25rem;background:#6366f1;color:#fff;border:none;border-radius:8px;font-weight:600;cursor:pointer;font-size:.875rem;">Keep time</button>',
+      '<button id="tt-idle-discard" style="padding:.6rem 1.25rem;background:#f1f5f9;color:#374151;border:none;border-radius:8px;font-weight:600;cursor:pointer;font-size:.875rem;">Discard idle time</button>',
+      '<button id="tt-idle-stop" style="padding:.6rem 1.25rem;background:#fee2e2;color:#991b1b;border:none;border-radius:8px;font-weight:600;cursor:pointer;font-size:.875rem;">Stop timer</button>',
+      '</div></div></div>',
+    ].join("");
+    document.body.appendChild(modal);
+
+    var durEl = modal.querySelector("#tt-idle-dur");
+    function updateDur() {
+      var s = Math.round((Date.now() - idleStart) / 1000);
+      var m = Math.floor(s / 60); var sec = s % 60;
+      durEl.textContent = (m > 0 ? m + "m " : "") + sec + "s";
+    }
+    updateDur();
+    var durTimer = setInterval(updateDur, 1000);
+
+    function dismiss(action) {
+      clearInterval(durTimer);
+      modal.remove();
+      idleModalShown = false;
+      lastActivity = Date.now();
+
+      if (action === "keep") {
+        sendHeartbeat();
+        return;
+      }
+      if (action === "discard") {
+        // Start an idle break from idleStart, end now
+        fetch("/time-tracker/breaks/start/", {
+          method: "POST",
+          headers: { "X-CSRFToken": getCsrf(), "Content-Type": "application/x-www-form-urlencoded" },
+          body: "break_type=idle",
+        }).then(function () {
+          return fetch("/time-tracker/breaks/stop/", {
+            method: "POST",
+            headers: { "X-CSRFToken": getCsrf() },
+          });
+        });
+        return;
+      }
+      if (action === "stop") {
+        var stopBtn = document.querySelector("[data-tt-stop-btn], form[data-tt-stop] button[type=submit]");
+        if (stopBtn) stopBtn.click();
+      }
+    }
+
+    modal.querySelector("#tt-idle-keep").onclick = function () { dismiss("keep"); };
+    modal.querySelector("#tt-idle-discard").onclick = function () { dismiss("discard"); };
+    modal.querySelector("#tt-idle-stop").onclick = function () { dismiss("stop"); };
+  }
+
+  // ---- Break UI ----
+  function initBreakControls() {
+    var startBtn = document.getElementById("tt-break-start-btn");
+    var stopBtn  = document.getElementById("tt-break-stop-btn");
+    var breakInfo = document.getElementById("tt-break-info");
+
+    if (startBtn) {
+      startBtn.addEventListener("click", function () {
+        fetch("/time-tracker/breaks/start/", {
+          method: "POST",
+          headers: { "X-CSRFToken": getCsrf(), "Content-Type": "application/x-www-form-urlencoded" },
+          body: "break_type=manual",
+        }).then(function (r) { return r.json(); }).then(function () {
+          if (startBtn) startBtn.style.display = "none";
+          if (stopBtn)  stopBtn.style.display  = "";
+          if (breakInfo) breakInfo.style.display = "";
+        });
+      });
+    }
+
+    if (stopBtn) {
+      stopBtn.addEventListener("click", function () {
+        fetch("/time-tracker/breaks/stop/", {
+          method: "POST",
+          headers: { "X-CSRFToken": getCsrf() },
+        }).then(function (r) { return r.json(); }).then(function (data) {
+          if (startBtn) startBtn.style.display = "";
+          if (stopBtn)  stopBtn.style.display  = "none";
+          if (breakInfo) {
+            breakInfo.textContent = "Break: " + formatHMS(data.duration_seconds || 0);
+          }
+        });
+      });
+    }
+  }
+
+  function pad2(n) { return String(n).padStart(2, "0"); }
+  function formatHMS(s) {
+    s = Math.max(0, s | 0);
+    return pad2(s / 3600 | 0) + ":" + pad2((s % 3600) / 60 | 0) + ":" + pad2(s % 60);
+  }
+
+  // ---- Boot ----
+  function boot() {
+    if (timerRunning()) startHeartbeat();
+    initBreakControls();
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", boot);
+  } else {
+    boot();
+  }
+
+  document.body.addEventListener("htmx:afterSwap", function () {
+    if (timerRunning()) startHeartbeat();
+    else stopHeartbeat();
+    initBreakControls();
+  });
+})();

@@ -100,6 +100,11 @@
     font-size: 1rem; color: #4f46e5; }
   .ts-foot td.is-today { background: #f5f4ff; }
 
+  .ts-submit-badge { display: inline-flex; align-items: center; gap: .4rem;
+    font-size: .82rem; font-weight: 600; border-radius: 20px; padding: .35rem .85rem; }
+  .ts-submit-badge--pending { background: #fef3c7; color: #92400e; border: 1px solid #fbbf24; }
+  .ts-submit-badge--approved { background: #d1fae5; color: #065f46; border: 1px solid #6ee7b7; }
+
   .tt-empty { padding: 3.5rem 1rem; text-align: center; }
   .tt-empty__icon { font-size: 3rem; color: #d1d5db; }
   .tt-empty__text { color: #9ca3af; margin: .6rem 0 1rem; font-size: .92rem; }
@@ -167,6 +172,33 @@
     </a>
     {% endif %}
     <span class="ts-spacer"></span>
+    <a href="{% url 'time_tracker:timesheet-month' %}?month={{ week_start|date:'Y-m' }}"
+       class="ts-btn ts-btn--ghost">
+      <ion-icon name="calendar-outline"></ion-icon> {% trans "Month" %}
+    </a>
+    <!-- Submit this week -->
+    {% if rows %}
+      {% if submission %}
+        <span class="ts-submit-badge ts-submit-badge--{{ submission.status }}">
+          <ion-icon name="{% if submission.status == 'approved' %}checkmark-circle-outline{% else %}hourglass-outline{% endif %}"></ion-icon>
+          {{ submission.get_status_display }}
+        </span>
+      {% else %}
+        <form method="post" action="{% url 'time_tracker:timesheet-submit' %}" style="display:inline;">
+          {% csrf_token %}
+          <input type="hidden" name="week" value="{{ week_label }}">
+          {% if approval_required %}
+          <button type="submit" class="ts-btn ts-btn--ghost">
+            <ion-icon name="send-outline"></ion-icon> {% trans "Submit for Approval" %}
+          </button>
+          {% else %}
+          <button type="submit" class="ts-btn ts-btn--ghost">
+            <ion-icon name="checkmark-done-outline"></ion-icon> {% trans "Mark Complete" %}
+          </button>
+          {% endif %}
+        </form>
+      {% endif %}
+    {% endif %}
     <a href="{% url 'time_tracker:tracker-page' %}" class="ts-btn ts-btn--primary">
       <ion-icon name="play-outline"></ion-icon> {% trans "Track Time" %}
     </a>

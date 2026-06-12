@@ -53,7 +53,16 @@ SUBMENUS = [
         "redirect": reverse("view-payee-tax"),
         "accessibility": "payroll.sidebar.federal_tax_accessibility",
     },
+    {
+        "menu": trans("Reports"),
+        "redirect": reverse("view-payroll-reports"),
+        "accessibility": "payroll.sidebar.reports_accessibility",
+    },
 ]
+
+
+def reports_accessibility(request, submenu, user_perms, *args, **kwargs):
+    return request.user.has_perm("payroll.view_payslip")
 
 
 def dasbhoard_accessibility(request, submenu, user_perms, *args, **kwargs):

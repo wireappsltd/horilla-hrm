@@ -2,7 +2,6 @@
 time_tracker/sidebar.py
 
 Sidebar menu definition for the Time Tracker app.
-Management lives under the gear-icon General Settings page (see templates/settings.html).
 """
 
 from django.utils.translation import gettext_lazy as trans
@@ -16,11 +15,31 @@ SUBMENUS = [
         "redirect": "/time-tracker/tracker/",
     },
     {
+        "menu": trans("Calendar"),
+        "redirect": "/time-tracker/calendar/day/",
+    },
+    {
         "menu": trans("Timesheet"),
         "redirect": "/time-tracker/timesheet/",
     },
     {
+        "menu": trans("Month Overview"),
+        "redirect": "/time-tracker/timesheet/month/",
+    },
+    {
+        "menu": trans("Approvals"),
+        "redirect": "/time-tracker/approvals/",
+    },
+    {
         "menu": trans("Reports"),
         "redirect": "/time-tracker/reports/",
+    },
+    {
+        "menu": trans("Team Activity"),
+        "redirect": "/time-tracker/reports/team/",
+    },
+    {
+        "menu": trans("Detailed Report"),
+        "redirect": "/time-tracker/reports/detailed/",
     },
 ]

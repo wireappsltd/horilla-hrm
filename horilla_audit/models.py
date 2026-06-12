@@ -152,3 +152,45 @@ class ActivityLog(models.Model):
 
     def __str__(self) -> str:
         return f"{self.user} {self.action} @ {self.timestamp:%Y-%m-%d %H:%M:%S}"
+
+
+class LoginLog(models.Model):
+    """Persistent record of every login attempt (successful and failed)."""
+
+    STATUS_FAILED = "failed"
+    STATUS_SUCCESS = "success"
+    STATUS_CHOICES = [
+        ("failed", "Failed"),
+        ("success", "Success"),
+    ]
+
+    REASON_INVALID_CREDENTIALS = "invalid_credentials"
+    REASON_ACCOUNT_BLOCKED = "account_blocked"
+    REASON_TOO_MANY_ATTEMPTS = "too_many_attempts"
+    REASON_CAPTCHA_FAILED = "captcha_failed"
+    REASON_NO_EMPLOYEE = "no_employee"
+    REASON_EMPLOYEE_ARCHIVED = "employee_archived"
+    REASON_NO_ACTIVE_CONTRACT = "no_active_contract"
+    REASON_OTP_LOCKOUT = "otp_lockout"
+
+    username = models.CharField(max_length=150, db_index=True)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    timestamp = models.DateTimeField(auto_now_add=True, db_index=True)
+    status = models.CharField(
+        max_length=20, choices=STATUS_CHOICES, default="failed", db_index=True
+    )
+    failure_reason = models.CharField(max_length=100, blank=True, default="")
+    user = models.ForeignKey(
+        "auth.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="login_logs",
+    )
+
+    class Meta:
+        app_label = "horilla_audit"
+        ordering = ("-timestamp",)
+
+    def __str__(self) -> str:
+        return f"{self.username} [{self.status}] @ {self.timestamp:%Y-%m-%d %H:%M:%S}"

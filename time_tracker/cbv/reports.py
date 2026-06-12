@@ -7,6 +7,7 @@ Views for reports and data export.
 from datetime import date, timedelta
 from io import BytesIO
 
+from django.contrib import messages
 from django.db.models import Count, Q, Sum
 from django.http import HttpResponse
 from django.shortcuts import render
@@ -213,6 +214,125 @@ def summary_report(request):
         "total_count": total_count,
     }
     return render(request, "time_tracker/reports/summary_report.html", context)
+
+
+@login_required
+def detailed_report(request):
+    """
+    GET — Entry-level paginated report with all fields.
+    Managers see all employees; others see only their own.
+    """
+    from django.core.paginator import Paginator
+
+    employee = _get_employee(request)
+    base_qs = TimeEntry.objects.all().select_related(
+        "employee_id", "project_id", "task_id", "client_id"
+    )
+
+    if employee and not request.user.has_perm("time_tracker.view_timeentry"):
+        base_qs = base_qs.filter(employee_id=employee)
+
+    f = TimeEntryFilter(request.GET, queryset=base_qs)
+    filtered_qs = f.qs.order_by("-date", "-start_time")
+
+    for entry in filtered_qs:
+        entry.color = _project_color(entry.project_id) or "#cbd5e1"
+
+    paginator = Paginator(filtered_qs, 50)
+    page_number = request.GET.get("page", 1)
+    page_obj = paginator.get_page(page_number)
+
+    total_secs = filtered_qs.aggregate(t=Sum("duration_seconds"))["t"] or 0
+    billable_secs = (
+        filtered_qs.filter(is_billable=True).aggregate(
+            t=Sum("duration_seconds")
+        )["t"]
+        or 0
+    )
+
+    return render(
+        request,
+        "time_tracker/reports/detailed_report.html",
+        {
+            "filter": f,
+            "page_obj": page_obj,
+            "total_hours": format_seconds_hhmm(total_secs),
+            "billable_hours": format_seconds_hhmm(billable_secs),
+            "total_count": filtered_qs.count(),
+        },
+    )
+
+
+@login_required
+def team_report(request):
+    """
+    GET — Team activity dashboard: entries grouped by employee.
+    Only accessible to users with time_tracker.view_timeentry permission.
+    """
+    if not request.user.has_perm("time_tracker.view_timeentry") and not request.user.is_superuser:
+        from django.shortcuts import redirect
+        messages.error(request, _("You do not have permission to view team reports."))
+        return redirect("time_tracker:reports-dashboard")
+
+    from datetime import date, timedelta
+
+    today = date.today()
+    iso = today.isocalendar()
+    week_start = date.fromisocalendar(iso[0], iso[1], 1)
+
+    f = TimeEntryFilter(
+        request.GET,
+        queryset=TimeEntry.objects.all().select_related("employee_id", "project_id"),
+    )
+    filtered_qs = f.qs
+
+    # Group by employee
+    from django.db.models import Count
+
+    employee_summary = (
+        filtered_qs.values(
+            "employee_id",
+            "employee_id__employee_first_name",
+            "employee_id__employee_last_name",
+        )
+        .annotate(
+            total_seconds=Sum("duration_seconds"),
+            billable_seconds=Sum(
+                "duration_seconds", filter=Q(is_billable=True)
+            ),
+            entry_count=Count("id"),
+        )
+        .order_by("-total_seconds")
+    )
+
+    rows = []
+    grand_total = sum((r["total_seconds"] or 0) for r in employee_summary) or 0
+    for r in employee_summary:
+        secs = r["total_seconds"] or 0
+        bill = r["billable_seconds"] or 0
+        first = r["employee_id__employee_first_name"] or ""
+        last = r["employee_id__employee_last_name"] or ""
+        rows.append(
+            {
+                "name": f"{first} {last}".strip() or _("Unknown"),
+                "total_hours": format_seconds_hhmm(secs),
+                "billable_hours": format_seconds_hhmm(bill),
+                "entry_count": r["entry_count"],
+                "pct": int(secs * 100 / grand_total) if grand_total else 0,
+                "billable_pct": int(bill * 100 / secs) if secs else 0,
+            }
+        )
+
+    return render(
+        request,
+        "time_tracker/reports/team_report.html",
+        {
+            "filter": f,
+            "rows": rows,
+            "grand_total_hours": format_seconds_hhmm(grand_total),
+            "employee_count": len(rows),
+        },
+    )
 
 
 @login_required

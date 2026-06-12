@@ -13,6 +13,7 @@ from payroll.models.models import (
     FilingStatus,
     LoanAccount,
     MultipleCondition,
+    PayrollReport,
     Payslip,
     PayslipAutoGenerate,
     Reimbursement,
@@ -33,3 +34,4 @@ admin.site.register(Reimbursement)
 admin.site.register(ReimbursementrequestComment)
 admin.site.register(MultipleCondition)
 admin.site.register(PayslipAutoGenerate)
+admin.site.register(PayrollReport)

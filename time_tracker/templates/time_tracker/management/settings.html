@@ -17,8 +17,8 @@
 
   <div class="tt-card tt-card--narrow">
     <div class="tt-card__head">
-      <h2 class="tt-card__title">{% trans "Required Fields" %}</h2>
-      <p class="tt-card__sub">{% trans "Choose which fields employees must fill in when creating a time entry." %}</p>
+      <h2 class="tt-card__title">{% trans "Required Fields &amp; Approval" %}</h2>
+      <p class="tt-card__sub">{% trans "Configure time entry requirements and the timesheet approval workflow." %}</p>
     </div>
 
     <form method="post"
@@ -26,6 +26,16 @@
           hx-target="this"
           hx-swap="outerHTML">
       {% csrf_token %}
+
+      <div class="tt-setting">
+        <div>
+          <p class="tt-setting__label">{% trans "Require Approval" %}</p>
+          <p class="tt-setting__desc">{% trans "When on, employees submit timesheets for manager review. When off, submissions are automatically approved." %}</p>
+        </div>
+        <div class="oh-switch">{% render_field form.approval_required %}<span class="oh-switch__slider"></span></div>
+      </div>
+
+      <hr style="border:none;border-top:1px solid #eceef2;margin:.25rem 1.35rem;">
 
       <div class="tt-setting">
         <div>

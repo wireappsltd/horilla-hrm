@@ -1,0 +1,1047 @@
+{% extends "index.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Calendar – Day View" %}{% endblock %}
+
+{% block content %}
+<style>
+/* ================================================================
+   Layout
+   ================================================================ */
+.tt-dv-wrap {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  position: relative;
+}
+
+/* ── Main card ── */
+.tt-dv-card {
+  flex: 1;
+  min-width: 0;
+  background: #fff;
+  border-radius: 16px;
+  border: 1px solid #e8ebf0;
+  box-shadow: 0 1px 4px rgba(0,0,0,.06);
+  overflow: hidden;
+}
+
+/* ── Nav bar ── */
+.tt-dv-nav {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  padding: .875rem 1.125rem;
+  border-bottom: 1px solid #eef0f5;
+  flex-wrap: wrap;
+}
+.tt-dv-nav-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #111827;
+  flex: 1;
+  min-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tt-dv-today-badge { color: #6366f1; }
+
+.tt-dv-btn {
+  height: 32px;
+  padding: 0 .75rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+  color: #475569;
+  font-size: .8rem;
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .25rem;
+  transition: background .12s, border-color .12s, color .12s;
+  white-space: nowrap;
+  flex-shrink: 0;
+  line-height: 1;
+}
+.tt-dv-btn:hover { background: #f8fafc; border-color: #c7d0dd; color: #111827; }
+.tt-dv-btn--arrow { width: 32px; padding: 0; font-size: 1.1rem; }
+.tt-dv-btn--primary {
+  background: #6366f1;
+  color: #fff !important;
+  border-color: #6366f1;
+}
+.tt-dv-btn--primary:hover { background: #4f46e5; border-color: #4f46e5; }
+
+.tt-dv-view-group { display: flex; gap: .25rem; margin-left: auto; }
+
+/* ── Leave banner ── */
+.tt-dv-leave {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  padding: .5rem 1.125rem;
+  background: #fef3c7;
+  border-bottom: 1px solid #fde68a;
+  font-size: .8rem;
+  color: #92400e;
+  font-weight: 500;
+}
+
+/* ── Unscheduled / all-day strip ── */
+.tt-allday {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .4rem;
+  padding: .55rem 1.125rem;
+  background: #fafbfc;
+  border-bottom: 1px solid #eef0f5;
+  min-height: 38px;
+}
+.tt-allday-lbl {
+  font-size: .67rem;
+  font-weight: 700;
+  color: #b0b8c4;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  white-space: nowrap;
+}
+.tt-allday-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: .28rem;
+  padding: .2rem .55rem;
+  border-radius: 20px;
+  font-size: .74rem;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+  max-width: 180px;
+  transition: filter .12s;
+  -webkit-tap-highlight-color: transparent;
+}
+.tt-allday-chip:hover { filter: brightness(.92); }
+.tt-allday-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.tt-allday-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tt-allday-dur { opacity: .65; flex-shrink: 0; }
+
+/* ================================================================
+   Timeline
+   ================================================================ */
+.tt-tl {
+  display: flex;
+  overflow-y: auto;
+  height: calc(100vh - 230px);
+  min-height: 360px;
+  scroll-behavior: smooth;
+}
+
+.tt-tl-gutter {
+  width: 54px;
+  flex-shrink: 0;
+  position: relative;
+  border-right: 1px solid #f1f5f9;
+  min-height: 2880px; /* 24h × 60min × 2px */
+}
+.tt-tl-lbl {
+  position: absolute;
+  right: 8px;
+  font-size: .64rem;
+  color: #b0b8c4;
+  transform: translateY(-50%);
+  white-space: nowrap;
+  user-select: none;
+  pointer-events: none;
+}
+
+.tt-tl-canvas {
+  flex: 1;
+  position: relative;
+  min-height: 2880px; /* 24h × 60min × 2px */
+}
+
+.tt-tl-hline {
+  position: absolute;
+  left: 0; right: 0;
+  height: 1px;
+  background: #f1f5f9;
+  pointer-events: none;
+}
+.tt-tl-hline--half {
+  background: transparent;
+  border-top: 1px dashed #f3f4f6;
+}
+
+/* "Now" indicator */
+.tt-now-line {
+  position: absolute;
+  left: 0; right: 0;
+  height: 2px;
+  background: #ef4444;
+  z-index: 10;
+  pointer-events: none;
+}
+.tt-now-dot {
+  position: absolute;
+  left: -5px;
+  top: -5px;
+  width: 12px;
+  height: 12px;
+  background: #ef4444;
+  border-radius: 50%;
+  box-shadow: 0 0 0 3px rgba(239,68,68,.2);
+}
+
+/* ================================================================
+   Event blocks
+   ================================================================ */
+.tt-ev {
+  position: absolute;
+  left: 6px; right: 6px;
+  border-radius: 8px;
+  padding: .4rem .55rem;
+  cursor: pointer;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: .1rem;
+  transition: box-shadow .15s, filter .12s;
+  -webkit-tap-highlight-color: transparent;
+  box-sizing: border-box;
+}
+.tt-ev:hover {
+  box-shadow: 0 4px 18px rgba(0,0,0,.22);
+  filter: brightness(.96);
+}
+.tt-ev:active { filter: brightness(.88); }
+
+.tt-ev-proj {
+  font-size: .64rem;
+  font-weight: 700;
+  color: rgba(255,255,255,.8);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 0;
+}
+.tt-ev-desc {
+  font-size: .82rem;
+  font-weight: 600;
+  color: #fff;
+  line-height: 1.35;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  flex: 1;
+}
+.tt-ev-desc--empty {
+  color: rgba(255,255,255,.5);
+  font-style: italic;
+  font-weight: 400;
+}
+.tt-ev-meta {
+  font-size: .65rem;
+  color: rgba(255,255,255,.72);
+  display: flex;
+  align-items: center;
+  gap: .28rem;
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.tt-ev-bill {
+  background: rgba(255,255,255,.22);
+  border-radius: 3px;
+  padding: 0 .28rem;
+  font-size: .58rem;
+  font-weight: 700;
+  letter-spacing: .05em;
+}
+.tt-ev--locked {
+  opacity: .58;
+  cursor: not-allowed;
+}
+.tt-ev--locked:hover { box-shadow: none; filter: none; }
+.tt-ev--active {
+  outline: 2.5px solid #fff;
+  outline-offset: 1px;
+  box-shadow: 0 0 0 5px rgba(99,102,241,.35) !important;
+}
+
+/* Empty day */
+.tt-empty {
+  position: absolute;
+  left: 50%; top: 38%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  color: #94a3b8;
+  pointer-events: none;
+}
+.tt-empty i { font-size: 2.5rem; opacity: .3; display: block; margin-bottom: .75rem; }
+.tt-empty p { font-size: .88rem; margin: 0; }
+
+/* ================================================================
+   Edit panel
+   ================================================================ */
+
+/* Backdrop — mobile only */
+.tt-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 199;
+  background: rgba(15,20,35,.5);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+.tt-backdrop.open {
+  display: block;
+  animation: tt-fadein .2s ease;
+}
+@keyframes tt-fadein { from { opacity: 0; } to { opacity: 1; } }
+
+/* Never show backdrop on desktop — it would block all clicks */
+@media (min-width: 768px) {
+  .tt-backdrop { display: none !important; pointer-events: none !important; }
+}
+
+/* Desktop: right column that slides open via width */
+.tt-ep {
+  width: 0;
+  flex-shrink: 0;
+  overflow: hidden;
+  transition: width .25s cubic-bezier(.4,0,.2,1);
+}
+.tt-ep.open { width: 348px; }
+
+.tt-ep-shell {
+  width: 348px;
+  background: #fff;
+  border-radius: 16px;
+  border: 1px solid #e8ebf0;
+  box-shadow: 0 2px 10px rgba(0,0,0,.08);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 100px);
+  max-height: 820px;
+  position: sticky;
+  top: 80px;
+}
+
+.tt-ep-head {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  padding: .875rem 1rem;
+  border-bottom: 1px solid #eef0f5;
+  flex-shrink: 0;
+}
+.tt-ep-head-title {
+  font-size: .9rem;
+  font-weight: 700;
+  color: #111827;
+  flex: 1;
+}
+.tt-ep-head-close {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: #f1f5f9;
+  border-radius: 8px;
+  cursor: pointer;
+  color: #64748b;
+  font-size: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background .12s, color .12s;
+  flex-shrink: 0;
+  line-height: 1;
+}
+.tt-ep-head-close:hover { background: #fee2e2; color: #ef4444; }
+
+.tt-ep-body {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Entry panel content classes (used in entry_panel.html fragment) ── */
+.tt-ep-accent { height: 4px; flex-shrink: 0; }
+
+.tt-ep-summary {
+  padding: .875rem 1rem .75rem;
+  border-bottom: 1px solid #eef0f5;
+  display: flex;
+  align-items: flex-start;
+  gap: .75rem;
+}
+.tt-ep-summary-proj {
+  font-size: .8rem;
+  font-weight: 700;
+  color: #111827;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tt-ep-summary-tags {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  margin-top: .3rem;
+  flex-wrap: wrap;
+}
+.tt-ep-status {
+  display: inline-flex;
+  align-items: center;
+  gap: .25rem;
+  padding: .18rem .55rem;
+  border-radius: 20px;
+  font-size: .68rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.tt-ep-status--draft     { background: #f1f5f9; color: #64748b; }
+.tt-ep-status--submitted { background: #dbeafe; color: #1d4ed8; }
+.tt-ep-status--approved  { background: #dcfce7; color: #166534; }
+.tt-ep-status--rejected  { background: #fee2e2; color: #991b1b; }
+.tt-ep-bill-badge {
+  font-size: .67rem; font-weight: 600; color: #059669;
+  background: #dcfce7; padding: .15rem .45rem; border-radius: 20px;
+}
+.tt-ep-dur {
+  text-align: right;
+  flex-shrink: 0;
+}
+.tt-ep-dur-val {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: #111827;
+  line-height: 1;
+}
+.tt-ep-dur-sub {
+  font-size: .68rem;
+  color: #94a3b8;
+  margin-top: .2rem;
+}
+
+.tt-ep-section {
+  padding: .75rem 1rem;
+  border-bottom: 1px solid #f1f5f9;
+}
+.tt-ep-section:last-of-type { border-bottom: none; }
+.tt-ep-sec-lbl {
+  font-size: .67rem;
+  font-weight: 700;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  margin-bottom: .5rem;
+}
+.tt-ep-field-lbl {
+  font-size: .72rem;
+  font-weight: 600;
+  color: #64748b;
+  margin-bottom: .28rem;
+  display: block;
+}
+
+.tt-ep-textarea {
+  width: 100%;
+  border: 1.5px solid #e8ebf0;
+  border-radius: 10px;
+  padding: .6rem .75rem;
+  font-size: .875rem;
+  line-height: 1.55;
+  resize: vertical;
+  outline: none;
+  font-family: inherit;
+  color: #111827;
+  background: #fff;
+  min-height: 76px;
+  transition: border-color .15s, box-shadow .15s;
+  box-sizing: border-box;
+}
+.tt-ep-textarea:focus {
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99,102,241,.1);
+}
+.tt-ep-input, .tt-ep-select {
+  width: 100%;
+  border: 1.5px solid #e8ebf0;
+  border-radius: 10px;
+  padding: .5rem .75rem;
+  font-size: .84rem;
+  outline: none;
+  color: #111827;
+  background: #fff;
+  transition: border-color .15s, box-shadow .15s;
+  box-sizing: border-box;
+  line-height: 1.4;
+  -webkit-appearance: none;
+}
+.tt-ep-input:focus, .tt-ep-select:focus {
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99,102,241,.1);
+}
+.tt-ep-time-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: .6rem;
+}
+.tt-ep-dur-hint {
+  margin-top: .4rem;
+  font-size: .74rem;
+  color: #059669;
+  font-weight: 600;
+  min-height: 1.2em;
+}
+
+/* Billable toggle */
+.tt-ep-billable-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: .15rem 0;
+}
+.tt-ep-billable-info { flex: 1; }
+.tt-ep-billable-name {
+  font-size: .875rem;
+  font-weight: 500;
+  color: #374151;
+}
+.tt-ep-billable-sub {
+  font-size: .72rem;
+  color: #94a3b8;
+  margin-top: .1rem;
+}
+.tt-toggle {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  flex-shrink: 0;
+  margin-left: .75rem;
+}
+.tt-toggle input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+  position: absolute;
+}
+.tt-toggle-track {
+  position: absolute;
+  inset: 0;
+  border-radius: 11px;
+  background: #e2e8f0;
+  cursor: pointer;
+  transition: background .2s;
+}
+.tt-toggle input:checked + .tt-toggle-track { background: #6366f1; }
+.tt-toggle-track::before {
+  content: '';
+  position: absolute;
+  left: 3px; top: 3px;
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0,0,0,.2);
+  transition: transform .2s;
+}
+.tt-toggle input:checked + .tt-toggle-track::before { transform: translateX(18px); }
+
+/* Actions bar */
+.tt-ep-actions {
+  display: flex;
+  gap: .6rem;
+  padding: .875rem 1rem;
+  border-top: 1px solid #eef0f5;
+  flex-shrink: 0;
+  background: #fff;
+}
+.tt-ep-btn-save {
+  flex: 1;
+  height: 40px;
+  background: #6366f1;
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  font-size: .875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .12s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: .35rem;
+}
+.tt-ep-btn-save:hover { background: #4f46e5; }
+.tt-ep-btn-save:disabled { opacity: .55; cursor: not-allowed; }
+.tt-ep-btn-save .tt-spin {
+  display: none;
+  width: 14px; height: 14px;
+  border: 2px solid rgba(255,255,255,.4);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: tt-spin .6s linear infinite;
+}
+.tt-ep-form--saving .tt-ep-btn-save .tt-spin { display: block; }
+.tt-ep-form--saving .tt-ep-btn-save .tt-save-icon { display: none; }
+@keyframes tt-spin { to { transform: rotate(360deg); } }
+
+.tt-ep-btn-del {
+  width: 40px; height: 40px;
+  background: #fff;
+  color: #94a3b8;
+  border: 1.5px solid #e8ebf0;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: .9rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background .12s, color .12s, border-color .12s;
+  flex-shrink: 0;
+}
+.tt-ep-btn-del:hover { background: #fff0f0; color: #ef4444; border-color: #fca5a5; }
+.tt-ep-btn-del--confirm { background: #fee2e2; color: #ef4444; border-color: #fca5a5; }
+
+.tt-ep-err {
+  margin: 0 1rem .5rem;
+  padding: .5rem .75rem;
+  background: #fee2e2;
+  color: #991b1b;
+  font-size: .78rem;
+  border-radius: 8px;
+}
+
+/* Read-only view */
+.tt-ep-ro-val {
+  font-size: .88rem;
+  color: #1e293b;
+  line-height: 1.55;
+  word-break: break-word;
+}
+.tt-ep-ro-val--empty { color: #94a3b8; font-style: italic; }
+.tt-ep-ro-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }
+
+/* Locked notice */
+.tt-ep-locked-note {
+  margin: auto 1rem .5rem;
+  padding: .6rem .85rem;
+  background: #f8fafc;
+  border: 1px solid #e8ebf0;
+  border-radius: 10px;
+  font-size: .78rem;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+}
+
+/* Loading skeleton */
+.tt-ep-skel-wrap { display: flex; flex-direction: column; gap: .75rem; padding: 1rem; }
+.tt-skel {
+  border-radius: 8px;
+  background: linear-gradient(90deg, #f1f5f9 25%, #e8ebf0 50%, #f1f5f9 75%);
+  background-size: 200% 100%;
+  animation: tt-skelanim .9s ease-in-out infinite;
+}
+@keyframes tt-skelanim {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ================================================================
+   Responsive — mobile bottom sheet
+   ================================================================ */
+@media (max-width: 767px) {
+  .tt-dv-wrap { display: block; }
+
+  .tt-ep {
+    width: auto !important;
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    z-index: 200;
+    height: 0;
+    transition: height .3s cubic-bezier(.32,.72,0,1);
+    overflow: visible;
+  }
+  .tt-ep.open { height: 88dvh; height: 88vh; }
+
+  .tt-ep-shell {
+    width: 100%;
+    border-radius: 20px 20px 0 0;
+    height: 100%;
+    max-height: 100%;
+    position: static;
+    box-shadow: 0 -4px 28px rgba(0,0,0,.15);
+  }
+
+  .tt-ep-drag { display: flex !important; }
+
+  .tt-tl { height: calc(100dvh - 260px); height: calc(100vh - 260px); }
+
+  .tt-dv-view-group .tt-dv-btn:not(.tt-dv-btn--primary) {
+    display: none;
+  }
+  .tt-dv-nav-title { font-size: .88rem; }
+}
+
+.tt-ep-drag {
+  display: none;
+  justify-content: center;
+  padding: .65rem 0 .2rem;
+  cursor: grab;
+  flex-shrink: 0;
+}
+.tt-ep-drag span {
+  width: 36px; height: 4px;
+  background: #e2e8f0;
+  border-radius: 4px;
+  display: block;
+}
+</style>
+
+{% if is_leave %}
+<div class="tt-dv-leave">
+  <i class="bi bi-brightness-high-fill"></i>
+  {% trans "You are on approved leave today" %}
+</div>
+{% endif %}
+
+<!-- Backdrop (mobile) -->
+<div class="tt-backdrop" id="tt-backdrop" onclick="ttClosePanel()"></div>
+
+<div class="tt-dv-wrap">
+
+  <!-- ════ Main calendar card ════ -->
+  <div class="tt-dv-card">
+
+    <!-- Nav bar -->
+    <div class="tt-dv-nav">
+      <a href="?date={{ prev_date }}" class="tt-dv-btn tt-dv-btn--arrow"
+         aria-label="{% trans 'Previous day' %}">&#8249;</a>
+
+      <h2 class="tt-dv-nav-title">
+        {% if is_today %}<span class="tt-dv-today-badge">{% trans "Today" %} · </span>{% endif %}{{ view_date|date:"l, j F Y" }}
+      </h2>
+
+      <a href="?date={{ next_date }}" class="tt-dv-btn tt-dv-btn--arrow"
+         aria-label="{% trans 'Next day' %}">&#8250;</a>
+
+      <a href="?date={{ today_str }}" class="tt-dv-btn tt-dv-btn--primary">{% trans "Today" %}</a>
+
+      <div class="tt-dv-view-group">
+        <a href="{% url 'time_tracker:calendar-week' %}?week={{ view_date|date:'o-\WW' }}"
+           class="tt-dv-btn">{% trans "Week" %}</a>
+        <a href="{% url 'time_tracker:timesheet-month' %}?month={{ view_date|date:'Y-m' }}"
+           class="tt-dv-btn">{% trans "Month" %}</a>
+      </div>
+    </div>
+
+    <!-- All-day / unscheduled entries -->
+    {% if unscheduled %}
+    <div class="tt-allday">
+      <span class="tt-allday-lbl">{% trans "All-day" %}</span>
+      {% for ev in unscheduled %}
+      <button type="button" class="tt-allday-chip"
+              style="background:{{ ev.color }}18; color:{{ ev.color }}; border:1px solid {{ ev.color }}35;"
+              data-entry-id="{{ ev.pk }}"
+              onclick="ttOpenPanel({{ ev.pk }})">
+        <span class="tt-allday-dot" style="background:{{ ev.color }};"></span>
+        <span class="tt-allday-text">
+          {% if ev.description %}{{ ev.description|truncatechars:28 }}{% else %}{{ ev.project_name|default:ev.duration_display }}{% endif %}
+        </span>
+        <span class="tt-allday-dur">{{ ev.duration_display }}</span>
+      </button>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Timeline -->
+    <div class="tt-tl" id="tt-tl">
+      <div class="tt-tl-gutter" id="tt-tl-gutter"></div>
+      <div class="tt-tl-canvas" id="tt-tl-canvas">
+
+        {% for ev in events %}
+        <div class="tt-ev{% if not ev.can_edit %} tt-ev--locked{% endif %}"
+             style="background:{{ ev.color }};top:calc({{ ev.start_minutes }} * 2px);height:calc({{ ev.duration_minutes }} * 2px);"
+             data-entry-id="{{ ev.pk }}"
+             {% if ev.can_edit %}onclick="ttOpenPanel({{ ev.pk }})"{% endif %}
+             title="{{ ev.description|default:ev.project_name|default:'' }}">
+          {% if ev.project_name %}
+          <div class="tt-ev-proj">{{ ev.project_name }}{% if ev.task_name %} · {{ ev.task_name }}{% endif %}</div>
+          {% endif %}
+          <div class="tt-ev-desc{% if not ev.description %} tt-ev-desc--empty{% endif %}">
+            {% if ev.description %}{{ ev.description }}{% else %}{% trans "No description" %}{% endif %}
+          </div>
+          <div class="tt-ev-meta">
+            <span>{{ ev.start_label }}–{{ ev.end_label }}</span>
+            <span>·</span>
+            <span>{{ ev.duration_display }}</span>
+            {% if ev.is_billable %}<span class="tt-ev-bill">BILL</span>{% endif %}
+          </div>
+        </div>
+        {% endfor %}
+
+        {% if not events and not unscheduled %}
+        <div class="tt-empty">
+          <i class="bi bi-calendar3"></i>
+          <p>{% trans "No entries for this day" %}</p>
+        </div>
+        {% endif %}
+
+      </div><!-- /.tt-tl-canvas -->
+    </div><!-- /.tt-tl -->
+
+  </div><!-- /.tt-dv-card -->
+
+  <!-- ════ Edit panel ════ -->
+  <div class="tt-ep" id="tt-ep" role="complementary">
+    <div class="tt-ep-shell">
+      <div class="tt-ep-drag" id="tt-ep-drag"><span></span></div>
+      <div class="tt-ep-head">
+        <span class="tt-ep-head-title" id="tt-ep-title">{% trans "Entry" %}</span>
+        <button type="button" class="tt-ep-head-close" onclick="ttClosePanel()"
+                aria-label="{% trans 'Close panel' %}">
+          <i class="bi bi-x-lg" style="font-size:.85rem;"></i>
+        </button>
+      </div>
+      <div class="tt-ep-body" id="tt-ep-body">
+        <!-- loaded via fetch -->
+      </div>
+    </div>
+  </div>
+
+</div><!-- /.tt-dv-wrap -->
+
+<script>
+var TT_CAL_DATE  = "{{ view_date|date:'Y-m-d' }}";
+var TT_CSRF      = "{{ csrf_token }}";
+var TT_IS_TODAY  = {{ is_today|yesno:"true,false" }};
+var _ttCurrentPk = null;
+
+/* ── Build grid lines and labels ──
+   PX_PER_MIN = 2  (must match calc(N * 2px) in event inline styles)
+   1 hour  = 120 px
+   24 hours = 2880 px                                                ── */
+var PX_PER_MIN = 2;
+
+(function buildGrid() {
+  var canvas = document.getElementById("tt-tl-canvas");
+  var gutter = document.getElementById("tt-tl-gutter");
+  if (!canvas || !gutter) return;
+
+  for (var h = 0; h < 24; h++) {
+    var top = h * 60 * PX_PER_MIN;          // e.g. h=9 → 1080px
+
+    /* Major hour line */
+    var line = document.createElement("div");
+    line.className = "tt-tl-hline";
+    line.style.top = top + "px";
+    canvas.insertBefore(line, canvas.firstChild);
+
+    /* Half-hour dashed line */
+    var half = document.createElement("div");
+    half.className = "tt-tl-hline tt-tl-hline--half";
+    half.style.top = (top + 30 * PX_PER_MIN) + "px";  // +60px
+    canvas.insertBefore(half, canvas.firstChild);
+
+    /* Gutter label — centred on the hour line */
+    var lbl = document.createElement("div");
+    lbl.className = "tt-tl-lbl";
+    lbl.style.top = top + "px";
+    lbl.textContent = ("0" + h).slice(-2) + ":00";
+    gutter.appendChild(lbl);
+  }
+
+  if (TT_IS_TODAY) {
+    var nowLine = document.createElement("div");
+    nowLine.className = "tt-now-line";
+    nowLine.id = "tt-now-line";
+    var nowDot = document.createElement("div");
+    nowDot.className = "tt-now-dot";
+    nowLine.appendChild(nowDot);
+    canvas.appendChild(nowLine);
+    updateNow();
+    setInterval(updateNow, 60000);
+  }
+
+  /* Scroll so current/target hour is near the top */
+  var tl = document.getElementById("tt-tl");
+  if (tl) {
+    var d = new Date();
+    var nowMin = d.getHours() * 60 + d.getMinutes();
+    /* on today scroll to 1hr before now; otherwise start at 08:00 */
+    tl.scrollTop = TT_IS_TODAY
+      ? Math.max(0, (nowMin - 60) * PX_PER_MIN)
+      : 8 * 60 * PX_PER_MIN;
+  }
+})();
+
+function updateNow() {
+  var el = document.getElementById("tt-now-line");
+  if (!el) return;
+  var d = new Date();
+  el.style.top = ((d.getHours() * 60 + d.getMinutes()) * PX_PER_MIN) + "px";
+}
+
+/* ── Panel open / close ── */
+function ttOpenPanel(pk) {
+  _ttCurrentPk = pk;
+  var panel    = document.getElementById("tt-ep");
+  var body     = document.getElementById("tt-ep-body");
+  var backdrop = document.getElementById("tt-backdrop");
+  var title    = document.getElementById("tt-ep-title");
+
+  title.textContent = "{% trans 'Edit Entry' %}";
+  body.innerHTML =
+    '<div class="tt-ep-skel-wrap">' +
+    '  <div class="tt-skel" style="height:56px;"></div>' +
+    '  <div class="tt-skel" style="height:80px;margin-top:.5rem;"></div>' +
+    '  <div class="tt-skel" style="height:40px;margin-top:.5rem;"></div>' +
+    '  <div class="tt-skel" style="height:40px;margin-top:.5rem;"></div>' +
+    '</div>';
+
+  panel.classList.add("open");
+  if (backdrop && window.innerWidth < 768) {
+    backdrop.classList.add("open");
+    document.body.style.overflow = "hidden";
+  }
+
+  /* Highlight */
+  document.querySelectorAll(".tt-ev--active").forEach(function (el) {
+    el.classList.remove("tt-ev--active");
+  });
+  var target = document.querySelector("[data-entry-id='" + pk + "']");
+  if (target) target.classList.add("tt-ev--active");
+
+  fetch("/time-tracker/calendar/entry/" + pk + "/", {
+    headers: { "X-Requested-With": "XMLHttpRequest" }
+  })
+  .then(function (r) { return r.text(); })
+  .then(function (html) {
+    body.innerHTML = html;
+    /* Execute any <script> tags in the fragment */
+    body.querySelectorAll("script").forEach(function (s) {
+      var ns = document.createElement("script");
+      ns.textContent = s.textContent;
+      document.body.appendChild(ns);
+      ns.remove();
+    });
+  })
+  .catch(function () {
+    body.innerHTML = '<div class="tt-ep-err" style="margin:1rem;">{% trans "Failed to load entry." %}</div>';
+  });
+}
+
+function ttClosePanel() {
+  _ttCurrentPk = null;
+  document.getElementById("tt-ep").classList.remove("open");
+  var backdrop = document.getElementById("tt-backdrop");
+  if (backdrop) backdrop.classList.remove("open");
+  document.body.style.overflow = "";   /* safe to reset on both viewports */
+  document.querySelectorAll(".tt-ev--active").forEach(function (el) {
+    el.classList.remove("tt-ev--active");
+  });
+}
+
+document.addEventListener("keydown", function (e) {
+  if (e.key === "Escape") ttClosePanel();
+});
+
+/* ── Save ── */
+function ttEpSave() {
+  var pk   = _ttCurrentPk;
+  var form = document.getElementById("tt-ep-form");
+  if (!pk || !form) return;
+
+  form.querySelectorAll(".tt-ep-err").forEach(function (e) { e.remove(); });
+  form.classList.add("tt-ep-form--saving");
+  var saveBtn = form.querySelector(".tt-ep-btn-save");
+  if (saveBtn) saveBtn.disabled = true;
+
+  var data = new FormData(form);
+  data.append("csrfmiddlewaretoken", TT_CSRF);
+
+  fetch("/time-tracker/calendar/entry/" + pk + "/", {
+    method: "POST",
+    body: data,
+    headers: { "X-CSRFToken": TT_CSRF }
+  })
+  .then(function (r) { return r.json(); })
+  .then(function (resp) {
+    form.classList.remove("tt-ep-form--saving");
+    if (saveBtn) saveBtn.disabled = false;
+    if (resp.ok) {
+      var newDate = resp.date;
+      if (newDate && newDate !== TT_CAL_DATE) {
+        window.location.href = "?date=" + newDate;
+      } else {
+        window.location.reload();
+      }
+    } else {
+      var err = document.createElement("div");
+      err.className = "tt-ep-err";
+      err.textContent = resp.error || "{% trans 'Could not save. Please try again.' %}";
+      form.insertBefore(err, form.firstChild);
+    }
+  })
+  .catch(function () {
+    form.classList.remove("tt-ep-form--saving");
+    if (saveBtn) saveBtn.disabled = false;
+    alert("{% trans 'Network error. Please try again.' %}");
+  });
+}
+
+/* ── Delete (two-step confirm) ── */
+function ttEpDelete() {
+  var pk     = _ttCurrentPk;
+  var delBtn = document.querySelector(".tt-ep-btn-del");
+  if (!pk || !delBtn) return;
+
+  if (!delBtn.dataset.confirming) {
+    delBtn.dataset.confirming = "1";
+    delBtn.classList.add("tt-ep-btn-del--confirm");
+    delBtn.title = "{% trans 'Click again to confirm' %}";
+    setTimeout(function () {
+      if (delBtn) {
+        delete delBtn.dataset.confirming;
+        delBtn.classList.remove("tt-ep-btn-del--confirm");
+        delBtn.title = "{% trans 'Delete entry' %}";
+      }
+    }, 3000);
+    return;
+  }
+
+  delete delBtn.dataset.confirming;
+  delBtn.disabled = true;
+
+  fetch("/time-tracker/calendar/entry/" + pk + "/", {
+    method: "POST",
+    body: new URLSearchParams({ csrfmiddlewaretoken: TT_CSRF, _delete: "1" }),
+    headers: { "X-CSRFToken": TT_CSRF }
+  })
+  .then(function (r) { return r.json(); })
+  .then(function (resp) {
+    if (resp.ok) window.location.reload();
+    else delBtn.disabled = false;
+  })
+  .catch(function () { delBtn.disabled = false; });
+}
+</script>
+{% endblock %}

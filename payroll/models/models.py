@@ -1981,3 +1981,59 @@ class PayslipAutoGenerate(models.Model):
 
     def __str__(self) -> str:
         return f"{self.generate_day} | {self.company_id} "
+
+
+class PayrollReport(HorillaModel):
+    """
+    PayrollReport model
+
+    Stores metadata of a payroll statutory report (e.g. ETF Monthly
+    Contribution) that has been generated for a given payroll period. The actual
+    ``.xlsx`` file is generated on demand when the user downloads the report.
+    """
+
+    REPORT_ETF_MONTHLY = "etf_monthly"
+    REPORT_TYPE_CHOICES = [
+        (REPORT_ETF_MONTHLY, _("ETF Monthly Contribution")),
+    ]
+
+    report_type = models.CharField(
+        max_length=50,
+        choices=REPORT_TYPE_CHOICES,
+        default=REPORT_ETF_MONTHLY,
+        verbose_name=_("Report Type"),
+    )
+    start_date = models.DateField(verbose_name=_("Start Date"))
+    end_date = models.DateField(verbose_name=_("End Date"))
+    company_id = models.ForeignKey(
+        Company,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        verbose_name=_("Company"),
+    )
+    objects = HorillaCompanyManager("company_id")
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = _("Payroll Report")
+        verbose_name_plural = _("Payroll Reports")
+
+    def get_report_name(self):
+        """
+        Returns the human readable report name including the period month/year.
+        e.g. ``ETF Monthly Contribution - March 2026``
+        """
+        return f"{self.get_report_type_display()} - {self.start_date.strftime('%B %Y')}"
+
+    def get_generated_by(self):
+        """
+        Returns the user (employee) who generated the report.
+        """
+        if self.created_by and hasattr(self.created_by, "employee_get"):
+            return self.created_by.employee_get
+        return self.created_by
+
+    def __str__(self) -> str:
+        return self.get_report_name()
+
