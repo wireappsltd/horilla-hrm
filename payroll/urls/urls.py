@@ -8,7 +8,7 @@ from django.urls import include, path
 
 from payroll.models.models import Contract, Payslip
 from payroll.views import views
-from payroll.views import report_views
+from payroll.views import apit_t10_views, report_views
 
 urlpatterns = [
     path("", include("payroll.urls.component_urls")),
@@ -223,5 +223,21 @@ urlpatterns = [
         "download-payroll-report/<int:report_id>",
         report_views.download_payroll_report,
         name="download-payroll-report",
+    ),
+    # ===========================APIT T10================================
+    path(
+        "apit-t10/",
+        apit_t10_views.view_apit_t10,
+        name="view-apit-t10",
+    ),
+    path(
+        "filter-apit-t10/",
+        apit_t10_views.filter_apit_t10,
+        name="filter-apit-t10",
+    ),
+    path(
+        "download-apit-t10/<int:employee_id>",
+        apit_t10_views.download_apit_t10,
+        name="download-apit-t10",
     ),
 ]

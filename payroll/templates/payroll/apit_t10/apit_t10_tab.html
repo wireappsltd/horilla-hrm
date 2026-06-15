@@ -1,0 +1,56 @@
+{% load i18n %}
+<div class="oh-card mb-3 p-3">
+    <form
+        id="apitT10FilterForm"
+        hx-get="{% url 'filter-apit-t10' %}"
+        hx-target="#apit-t10-container"
+        hx-trigger="change, submit"
+        class="row align-items-end"
+        onsubmit="return false;"
+    >
+        <div class="col-md-4 mb-2">
+            <label class="oh-label">{% trans "Search Employee" %}</label>
+            <input type="text" name="search" value="{{ search }}"
+                class="oh-input w-100"
+                hx-get="{% url 'filter-apit-t10' %}"
+                hx-target="#apit-t10-container"
+                hx-trigger="keyup changed delay:500ms"
+                hx-include="#apitT10FilterForm"
+                placeholder="{% trans 'Search by name, employee ID or NIC' %}" />
+        </div>
+        <div class="col-md-3 mb-2">
+            <label class="oh-label">{% trans "Year of Assessment" %}</label>
+            <select name="assessment_year" class="oh-input w-100">
+                {% for year in year_choices %}
+                    <option value="{{ year }}" {% if year == selected_year %}selected{% endif %}>
+                        {{ year }}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-3 mb-2">
+            <label class="oh-label">{% trans "Department" %}</label>
+            <select name="department" class="oh-input w-100">
+                <option value="">{% trans "All Departments" %}</option>
+                {% for department in departments %}
+                    <option value="{{ department.id }}"
+                        {% if selected_department == department.id|stringformat:"s" %}selected{% endif %}>
+                        {{ department.department }}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-2 mb-2">
+            <button type="button" class="oh-btn oh-btn--secondary w-100"
+                hx-get="{% url 'filter-apit-t10' %}"
+                hx-target="#apit-t10-container"
+                hx-include="#apitT10FilterForm">
+                {% trans "Filter" %}
+            </button>
+        </div>
+    </form>
+</div>
+<div id="apit-t10-container">
+    {% include 'payroll/apit_t10/list_apit_t10.html' %}
+</div>
+

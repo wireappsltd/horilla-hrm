@@ -2045,3 +2045,42 @@ class PayrollReport(HorillaModel):
     def __str__(self) -> str:
         return self.get_report_name()
 
+
+class ApitT10Log(HorillaModel):
+    """
+    ApitT10Log model
+
+    Audit log entry created each time an APIT T10 (Advance Personal Income
+    Tax) certificate PDF is generated for an employee. Records the employee,
+    the assessment year, the user who generated it (``created_by``) and the
+    timestamp (``created_at``).
+    """
+
+    employee_id = models.ForeignKey(
+        Employee,
+        on_delete=models.PROTECT,
+        related_name="apit_t10_logs",
+        verbose_name=_("Employee"),
+    )
+    assessment_year = models.CharField(
+        max_length=9, verbose_name=_("Year of Assessment")
+    )
+    objects = HorillaCompanyManager("employee_id__employee_work_info__company_id")
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = _("APIT T10 Log")
+        verbose_name_plural = _("APIT T10 Logs")
+
+    def get_generated_by(self):
+        """
+        Returns the user (employee) who generated the certificate.
+        """
+        if self.created_by and hasattr(self.created_by, "employee_get"):
+            return self.created_by.employee_get
+        return self.created_by
+
+    def __str__(self) -> str:
+        return f"APIT T10 - {self.employee_id} - {self.assessment_year}"
+
+
