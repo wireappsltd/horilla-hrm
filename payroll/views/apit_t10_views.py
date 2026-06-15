@@ -288,7 +288,7 @@ def _collect_certificate_data(employee, assessment_year):
             "employer_tin": _get_employer_tin(employee),
             "employment_type": "primary",
             "employee_full_name": employee.get_full_name(),
-            "pay_sheet_serial_number": employee.badge_id or "",
+            "pay_sheet_serial_number": employee.etf_epf_number or "",
             "nic_number": employee.nic or "",
             "service_from": service_from,
             "service_to": service_to,
