@@ -280,15 +280,16 @@ class InactivityTimeoutMiddleware:
                     request,
                     _("You have been logged out due to inactivity."),
                 )
-                # Signal HTMX/AJAX callers to perform a full redirect to login
-                # instead of swapping a partial response into the page.
                 login_redirect = redirect("login")
-                if (
-                    request.headers.get("HX-Request")
-                    or request.headers.get("x-requested-with") == "XMLHttpRequest"
-                ):
-                    response = HttpResponse(status=204)
-                    response["HX-Redirect"] = login_redirect["Location"]
+                location = login_redirect["Location"]
+                if not self._is_full_page_navigation(request):
+                    response = HttpResponse(status=401)
+                    response["HX-Redirect"] = location
+                    response["X-Session-Expired"] = "1"
+                    response["X-Login-Redirect"] = location
+                    response["Cache-Control"] = (
+                        "no-store, no-cache, must-revalidate, max-age=0, private"
+                    )
                     return response
                 return login_redirect
 
@@ -307,6 +308,41 @@ class InactivityTimeoutMiddleware:
         if path in self.EXEMPT_REFRESH_PATHS:
             return True
         return path.startswith(self.EXEMPT_REFRESH_PREFIXES)
+
+    def _is_full_page_navigation(self, request):
+        """
+        Return True only for top-level document navigations (typing a URL,
+        clicking a normal link, submitting a non-AJAX form). Every partial
+        request issued by HTMX, jQuery AJAX, fetch or XHR returns False so the
+        login page HTML is never swapped into the current module.
+        """
+        headers = request.headers
+
+        # HTMX requests.
+        if headers.get("HX-Request"):
+            return False
+
+        # jQuery / classic XMLHttpRequest.
+        if headers.get("x-requested-with") == "XMLHttpRequest":
+            return False
+
+        # Modern browsers advertise the request context via Fetch Metadata.
+        # ``navigate`` is sent for real page navigations; fetch()/XHR send
+        # ``cors``/``same-origin``/``no-cors`` instead.
+        sec_fetch_mode = headers.get("Sec-Fetch-Mode")
+        if sec_fetch_mode:
+            return sec_fetch_mode == "navigate"
+
+        # ``Sec-Fetch-Dest`` is ``document`` for full-page loads and ``empty``
+        # for programmatic fetch/XHR requests.
+        sec_fetch_dest = headers.get("Sec-Fetch-Dest")
+        if sec_fetch_dest:
+            return sec_fetch_dest == "document"
+
+        # Fallback for older clients without Fetch Metadata: treat it as a real
+        # navigation only when the client explicitly asks for an HTML document.
+        accept = headers.get("Accept", "")
+        return "text/html" in accept
 
 
 class TwoFactorAuthMiddleware:
