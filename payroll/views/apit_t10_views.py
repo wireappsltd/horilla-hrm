@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 # are the company names exactly as stored on the Company record. Add an entry
 # here for each company that issues APIT T10 certificates.
 APIT_EMPLOYER_TINS = {
-    "Wireapps Pvt Ltd": "103185815",
+    "WireApps": "103185815",
 }
 # Used when the employee's company is not present in the mapping above.
 DEFAULT_APIT_EMPLOYER_TIN = ""
@@ -91,8 +91,11 @@ def _get_employer_tin(employee):
         getattr(employee, "employee_work_info", None), "company_id", None
     )
     company_name = getattr(company, "company", None)
-    if company_name and company_name in APIT_EMPLOYER_TINS:
-        return APIT_EMPLOYER_TINS[company_name]
+    if company_name:
+        normalized = company_name.strip().casefold()
+        for name, tin in APIT_EMPLOYER_TINS.items():
+            if name.strip().casefold() == normalized:
+                return tin
     return DEFAULT_APIT_EMPLOYER_TIN
 
 
