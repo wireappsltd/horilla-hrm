@@ -119,6 +119,7 @@ from horilla.filters import HorillaPaginator
 from horilla.group_by import group_by_queryset
 from horilla.horilla_settings import HORILLA_DATE_FORMATS
 from horilla.methods import get_horilla_model_class
+from horilla_audit.methods import log_activity, log_form_changes
 from horilla_audit.models import AccountBlockUnblock, HistoryTrackingFields
 from horilla_documents.forms import (
     DocumentForm,
@@ -319,6 +320,13 @@ def self_info_update(request):
                 if not inst.badge_id:
                     inst.badge_id = badge_id
                 inst.save()
+                log_form_changes(
+                    request.user,
+                    module="employee",
+                    action="Personal information updated",
+                    form=form,
+                    target=inst,
+                )
                 messages.success(request, _("Profile updated."))
                 return redirect("employee-profile")
             else:
@@ -332,6 +340,14 @@ def self_info_update(request):
                 bank = bank_form.save(commit=False)
                 bank.employee_id = employee
                 bank.save()
+                log_form_changes(
+                    request.user,
+                    module="employee",
+                    action="Bank information updated",
+                    form=bank_form,
+                    target=employee,
+                    mask_fields=("account_number", "swift_code"),
+                )
                 messages.success(request, _("Bank details updated."))
                 return redirect("employee-profile")
             else:
@@ -1068,6 +1084,14 @@ def employee_profile_bank_details(request):
         bank_info = form.save(commit=False)
         bank_info.employee_id = employee
         bank_info.save()
+        log_form_changes(
+            request.user,
+            module="employee",
+            action="Bank information updated",
+            form=form,
+            target=employee,
+            mask_fields=("account_number", "swift_code"),
+        )
         messages.success(request, _("Bank details updated"))
     else:
         for field, errors in form.errors.items():
@@ -1090,6 +1114,13 @@ def employee_profile_update(request):
             form = EmployeeForm(request.POST, request.FILES, instance=employee)
             if form.is_valid():
                 form.save()
+                log_form_changes(
+                    request.user,
+                    module="employee",
+                    action="Personal information updated",
+                    form=form,
+                    target=employee,
+                )
                 messages.success(request, _("Profile updated."))
     return redirect("/employee/employee-profile")
 
@@ -1423,7 +1454,35 @@ def save_employee_bulk_update(request):
                         employee_id__in=employee_list
                     )
                     value = dict_value.get(parts[-1])
+                    role_change = parts[-1] == "job_role_id"
+                    old_roles_by_emp = {}
+                    if role_change:
+                        old_roles_by_emp = {
+                            wi.employee_id_id: wi.job_role_id
+                            for wi in employee_queryset.select_related("job_role_id")
+                        }
                     employee_queryset.update(**{parts[-1]: value})
+                    if role_change:
+                        from base.models import JobRole
+
+                        new_role = (
+                            JobRole.objects.filter(pk=value).first() if value else None
+                        )
+                        for emp_id, old_role in old_roles_by_emp.items():
+                            if old_role != new_role:
+                                emp = Employee.objects.filter(pk=emp_id).first()
+                                log_activity(
+                                    request.user,
+                                    module="employee",
+                                    action="Role change",
+                                    target=emp,
+                                    changes={
+                                        "job_role": {
+                                            "from": str(old_role) if old_role else None,
+                                            "to": str(new_role) if new_role else None,
+                                        }
+                                    },
+                                )
                 elif parts[0] == "employee_bank_details":
                     for id in employee_list:
 
@@ -1560,6 +1619,13 @@ def employee_view_update(request, obj_id, **kwargs):
                 form = EmployeeForm(request.POST, instance=employee)
                 if form.is_valid():
                     form.save()
+                    log_form_changes(
+                        request.user,
+                        module="employee",
+                        action="Personal information updated",
+                        form=form,
+                        target=employee,
+                    )
                     messages.success(
                         request, _("Employee personal information updated.")
                     )
@@ -1567,6 +1633,7 @@ def employee_view_update(request, obj_id, **kwargs):
                 instance = EmployeeWorkInformation.objects.filter(
                     employee_id=employee
                 ).first()
+                old_role = instance.job_role_id if instance else None
                 work_form = EmployeeWorkInformationUpdateForm(
                     request.POST, instance=instance
                 )
@@ -1575,6 +1642,20 @@ def employee_view_update(request, obj_id, **kwargs):
                     instance.employee_id = employee
                     instance.save()
                     instance.tags.set(request.POST.getlist("tags"))
+                    new_role = instance.job_role_id
+                    if old_role != new_role:
+                        log_activity(
+                            request.user,
+                            module="employee",
+                            action="Role change",
+                            target=employee,
+                            changes={
+                                "job_role": {
+                                    "from": str(old_role) if old_role else None,
+                                    "to": str(new_role) if new_role else None,
+                                }
+                            },
+                        )
                     notify.send(
                         request.user.employee_get,
                         recipient=instance.employee_id.employee_user_id,
@@ -1599,6 +1680,14 @@ def employee_view_update(request, obj_id, **kwargs):
                     instance = bank_form.save(commit=False)
                     instance.employee_id = employee
                     instance.save()
+                    log_form_changes(
+                        request.user,
+                        module="employee",
+                        action="Bank information updated",
+                        form=bank_form,
+                        target=employee,
+                        mask_fields=("account_number", "swift_code"),
+                    )
                     messages.success(request, _("Employee bank details updated."))
         return render(
             request,
@@ -1747,6 +1836,14 @@ def employee_create_update_personal_info(request, obj_id=None):
     form = EmployeeForm(request.POST, request.FILES, instance=employee)
     if form.is_valid():
         form.save()
+        if obj_id is not None:
+            log_form_changes(
+                request.user,
+                module="employee",
+                action="Personal information updated",
+                form=form,
+                target=form.instance,
+            )
         if obj_id is None:
             messages.success(request, _("New Employee Added."))
             form = EmployeeForm(request.POST, instance=form.instance)
@@ -1803,9 +1900,13 @@ def employee_update_work_info(request, obj_id=None):
     if employee and not request.user.has_perm("employee.change_employeeworkinformation"):
         messages.error(request, _("You don't have permission to update this employee."))
         return HttpResponse(status=403)
+    existing_work_info = EmployeeWorkInformation.objects.filter(
+        employee_id=employee
+    ).first()
+    old_role = existing_work_info.job_role_id if existing_work_info else None
     form = EmployeeWorkInformationForm(
         request.POST,
-        instance=EmployeeWorkInformation.objects.filter(employee_id=employee).first(),
+        instance=existing_work_info,
     )
     form.fields["employee_id"].required = False
     form.employee_id = employee
@@ -1813,6 +1914,20 @@ def employee_update_work_info(request, obj_id=None):
         work_info = form.save(commit=False)
         work_info.employee_id = employee
         work_info.save()
+        new_role = work_info.job_role_id
+        if old_role != new_role:
+            log_activity(
+                request.user,
+                module="employee",
+                action="Role change",
+                target=employee,
+                changes={
+                    "job_role": {
+                        "from": str(old_role) if old_role else None,
+                        "to": str(new_role) if new_role else None,
+                    }
+                },
+            )
         return HttpResponse(
             """
 
@@ -1852,6 +1967,14 @@ def employee_update_bank_details(request, obj_id=None):
         bank_info = form.save(commit=False)
         bank_info.employee_id = employee
         bank_info.save()
+        log_form_changes(
+            request.user,
+            module="employee",
+            action="Bank information updated",
+            form=form,
+            target=employee,
+            mask_fields=("account_number", "swift_code"),
+        )
         return HttpResponse(
             """
             <div class="oh-alert-container">
@@ -2447,6 +2570,20 @@ def employee_work_info_view_create(request, obj_id):
         work_info = work_form.save(commit=False)
         work_info.employee_id = employee
         work_info.save()
+        new_role = work_info.job_role_id
+        if new_role is not None:
+            log_activity(
+                request.user,
+                module="employee",
+                action="Role change",
+                target=employee,
+                changes={
+                    "job_role": {
+                        "from": None,
+                        "to": str(new_role),
+                    }
+                },
+            )
         messages.success(request, _("Created work information"))
     return render(
         request,
@@ -2475,12 +2612,27 @@ def employee_work_info_view_update(request, obj_id):
     bank_form = EmployeeBankDetailsUpdateForm(
         instance=work_information.employee_id.employee_bank_details
     )
+    old_role = work_information.job_role_id
     work_form = EmployeeWorkInformationUpdateForm(
         request.POST,
         instance=work_information,
     )
     if work_form.is_valid():
-        work_form.save()
+        updated = work_form.save()
+        new_role = updated.job_role_id
+        if old_role != new_role:
+            log_activity(
+                request.user,
+                module="employee",
+                action="Role change",
+                target=updated.employee_id,
+                changes={
+                    "job_role": {
+                        "from": str(old_role) if old_role else None,
+                        "to": str(new_role) if new_role else None,
+                    }
+                },
+            )
         messages.success(request, _("Work Information Updated Successfully"))
     return render(
         request,
@@ -2766,7 +2918,7 @@ def work_info_import(request):
                     bulk_create_work_types(success_list)
                     bulk_create_shifts(success_list)
                     bulk_create_employee_types(success_list)
-                    bulk_create_work_info_import(success_list)
+                    bulk_create_work_info_import(success_list, acting_user=request.user)
                     thread = threading.Thread(
                         target=set_initial_password, args=(employees,)
                     )

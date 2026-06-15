@@ -1981,3 +1981,106 @@ class PayslipAutoGenerate(models.Model):
 
     def __str__(self) -> str:
         return f"{self.generate_day} | {self.company_id} "
+
+
+class PayrollReport(HorillaModel):
+    """
+    PayrollReport model
+
+    Stores metadata of a payroll statutory report (e.g. ETF Monthly
+    Contribution) that has been generated for a given payroll period. The actual
+    ``.xlsx`` file is generated on demand when the user downloads the report.
+    """
+
+    REPORT_ETF_MONTHLY = "etf_monthly"
+    REPORT_ETF_BI_ANNUAL = "etf_bi_annual"
+    REPORT_TYPE_CHOICES = [
+        (REPORT_ETF_MONTHLY, _("ETF Monthly Contribution")),
+        (REPORT_ETF_BI_ANNUAL, _("ETF Bi-Annual (Form II Return)")),
+    ]
+
+    report_type = models.CharField(
+        max_length=50,
+        choices=REPORT_TYPE_CHOICES,
+        default=REPORT_ETF_MONTHLY,
+        verbose_name=_("Report Type"),
+    )
+    start_date = models.DateField(verbose_name=_("Start Date"))
+    end_date = models.DateField(verbose_name=_("End Date"))
+    company_id = models.ForeignKey(
+        Company,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        verbose_name=_("Company"),
+    )
+    objects = HorillaCompanyManager("company_id")
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = _("Payroll Report")
+        verbose_name_plural = _("Payroll Reports")
+
+    def get_report_name(self):
+        """
+        Returns the human readable report name including the period month/year.
+        e.g. ``ETF Monthly Contribution - March 2026`` or, for bi-annual
+        returns, ``ETF Bi-Annual (Form II Return) - Jan-Jun 2026``.
+        """
+        if self.report_type == self.REPORT_ETF_BI_ANNUAL:
+            half = "Jan-Jun" if self.start_date.month <= 6 else "Jul-Dec"
+            return (
+                f"{self.get_report_type_display()} - {half} {self.start_date.year}"
+            )
+        return f"{self.get_report_type_display()} - {self.start_date.strftime('%B %Y')}"
+
+    def get_generated_by(self):
+        """
+        Returns the user (employee) who generated the report.
+        """
+        if self.created_by and hasattr(self.created_by, "employee_get"):
+            return self.created_by.employee_get
+        return self.created_by
+
+    def __str__(self) -> str:
+        return self.get_report_name()
+
+
+class ApitT10Log(HorillaModel):
+    """
+    ApitT10Log model
+
+    Audit log entry created each time an APIT T10 (Advance Personal Income
+    Tax) certificate PDF is generated for an employee. Records the employee,
+    the assessment year, the user who generated it (``created_by``) and the
+    timestamp (``created_at``).
+    """
+
+    employee_id = models.ForeignKey(
+        Employee,
+        on_delete=models.PROTECT,
+        related_name="apit_t10_logs",
+        verbose_name=_("Employee"),
+    )
+    assessment_year = models.CharField(
+        max_length=9, verbose_name=_("Year of Assessment")
+    )
+    objects = HorillaCompanyManager("employee_id__employee_work_info__company_id")
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = _("APIT T10 Log")
+        verbose_name_plural = _("APIT T10 Logs")
+
+    def get_generated_by(self):
+        """
+        Returns the user (employee) who generated the certificate.
+        """
+        if self.created_by and hasattr(self.created_by, "employee_get"):
+            return self.created_by.employee_get
+        return self.created_by
+
+    def __str__(self) -> str:
+        return f"APIT T10 - {self.employee_id} - {self.assessment_year}"
+
+

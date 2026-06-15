@@ -238,10 +238,11 @@
                                                 <a href="{{ doc.image.url }}"
                                                    rel="noopener noreferrer"
                                                    target="_blank"
-                                                   class="me-2 mb-2">
-                                                    <span class="oh-file-icon oh-file-icon--image"
-                                                          style="width:40px;height:40px;display:inline-block"
-                                                          title="{{ doc }}"></span>
+                                                   class="me-2 mb-2"
+                                                   title="{{ doc.image.name|cut:'asset/return_images/' }}">
+                                                    <img src="{{ doc.image.url }}"
+                                                         alt="{% trans 'Return image' %}"
+                                                         style="width:60px;height:60px;object-fit:cover;border-radius:4px;border:1px solid #dee2e6;">
                                                 </a>
                                             {% endfor %}
                                         </div>

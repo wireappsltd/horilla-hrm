@@ -1,0 +1,91 @@
+{% extends "settings.html" %}
+{% load i18n %}
+
+{% block settings %}
+{% include "time_tracker/management/_tt_settings_style.html" %}
+
+<div class="tt-set">
+  <div class="tt-header">
+    <div>
+      <h1 class="tt-header__title">{% trans "Time Tracker" %}</h1>
+      <p class="tt-header__sub">{% trans "Manage clients for time entries and billing." %}</p>
+    </div>
+    <button class="tt-btn tt-btn--primary"
+            hx-get="{% url 'time_tracker:client-create' %}"
+            hx-target="#tt-client-modal-body"
+            hx-swap="innerHTML"
+            onclick="document.getElementById('tt-client-modal').classList.add('oh-modal--show')">
+      <ion-icon name="add-outline"></ion-icon> {% trans "Add Client" %}
+    </button>
+  </div>
+
+  {% include "time_tracker/management/_tt_settings_tabs.html" with active="clients" %}
+
+  <div class="tt-card">
+    {% if clients %}
+    <table class="tt-table">
+      <thead>
+        <tr>
+          <th>{% trans "Name" %}</th>
+          <th>{% trans "Email" %}</th>
+          <th>{% trans "Currency" %}</th>
+          <th>{% trans "Default Rate" %}</th>
+          <th class="ta-r">{% trans "Actions" %}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for client in clients %}
+        <tr id="tt-client-{{ client.pk }}">
+          <td>
+            <span class="tt-name">
+              <span class="tt-dot" style="background:{{ client.color }};"></span>{{ client.name }}
+            </span>
+          </td>
+          <td>{{ client.email|default:"—" }}</td>
+          <td>{{ client.currency }}</td>
+          <td>{% if client.default_rate %}<span class="tt-rate">{{ client.default_rate }}</span>{% else %}<span class="tt-muted">—</span>{% endif %}</td>
+          <td class="ta-r" style="white-space:nowrap;">
+            <button class="tt-icon-btn"
+                    hx-get="{% url 'time_tracker:client-update' client.pk %}"
+                    hx-target="#tt-client-modal-body" hx-swap="innerHTML"
+                    onclick="document.getElementById('tt-client-modal').classList.add('oh-modal--show')"
+                    title="{% trans 'Edit' %}">
+              <ion-icon name="create-outline"></ion-icon>
+            </button>
+            <button class="tt-icon-btn tt-icon-btn--danger"
+                    hx-post="{% url 'time_tracker:client-delete' client.pk %}"
+                    hx-confirm="{% trans 'Delete this client?' %}"
+                    hx-target="#tt-client-{{ client.pk }}" hx-swap="outerHTML swap:300ms"
+                    title="{% trans 'Delete' %}">
+              <ion-icon name="trash-outline"></ion-icon>
+            </button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="tt-empty">
+      <ion-icon name="people-outline" class="tt-empty__icon"></ion-icon>
+      <p class="tt-empty__text">{% trans "No clients yet." %}</p>
+      <button class="tt-btn tt-btn--primary"
+              hx-get="{% url 'time_tracker:client-create' %}"
+              hx-target="#tt-client-modal-body" hx-swap="innerHTML"
+              onclick="document.getElementById('tt-client-modal').classList.add('oh-modal--show')">
+        <ion-icon name="add-outline"></ion-icon> {% trans "Add your first client" %}
+      </button>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Client Modal -->
+<div class="oh-modal" id="tt-client-modal" role="dialog" aria-hidden="true">
+  <div class="oh-modal__dialog" style="max-width:500px;" id="tt-client-modal-body"></div>
+</div>
+<script>
+  document.getElementById('tt-client-modal').addEventListener('click', function(e) {
+    if (e.target === this) this.classList.remove('oh-modal--show');
+  });
+</script>
+{% endblock settings %}

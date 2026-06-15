@@ -1,0 +1,119 @@
+{% extends "index.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Monthly Timesheet" %}{% endblock %}
+
+{% block content %}
+<style>
+.tt-month { background:#fff; border-radius:12px; overflow:hidden; }
+.tt-month-nav { display:flex; align-items:center; gap:1rem; padding:1.25rem 1.5rem; border-bottom:1px solid #e2e8f0; flex-wrap:wrap; }
+.tt-month-nav h2 { margin:0; font-size:1.15rem; font-weight:700; color:#1e293b; }
+.tt-nav-btn { padding:.4rem .9rem; border:1px solid #e2e8f0; border-radius:8px; background:#fff; color:#475569; cursor:pointer; font-size:.875rem; text-decoration:none; display:inline-block; }
+.tt-nav-btn:hover { background:#f8fafc; }
+.tt-this-btn { background:#6366f1; color:#fff !important; border-color:#6366f1; }
+.tt-month-stat { background:#f8fafc; padding:1rem 1.5rem; display:flex; gap:2rem; align-items:center; font-size:.875rem; color:#64748b; border-bottom:1px solid #e2e8f0; }
+.tt-month-stat strong { color:#1e293b; font-size:1rem; }
+.tt-month-table { width:100%; border-collapse:collapse; }
+.tt-month-table th { padding:.75rem .5rem; text-align:center; font-size:.75rem; font-weight:600; color:#94a3b8; letter-spacing:.06em; text-transform:uppercase; border-bottom:2px solid #e2e8f0; }
+.tt-month-table td { height:88px; vertical-align:top; border:1px solid #f1f5f9; padding:.35rem .5rem; position:relative; }
+.tt-day-num { font-size:.75rem; font-weight:600; color:#94a3b8; }
+.tt-day-hours { font-size:.85rem; font-weight:700; color:#1e293b; margin-top:.2rem; }
+.tt-day-bar { height:4px; border-radius:2px; margin-top:.35rem; background:#6366f1; transition:width .3s; }
+.tt-day-other { background:#fafafa; }
+.tt-day-today td { background:#eff6ff !important; }
+.tt-day-today .tt-day-num { color:#6366f1; }
+.tt-day-weekend td { background:#fafafa; }
+.tt-day-leave td { background:#fef9c3; }
+.tt-day-leave td::after { content:"🏖"; position:absolute; top:4px; right:6px; font-size:.75rem; }
+.tt-day-empty .tt-day-hours { display:none; }
+.tt-week-submit { display:flex; align-items:center; justify-content:flex-end; padding:.5rem 1.5rem; gap:.75rem; background:#f8fafc; border-top:1px solid #e2e8f0; }
+.tt-submit-badge { display:inline-block; padding:.2rem .6rem; border-radius:20px; font-size:.7rem; font-weight:600; }
+.tt-badge-pending  { background:#fef3c7; color:#92400e; }
+.tt-badge-approved { background:#dcfce7; color:#166534; }
+.tt-badge-rejected { background:#fee2e2; color:#991b1b; }
+.tt-week-rows table td:first-child .tt-week-label { writing-mode:vertical-lr; transform:rotate(180deg); font-size:.65rem; color:#94a3b8; padding:0 .2rem; }
+</style>
+
+<div class="tt-month oh-card">
+  <div class="tt-month-nav">
+    <a href="?month={{ prev_month }}" class="tt-nav-btn">&#8249;</a>
+    <h2>{{ month_name }}</h2>
+    <a href="?month={{ next_month }}" class="tt-nav-btn">&#8250;</a>
+    <a href="?month={{ current_month }}" class="tt-nav-btn tt-this-btn">{% trans "This month" %}</a>
+    <div style="flex:1;"></div>
+    <a href="{% url 'time_tracker:timesheet-week' %}?week={{ year }}-W01" class="tt-nav-btn">
+      {% trans "Week view" %}
+    </a>
+  </div>
+
+  <div class="tt-month-stat">
+    <span>{% trans "Total this month" %}: <strong>{{ month_total_display|default:"0:00" }}</strong></span>
+    <span style="flex:1;"></span>
+  </div>
+
+  <table class="tt-month-table">
+    <thead>
+      <tr>
+        {% for h in day_headers %}<th>{{ h }}</th>{% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for week in weeks %}
+      <tr class="">
+        {% for day in week %}
+        <tr class="
+          {% if day.is_today %}tt-day-today{% endif %}
+          {% if day.is_weekend %}tt-day-weekend{% endif %}
+          {% if day.is_leave %}tt-day-leave{% endif %}
+          {% if not day.has_entries %}tt-day-empty{% endif %}
+        ">
+          <td class="{% if day.is_other_month %}tt-day-other{% endif %}"
+              onclick="window.location='{% url 'time_tracker:calendar-day' %}?date={{ day.date|date:'Y-m-d' }}';"
+              style="cursor:pointer;"
+              title="{{ day.date|date:'N j, Y' }}">
+            <div class="tt-day-num">{{ day.day_num }}</div>
+            {% if day.has_entries %}
+            <div class="tt-day-hours">{{ day.display }}</div>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {% if weeks_in_month %}
+  <div style="border-top:1px solid #e2e8f0; padding:1rem 1.5rem;">
+    <p style="font-size:.8rem;font-weight:600;color:#64748b;margin:0 0 .75rem;">{% trans "Timesheet submission by week" %}</p>
+    <div style="display:flex;flex-direction:column;gap:.5rem;">
+      {% for wk in weeks_in_month %}
+      <div style="display:flex;align-items:center;gap:.75rem;padding:.5rem .75rem;background:#f8fafc;border-radius:8px;font-size:.825rem;">
+        <span style="color:#64748b;min-width:90px;">{{ wk.start|date:"N j" }} – {{ wk.end|date:"N j" }}</span>
+        {% if wk.submission %}
+          <span class="tt-submit-badge
+            {% if wk.submission_status == 'pending' %}tt-badge-pending
+            {% elif wk.submission_status == 'approved' %}tt-badge-approved
+            {% else %}tt-badge-rejected{% endif %}">
+            {{ wk.submission.get_status_display }}
+          </span>
+          {% if wk.submission.notes %}
+          <span style="color:#94a3b8;font-size:.75rem;flex:1;">{{ wk.submission.notes|truncatechars:60 }}</span>
+          {% endif %}
+        {% else %}
+          <span style="color:#94a3b8;font-size:.75rem;">{% trans "Not submitted" %}</span>
+          <form method="post" action="{% url 'time_tracker:timesheet-submit' %}" style="margin-left:auto;">
+            {% csrf_token %}
+            <input type="hidden" name="week" value="{{ wk.label }}">
+            <button type="submit" class="tt-nav-btn" style="padding:.25rem .65rem;font-size:.75rem;">
+              {% trans "Submit" %}
+            </button>
+          </form>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

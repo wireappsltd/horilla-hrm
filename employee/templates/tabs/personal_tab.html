@@ -331,6 +331,26 @@
                                             <span class="oh-profile__info-value dateformat_changer">{{employee.employee_work_info.date_joining|default:_("None")}}</span>
                                         </li>
 
+                                        {% if employee.employee_work_info.date_joining %}
+                                        <li class="oh-profile__card-info-item">
+                                            <span class="oh-profile__info-label mb-1">
+                                                <ion-icon name="time-outline"></ion-icon>
+                                                <span>{% trans "Company Experience" %}</span>
+                                            </span>
+                                            <span class="oh-profile__info-value">{{employee.employee_work_info.company_experience_display}}</span>
+                                        </li>
+                                        {% endif %}
+
+                                        {% if employee.experience is not None or employee.employee_work_info.date_joining %}
+                                        <li class="oh-profile__card-info-item">
+                                            <span class="oh-profile__info-label mb-1">
+                                                <ion-icon name="briefcase-outline"></ion-icon>
+                                                <span>{% trans "Total Experience" %}</span>
+                                            </span>
+                                            <span class="oh-profile__info-value">{{employee.total_experience_display|default:_("None")}}</span>
+                                        </li>
+                                        {% endif %}
+
                                         <li class="oh-profile__card-info-item">
                                             <span class="oh-profile__info-label mb-1">
                                                 <ion-icon name="business-outline"></ion-icon>

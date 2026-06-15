@@ -1,0 +1,183 @@
+{% load i18n %}
+
+<!-- Colour accent bar -->
+<div class="tt-ep-accent" style="background:{{ color }};"></div>
+
+<!-- Summary header -->
+<div class="tt-ep-summary">
+  <div style="flex:1;min-width:0;">
+    <div class="tt-ep-summary-proj">
+      {% if entry.project_id %}{{ entry.project_id.title }}{% if entry.task_id %} · {{ entry.task_id.title }}{% endif %}{% else %}{% trans "No project" %}{% endif %}
+    </div>
+    <div class="tt-ep-summary-tags">
+      <span class="tt-ep-status tt-ep-status--{{ entry.status }}">{{ entry.get_status_display }}</span>
+      {% if entry.is_billable %}
+      <span class="tt-ep-bill-badge">{% trans "Billable" %}</span>
+      {% endif %}
+    </div>
+  </div>
+  <div class="tt-ep-dur">
+    <div class="tt-ep-dur-val" id="tt-ep-dur-val">{{ entry.duration_display }}</div>
+    {% if entry.start_time and entry.end_time %}
+    <div class="tt-ep-dur-sub">{{ entry.start_time|time:"H:i" }}–{{ entry.end_time|time:"H:i" }}</div>
+    {% endif %}
+  </div>
+</div>
+
+{% if can_edit %}
+
+<form id="tt-ep-form" class="tt-ep-form" onsubmit="ttEpSave(); return false;">
+
+  <!-- ── Description ── -->
+  <div class="tt-ep-section">
+    <div class="tt-ep-sec-lbl">{% trans "Description" %}</div>
+    <textarea name="description" id="tt-ep-desc" class="tt-ep-textarea"
+              rows="3"
+              placeholder="{% trans 'What did you work on?' %}">{{ entry.description }}</textarea>
+  </div>
+
+  <!-- ── Time ── -->
+  <div class="tt-ep-section">
+    <div class="tt-ep-sec-lbl">{% trans "Time" %}</div>
+    <div style="margin-bottom:.55rem;">
+      <label class="tt-ep-field-lbl" for="tt-ep-date">{% trans "Date" %}</label>
+      <input type="date" name="date" id="tt-ep-date" class="tt-ep-input"
+             value="{{ entry.date|date:'Y-m-d' }}">
+    </div>
+    <div class="tt-ep-time-row">
+      <div>
+        <label class="tt-ep-field-lbl" for="tt-ep-start">{% trans "Start" %}</label>
+        <input type="time" name="start_time" id="tt-ep-start" class="tt-ep-input"
+               value="{{ entry.start_time|time:'H:i'|default:'' }}"
+               oninput="ttCalcDur()">
+      </div>
+      <div>
+        <label class="tt-ep-field-lbl" for="tt-ep-end">{% trans "End" %}</label>
+        <input type="time" name="end_time" id="tt-ep-end" class="tt-ep-input"
+               value="{{ entry.end_time|time:'H:i'|default:'' }}"
+               oninput="ttCalcDur()">
+      </div>
+    </div>
+    <div class="tt-ep-dur-hint" id="tt-ep-dur-hint"></div>
+  </div>
+
+  <!-- ── Project ── -->
+  <div class="tt-ep-section">
+    <div class="tt-ep-sec-lbl">{% trans "Project" %}</div>
+    <select name="project_id" class="tt-ep-select">
+      <option value="">— {% trans "No project" %} —</option>
+      {% for p in projects %}
+      <option value="{{ p.id }}"{% if p.id == entry.project_id_id %} selected{% endif %}>
+        {{ p.title }}
+      </option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <!-- ── Billable ── -->
+  <div class="tt-ep-section">
+    <div class="tt-ep-billable-row">
+      <div class="tt-ep-billable-info">
+        <div class="tt-ep-billable-name">{% trans "Billable" %}</div>
+        <div class="tt-ep-billable-sub">{% trans "Include in billing reports" %}</div>
+      </div>
+      <label class="tt-toggle">
+        <input type="checkbox" name="is_billable" id="tt-ep-billable"
+               {% if entry.is_billable %}checked{% endif %}>
+        <span class="tt-toggle-track"></span>
+      </label>
+    </div>
+  </div>
+
+</form>
+
+<!-- Actions -->
+<div class="tt-ep-actions">
+  <button type="button" class="tt-ep-btn-save" onclick="ttEpSave()">
+    <span class="tt-save-icon"><i class="bi bi-check-lg"></i></span>
+    <span class="tt-spin"></span>
+    {% trans "Save changes" %}
+  </button>
+  <button type="button" class="tt-ep-btn-del"
+          onclick="ttEpDelete()"
+          title="{% trans 'Delete entry' %}">
+    <i class="bi bi-trash3"></i>
+  </button>
+</div>
+
+<script>
+(function () {
+  function ttCalcDur() {
+    var sEl   = document.getElementById("tt-ep-start");
+    var eEl   = document.getElementById("tt-ep-end");
+    var hint  = document.getElementById("tt-ep-dur-hint");
+    var durV  = document.getElementById("tt-ep-dur-val");
+    if (!sEl || !eEl) return;
+    var sv = sEl.value, ev = eEl.value;
+    if (sv && ev) {
+      var sp = sv.split(":"), ep = ev.split(":");
+      var sm = parseInt(sp[0]) * 60 + parseInt(sp[1]);
+      var em = parseInt(ep[0]) * 60 + parseInt(ep[1]);
+      var d  = em - sm;
+      if (d > 0) {
+        var h = Math.floor(d / 60), m = d % 60;
+        var label = (h > 0 ? h + "h " : "") + (m > 0 ? m + "m" : "");
+        if (hint) hint.textContent = label;
+        if (durV) durV.textContent = label;
+        return;
+      }
+    }
+    if (hint) hint.textContent = "";
+  }
+  window.ttCalcDur = ttCalcDur;
+  ttCalcDur();
+})();
+</script>
+
+{% else %}
+
+<!-- ── Read-only view ── -->
+<div class="tt-ep-section">
+  <div class="tt-ep-sec-lbl">{% trans "Description" %}</div>
+  <div class="tt-ep-ro-val{% if not entry.description %} tt-ep-ro-val--empty{% endif %}">
+    {{ entry.description|default:"—" }}
+  </div>
+</div>
+
+<div class="tt-ep-section">
+  <div class="tt-ep-sec-lbl">{% trans "Time" %}</div>
+  <div class="tt-ep-ro-grid">
+    <div>
+      <div class="tt-ep-field-lbl">{% trans "Date" %}</div>
+      <div class="tt-ep-ro-val">{{ entry.date|date:"N j, Y" }}</div>
+    </div>
+    <div>
+      <div class="tt-ep-field-lbl">{% trans "Duration" %}</div>
+      <div class="tt-ep-ro-val" style="font-weight:700;">{{ entry.duration_display }}</div>
+    </div>
+    {% if entry.start_time %}
+    <div>
+      <div class="tt-ep-field-lbl">{% trans "Start" %}</div>
+      <div class="tt-ep-ro-val">{{ entry.start_time|time:"H:i" }}</div>
+    </div>
+    <div>
+      <div class="tt-ep-field-lbl">{% trans "End" %}</div>
+      <div class="tt-ep-ro-val">{{ entry.end_time|time:"H:i"|default:"—" }}</div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{% if entry.project_id %}
+<div class="tt-ep-section">
+  <div class="tt-ep-sec-lbl">{% trans "Project" %}</div>
+  <div class="tt-ep-ro-val">{{ entry.project_id.title }}</div>
+</div>
+{% endif %}
+
+<div class="tt-ep-locked-note">
+  <i class="bi bi-lock-fill" style="color:#94a3b8;flex-shrink:0;"></i>
+  {% trans "This entry is locked and cannot be edited." %}
+</div>
+
+{% endif %}

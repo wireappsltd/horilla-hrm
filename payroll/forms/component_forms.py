@@ -34,6 +34,7 @@ from payroll.models.models import (
     MultipleCondition,
     Payslip,
     PayslipAutoGenerate,
+    PayrollReport,
     Reimbursement,
     ReimbursementMultipleAttachment,
 )
@@ -733,6 +734,9 @@ class LoanAccountForm(ModelForm):
         super().__init__(*args, **kwargs)
         self.initial["provided_date"] = str(datetime.date.today())
         self.initial["installment_start_date"] = str(datetime.date.today())
+        for field_name in ("loan_amount", "installments", "installment_amount"):
+            if field_name in self.fields:
+                self.fields[field_name].widget.attrs["onwheel"] = "this.blur()"
         if self.instance.pk:
             self.verbose_name = self.instance.title
             fields_to_exclude = ["employee_id", "installment_start_date"]
@@ -1238,3 +1242,92 @@ class PayslipAutoGenerateForm(ModelForm):
         context = {"form": self}
         table_html = render_to_string("common_form.html", context)
         return table_html
+
+
+# ===========================Payroll Reports================================
+class PayrollReportForm(Form):
+    """
+    Form used to create a payroll statutory report. Supports:
+      * ETF Monthly Contribution  -> pick a month (YYYY-MM)
+      * ETF Bi-Annual (Form II)   -> pick a half-year period + year
+    """
+
+    HALF_YEAR_CHOICES = [
+        ("H1", _("January - June")),
+        ("H2", _("July - December")),
+    ]
+
+    report_type = forms.ChoiceField(
+        choices=PayrollReport.REPORT_TYPE_CHOICES,
+        label=_("Report Type"),
+    )
+    month = forms.CharField(
+        required=False,
+        label=_("Month"),
+        widget=forms.DateInput(attrs={"type": "month"}),
+        help_text=_("Select the payroll period (month/year) for the report."),
+    )
+    half_year = forms.ChoiceField(
+        required=False,
+        choices=HALF_YEAR_CHOICES,
+        label=_("Half-Year Period"),
+        help_text=_("Half-year contribution period for the Form II return."),
+    )
+    year = forms.IntegerField(
+        required=False,
+        label=_("Year"),
+        widget=forms.NumberInput(attrs={"min": 2000, "max": 2100}),
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Use plain (non select2) styling so the fields render correctly inside
+        # the modal even before any select2 initialisation runs.
+        self.fields["report_type"].widget.attrs.update({"class": "oh-select w-100"})
+        self.fields["month"].widget.attrs.update({"class": "oh-input w-100"})
+        self.fields["half_year"].widget.attrs.update({"class": "oh-select w-100"})
+        self.fields["year"].widget.attrs.update({"class": "oh-input w-100"})
+        from datetime import date
+
+        self.fields["year"].initial = date.today().year
+
+    def clean(self):
+        """
+        Validate the period inputs based on the selected ``report_type`` and
+        populate ``start_date`` / ``end_date`` in ``cleaned_data``.
+        """
+        import calendar
+        from datetime import date
+
+        cleaned_data = super().clean()
+        report_type = cleaned_data.get("report_type")
+
+        if report_type == PayrollReport.REPORT_ETF_BI_ANNUAL:
+            half_year = cleaned_data.get("half_year")
+            year = cleaned_data.get("year")
+            if not half_year:
+                self.add_error("half_year", _("This field is required."))
+            if not year:
+                self.add_error("year", _("This field is required."))
+            if half_year and year:
+                if half_year == "H1":
+                    cleaned_data["start_date"] = date(year, 1, 1)
+                    cleaned_data["end_date"] = date(year, 6, 30)
+                else:
+                    cleaned_data["start_date"] = date(year, 7, 1)
+                    cleaned_data["end_date"] = date(year, 12, 31)
+        else:
+            value = cleaned_data.get("month")
+            if not value:
+                self.add_error("month", _("This field is required."))
+            else:
+                try:
+                    year, month = map(int, value.split("-"))
+                    start_date = date(year, month, 1)
+                    last_day = calendar.monthrange(year, month)[1]
+                    cleaned_data["start_date"] = start_date
+                    cleaned_data["end_date"] = date(year, month, last_day)
+                except (ValueError, AttributeError):
+                    self.add_error("month", _("Enter a valid month."))
+        return cleaned_data
+

@@ -1,0 +1,87 @@
+{% load i18n %}
+{% load widget_tweaks %}
+<div class="oh-modal__content">
+  <div class="oh-modal__header">
+    <h5 class="oh-modal__title">
+      {% if entry %}{% trans "Edit Time Entry" %}{% else %}{% trans "New Time Entry" %}{% endif %}
+    </h5>
+    <button type="button"
+            class="oh-btn oh-btn--transparent oh-btn--sm"
+            onclick="document.querySelector('.oh-modal--show').classList.remove('oh-modal--show')">
+      <ion-icon name="close-outline"></ion-icon>
+    </button>
+  </div>
+  <div class="oh-modal__body">
+    <form method="post"
+          {% if entry %}
+          hx-post="{% url 'time_tracker:time-entry-update' entry.pk %}"
+          {% else %}
+          hx-post="{% url 'time_tracker:time-entry-create' %}"
+          {% endif %}
+          hx-target="this"
+          hx-swap="outerHTML">
+      {% csrf_token %}
+      <div class="oh-form">
+        <div class="oh-form__group">
+          <label class="oh-label oh-label--required">{% trans "Employee" %}</label>
+          {% render_field form.employee_id %}
+        </div>
+        <div class="oh-form__group">
+          <label class="oh-label">{% trans "Date" %}</label>
+          {% render_field form.date %}
+        </div>
+        <div class="oh-form__group">
+          <label class="oh-label">{% trans "Start Time" %}</label>
+          {% render_field form.start_time %}
+        </div>
+        <div class="oh-form__group">
+          <label class="oh-label">{% trans "End Time" %}</label>
+          {% render_field form.end_time %}
+        </div>
+        <div class="oh-form__group">
+          <label class="oh-label">{% trans "Project" %}</label>
+          {% render_field form.project_id %}
+        </div>
+        <div class="oh-form__group">
+          <label class="oh-label">{% trans "Task" %}</label>
+          {% render_field form.task_id %}
+        </div>
+        <div class="oh-form__group">
+          <label class="oh-label">{% trans "Client" %}</label>
+          {% render_field form.client_id %}
+        </div>
+        <div class="oh-form__group">
+          <label class="oh-label">{% trans "Tags" %}</label>
+          {% render_field form.tag_ids %}
+        </div>
+        <div class="oh-form__group oh-form__group--full">
+          <label class="oh-label">{% trans "Description" %}</label>
+          {% render_field form.description %}
+        </div>
+        <div class="oh-form__group">
+          <label class="oh-label">{% trans "Status" %}</label>
+          {% render_field form.status %}
+        </div>
+        <div class="oh-form__group">
+          <label class="oh-label">{% trans "Billable" %}</label>
+          <div class="oh-switch">
+            {% render_field form.is_billable %}
+            <span class="oh-switch__slider"></span>
+          </div>
+        </div>
+        <div class="oh-form__group" id="tt-billable-rate-group">
+          <label class="oh-label">{% trans "Billable Rate" %}</label>
+          {% render_field form.billable_rate %}
+        </div>
+      </div>
+      {% for error in form.non_field_errors %}
+      <div class="oh-alert oh-alert--danger">{{ error }}</div>
+      {% endfor %}
+      <div class="oh-modal__footer">
+        <button type="submit" class="oh-btn oh-btn--primary">
+          {% if entry %}{% trans "Update" %}{% else %}{% trans "Save" %}{% endif %}
+        </button>
+      </div>
+    </form>
+  </div>
+</div>

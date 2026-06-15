@@ -1,0 +1,6 @@
+{% comment %}
+Delete/refresh response: the entries table (swapped into #tt-entries-list)
+plus an out-of-band refresh of the header stat tiles.
+{% endcomment %}
+{% include "time_tracker/tracker/entry_list_rows.html" %}
+{% include "time_tracker/tracker/tracker_oob.html" %}

@@ -1,0 +1,30 @@
+{% load i18n %}
+<div class="tt-stats">
+  <div class="tt-stat">
+    <div class="tt-stat__icon tt-stat__icon--indigo">
+      <ion-icon name="today-outline"></ion-icon>
+    </div>
+    <div class="tt-stat__body">
+      <span class="tt-stat__label">{% trans "Today" %}</span>
+      <span class="tt-stat__value" id="tt-stat-today">{{ stats.today_total }}</span>
+    </div>
+  </div>
+  <div class="tt-stat">
+    <div class="tt-stat__icon tt-stat__icon--emerald">
+      <ion-icon name="calendar-outline"></ion-icon>
+    </div>
+    <div class="tt-stat__body">
+      <span class="tt-stat__label">{% trans "This Week" %}</span>
+      <span class="tt-stat__value" id="tt-stat-week">{{ stats.week_total }}</span>
+    </div>
+  </div>
+  <div class="tt-stat">
+    <div class="tt-stat__icon tt-stat__icon--amber">
+      <ion-icon name="list-outline"></ion-icon>
+    </div>
+    <div class="tt-stat__body">
+      <span class="tt-stat__label">{% trans "Entries Today" %}</span>
+      <span class="tt-stat__value" id="tt-stat-count">{{ stats.entries_count }}</span>
+    </div>
+  </div>
+</div>

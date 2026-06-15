@@ -1,0 +1,6 @@
+{% comment %}
+Out-of-band response for an inline auto-save. Updates only the row's duration
+cell and the daily-total footer, leaving the editable inputs (and focus) intact.
+{% endcomment %}
+<strong id="tt-dur-{{ entry.pk }}" hx-swap-oob="true">{{ entry.duration_display }}</strong>
+<strong id="tt-today-total" hx-swap-oob="true">{{ today_total|default:"—" }}</strong>

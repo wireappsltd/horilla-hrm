@@ -18,6 +18,16 @@
         <span class="oh-navbar__clock-text">Check-Out</span>
       </a> -->
       <!-- CLOCK-OUT -->
+      <!-- TIME TRACKER WIDGET -->
+      {% if request.user.is_authenticated %}
+      <div id="tt-timer-widget-container"
+           hx-get="/time-tracker/timer/widget/"
+           hx-trigger="load"
+           hx-swap="innerHTML"
+           style="display:inline-flex;align-items:center;">
+      </div>
+      {% endif %}
+      <!-- END TIME TRACKER WIDGET -->
       <div class="oh-navbar__notifications" x-data="{openNotification: false}" @click="openNotification = true" >
         <a href="#" class="oh-navbar__notification-link" aria-label="Toggle Notifications" role="button">
           <ion-icon name="notifications-outline" class="oh-navbar__icon"></ion-icon>

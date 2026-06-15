@@ -1,0 +1,242 @@
+{% extends "index.html" %}
+{% load i18n %}
+{% load static %}
+
+{% block content %}
+<style>
+  /* ===== Shared tokens (match tracker / timesheet) ===== */
+  .tt-page { padding-bottom: 2rem; }
+  .tt-header { display: flex; align-items: flex-start; justify-content: space-between;
+    margin-bottom: 1.1rem; flex-wrap: wrap; gap: .75rem; }
+  .tt-header__title { font-size: 1.55rem; font-weight: 700; color: #111827; margin: 0; }
+  .tt-header__sub { color: #6b7280; font-size: .88rem; margin: .15rem 0 0; }
+  .tt-actions { display: flex; gap: .5rem; }
+  .tt-btn { display: inline-flex; align-items: center; gap: .35rem; border-radius: 10px;
+    padding: .55rem 1rem; font-size: .85rem; font-weight: 600; cursor: pointer;
+    text-decoration: none; border: 1px solid transparent; }
+  .tt-btn--ghost { background: #fff; border-color: #e8ebf0; color: #4b5563; }
+  .tt-btn--ghost:hover { background: #f5f6f8; color: #111827; }
+  .tt-btn--primary { background: #4f46e5; color: #fff; }
+  .tt-btn--primary:hover { background: #4338ca; }
+
+  .tt-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1.1rem; }
+  .tt-stat { display: flex; align-items: center; gap: .85rem; background: #fff;
+    border: 1px solid #e8ebf0; border-radius: 14px; padding: 1rem 1.15rem;
+    box-shadow: 0 1px 2px rgba(16,24,40,.04); }
+  .tt-stat__icon { width: 44px; height: 44px; border-radius: 11px; flex: none;
+    display: flex; align-items: center; justify-content: center; font-size: 1.4rem; }
+  .tt-stat__icon--indigo { background: #eef2ff; color: #4f46e5; }
+  .tt-stat__icon--emerald { background: #ecfdf5; color: #10b981; }
+  .tt-stat__icon--amber { background: #fffbeb; color: #f59e0b; }
+  .tt-stat__icon--sky { background: #eff6ff; color: #0ea5e9; }
+  .tt-stat__body { display: flex; flex-direction: column; line-height: 1.2; }
+  .tt-stat__label { font-size: .76rem; color: #8a93a3; text-transform: uppercase;
+    letter-spacing: .04em; font-weight: 600; }
+  .tt-stat__value { font-family: 'SFMono-Regular', Consolas, monospace; font-size: 1.35rem;
+    font-weight: 700; color: #111827; margin-top: .15rem; }
+
+  .tt-card { background: #fff; border: 1px solid #e8ebf0; border-radius: 14px;
+    box-shadow: 0 1px 2px rgba(16,24,40,.04); overflow: hidden; }
+  .tt-card__head { display: flex; align-items: center; justify-content: space-between;
+    padding: 1rem 1.25rem; border-bottom: 1px solid #f0f1f4; }
+  .tt-card__title { font-size: 1rem; font-weight: 700; color: #111827; }
+
+  .tt-grid2 { display: grid; grid-template-columns: 1.4fr 1fr; gap: 1rem; margin-bottom: 1.1rem; }
+
+  /* 7-day bar chart */
+  .tt-chart { display: flex; align-items: flex-end; gap: .65rem; height: 180px;
+    padding: 1.25rem; }
+  .tt-chart__col { flex: 1; display: flex; flex-direction: column; align-items: center;
+    justify-content: flex-end; height: 100%; gap: .4rem; }
+  .tt-chart__barwrap { flex: 1; width: 100%; display: flex; align-items: flex-end;
+    justify-content: center; }
+  .tt-chart__bar { width: 60%; max-width: 30px; min-height: 4px; border-radius: 6px 6px 0 0;
+    background: #c7d2fe; transition: height .3s ease; }
+  .tt-chart__bar--today { background: #4f46e5; }
+  .tt-chart__bar:hover { background: #818cf8; }
+  .tt-chart__day { font-size: .72rem; color: #9aa1ad; font-weight: 600; }
+  .tt-chart__day--today { color: #4f46e5; }
+  .tt-chart__val { font-size: .66rem; color: #6b7280; font-family: monospace; min-height: .9rem; }
+
+  /* top projects */
+  .tt-proj-list { padding: 1rem 1.25rem; display: flex; flex-direction: column; gap: .9rem; }
+  .tt-proj-row__top { display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: .35rem; }
+  .tt-proj-row__name { display: flex; align-items: center; gap: .5rem; font-size: .86rem;
+    color: #374151; font-weight: 500; }
+  .tt-proj-row__time { font-family: monospace; font-weight: 700; font-size: .82rem; color: #111827; }
+  .tt-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+  .tt-track { height: 8px; background: #f1f2f5; border-radius: 6px; overflow: hidden; }
+  .tt-track__fill { height: 100%; border-radius: 6px; transition: width .35s ease; }
+
+  /* recent table */
+  .tt-table { width: 100%; border-collapse: collapse; }
+  .tt-table thead th { text-align: left; font-size: .72rem; font-weight: 700; color: #9aa1ad;
+    text-transform: uppercase; letter-spacing: .05em; padding: .7rem 1.25rem; background: #fafbfc;
+    border-bottom: 1px solid #f0f1f4; }
+  .tt-table tbody td { padding: .7rem 1.25rem; border-bottom: 1px solid #f4f5f7; vertical-align: middle;
+    font-size: .87rem; color: #374151; }
+  .tt-table tbody tr:hover { background: #fbfbfd; }
+  .tt-proj-cell { display: flex; align-items: center; gap: .5rem; }
+  .tt-dur { font-family: 'SFMono-Regular', Consolas, monospace; font-weight: 700; font-size: .85rem;
+    color: #1f2937; background: #f3f4f6; border-radius: 7px; padding: .25rem .55rem; }
+  .tt-pill { font-size: .72rem; font-weight: 600; padding: .2rem .55rem; border-radius: 20px; }
+  .tt-pill--yes { background: #ecfdf5; color: #059669; }
+  .tt-pill--no { background: #f3f4f6; color: #9ca3af; }
+
+  .tt-empty { padding: 3rem 1rem; text-align: center; }
+  .tt-empty__icon { font-size: 3rem; color: #d1d5db; }
+  .tt-empty__text { color: #9ca3af; margin-top: .6rem; font-size: .92rem; }
+
+  @media (max-width: 992px) { .tt-stats { grid-template-columns: repeat(2,1fr); } .tt-grid2 { grid-template-columns: 1fr; } }
+  @media (max-width: 576px) { .tt-stats { grid-template-columns: 1fr; } }
+</style>
+
+<div class="oh-wrapper tt-page">
+  <!-- Header -->
+  <div class="tt-header">
+    <div>
+      <h1 class="tt-header__title">{% trans "Reports" %}</h1>
+      <p class="tt-header__sub">{% trans "Your time at a glance" %} &middot; {{ today|date:"F Y" }}</p>
+    </div>
+    <div class="tt-actions">
+      <a href="{% url 'time_tracker:reports-summary' %}" class="tt-btn tt-btn--ghost">
+        <ion-icon name="bar-chart-outline"></ion-icon> {% trans "Summary" %}
+      </a>
+      <a href="{% url 'time_tracker:reports-export' %}" class="tt-btn tt-btn--primary">
+        <ion-icon name="download-outline"></ion-icon> {% trans "Export" %}
+      </a>
+    </div>
+  </div>
+
+  <!-- Stat tiles -->
+  <div class="tt-stats">
+    <div class="tt-stat">
+      <div class="tt-stat__icon tt-stat__icon--indigo"><ion-icon name="time-outline"></ion-icon></div>
+      <div class="tt-stat__body">
+        <span class="tt-stat__label">{% trans "This Week" %}</span>
+        <span class="tt-stat__value">{{ hours_this_week }}</span>
+      </div>
+    </div>
+    <div class="tt-stat">
+      <div class="tt-stat__icon tt-stat__icon--emerald"><ion-icon name="calendar-outline"></ion-icon></div>
+      <div class="tt-stat__body">
+        <span class="tt-stat__label">{% trans "This Month" %}</span>
+        <span class="tt-stat__value">{{ hours_this_month }}</span>
+      </div>
+    </div>
+    <div class="tt-stat">
+      <div class="tt-stat__icon tt-stat__icon--amber"><ion-icon name="cash-outline"></ion-icon></div>
+      <div class="tt-stat__body">
+        <span class="tt-stat__label">{% trans "Billable (Month)" %}</span>
+        <span class="tt-stat__value">{{ billable_this_month }}</span>
+      </div>
+    </div>
+    <div class="tt-stat">
+      <div class="tt-stat__icon tt-stat__icon--sky"><ion-icon name="today-outline"></ion-icon></div>
+      <div class="tt-stat__body">
+        <span class="tt-stat__label">{% trans "Entries Today" %}</span>
+        <span class="tt-stat__value">{{ entries_today }}</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Chart + Top projects -->
+  <div class="tt-grid2">
+    <div class="tt-card">
+      <div class="tt-card__head">
+        <span class="tt-card__title">{% trans "Last 7 Days" %}</span>
+      </div>
+      <div class="tt-chart">
+        {% for d in last7 %}
+        <div class="tt-chart__col">
+          <span class="tt-chart__val">{{ d.display }}</span>
+          <div class="tt-chart__barwrap">
+            <div class="tt-chart__bar {% if d.is_today %}tt-chart__bar--today{% endif %}"
+                 style="height: {% if d.pct %}{{ d.pct }}%{% else %}4px{% endif %};"
+                 title="{{ d.display }}"></div>
+          </div>
+          <span class="tt-chart__day {% if d.is_today %}tt-chart__day--today{% endif %}">{{ d.label }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="tt-card">
+      <div class="tt-card__head">
+        <span class="tt-card__title">{% trans "Top Projects" %}</span>
+        <span class="tt-header__sub" style="margin:0;">{% trans "This month" %}</span>
+      </div>
+      {% if top_projects %}
+      <div class="tt-proj-list">
+        {% for p in top_projects %}
+        <div class="tt-proj-row">
+          <div class="tt-proj-row__top">
+            <span class="tt-proj-row__name">
+              <span class="tt-dot" style="background:{{ p.color }};"></span>{{ p.name }}
+            </span>
+            <span class="tt-proj-row__time">{{ p.display }}</span>
+          </div>
+          <div class="tt-track">
+            <div class="tt-track__fill" style="width:{{ p.pct }}%; background:{{ p.color }};"></div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="tt-empty">
+        <ion-icon name="folder-open-outline" class="tt-empty__icon"></ion-icon>
+        <p class="tt-empty__text">{% trans "No project time this month." %}</p>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Recent activity -->
+  <div class="tt-card">
+    <div class="tt-card__head">
+      <span class="tt-card__title">{% trans "Recent Activity" %}</span>
+    </div>
+    {% if recent_entries %}
+    <table class="tt-table">
+      <thead>
+        <tr>
+          <th>{% trans "Date" %}</th>
+          <th>{% trans "Project" %}</th>
+          <th>{% trans "Description" %}</th>
+          <th>{% trans "Duration" %}</th>
+          <th>{% trans "Billable" %}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for entry in recent_entries %}
+        <tr>
+          <td style="white-space:nowrap;">{{ entry.date|date:"d M Y" }}</td>
+          <td>
+            <span class="tt-proj-cell">
+              <span class="tt-dot" style="background:{{ entry.color }};"></span>
+              {% if entry.project_id %}{{ entry.project_id.title }}{% else %}<span class="text-muted">{% trans "No project" %}</span>{% endif %}
+            </span>
+          </td>
+          <td>{{ entry.description|truncatechars:50|default:"—" }}</td>
+          <td><span class="tt-dur">{{ entry.duration_display }}</span></td>
+          <td>
+            {% if entry.is_billable %}
+            <span class="tt-pill tt-pill--yes">{% trans "Billable" %}</span>
+            {% else %}
+            <span class="tt-pill tt-pill--no">{% trans "Non-billable" %}</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="tt-empty">
+      <ion-icon name="time-outline" class="tt-empty__icon"></ion-icon>
+      <p class="tt-empty__text">{% trans "No recent activity." %}</p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

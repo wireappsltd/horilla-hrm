@@ -738,12 +738,13 @@ def create_contracts_in_thread(new_work_info_list, update_work_info_list):
     Contract.objects.bulk_create(contracts_list)
 
 
-def bulk_create_work_info_import(success_lists):
+def bulk_create_work_info_import(success_lists, acting_user=None):
     """
     Bulk creation of employee work info instances based on the excel import of employees
     """
     new_work_info_list = []
     update_work_info_list = []
+    role_changes = []  # tuples of (employee_obj, old_role_id, new_role_obj)
 
     badge_ids = [row["Badge ID"] for row in success_lists]
     departments = set(row.get("Department") for row in success_lists)
@@ -771,11 +772,11 @@ def bulk_create_work_info_import(success_lists):
         for emp in (
             EmployeeWorkInformation.objects.filter(
                 employee_id__in=existing_employees.values()
-            ).only("employee_id")
+            ).only("employee_id", "job_role_id")
             if is_postgres
             else chain.from_iterable(
                 EmployeeWorkInformation.objects.filter(employee_id__in=chunk).only(
-                    "employee_id"
+                    "employee_id", "job_role_id"
                 )
                 for chunk in chunked(list(existing_employees.values()), 900)
             )
@@ -903,7 +904,14 @@ def bulk_create_work_info_import(success_lists):
                 salary_hour=salary_hour,
             )
             new_work_info_list.append(employee_work_info)
+            if job_role_obj is not None:
+                role_changes.append((employee_obj, None, job_role_obj))
         else:
+            # Capture old role before mutating the instance.
+            old_role_pk = employee_work_info.job_role_id_id
+            new_role_pk = job_role_obj.pk if job_role_obj else None
+            if old_role_pk != new_role_pk:
+                role_changes.append((employee_obj, old_role_pk, job_role_obj))
             # Update the existing instance
             employee_work_info.email = email
             employee_work_info.department_id = department_obj
@@ -956,3 +964,28 @@ def bulk_create_work_info_import(success_lists):
             args=(new_work_info_list, update_work_info_list),
         )
         contract_creation_thread.start()
+
+    if role_changes and acting_user is not None:
+        from horilla_audit.methods import log_activity
+
+        old_role_pks = {pk for _, pk, _ in role_changes if pk}
+        old_roles = (
+            {jr.pk: jr for jr in JobRole.objects.filter(pk__in=old_role_pks)}
+            if old_role_pks
+            else {}
+        )
+        for emp_obj, old_pk, new_role in role_changes:
+            old_role = old_roles.get(old_pk) if old_pk else None
+            log_activity(
+                acting_user,
+                module="employee",
+                action="Role change",
+                target=emp_obj,
+                changes={
+                    "source": "import",
+                    "job_role": {
+                        "from": str(old_role) if old_role else None,
+                        "to": str(new_role) if new_role else None,
+                    },
+                },
+            )
