@@ -18,6 +18,7 @@ from django.db.models import Q
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
+from django.utils.text import get_valid_filename
 from django.utils.translation import gettext_lazy as _
 from xhtml2pdf import pisa
 
@@ -428,7 +429,7 @@ def download_apit_t10(request, employee_id):
     )
 
     year_label = selected_year.replace("/", "-")
-    file_name = (
+    file_name = get_valid_filename(
         f"APIT T10 - {employee.get_full_name()} - {year_label}.pdf"
     )
     response = HttpResponse(result.getvalue(), content_type="application/pdf")
