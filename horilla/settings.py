@@ -99,6 +99,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "horilla.horilla_middlewares.ActiveUserMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
+    "base.middleware.InactivityTimeoutMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
