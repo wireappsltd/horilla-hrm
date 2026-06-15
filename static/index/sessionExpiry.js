@@ -1,12 +1,6 @@
 /**
  * sessionExpiry.js
  *
- * When the inactivity timeout expires, the server responds to any background
- * request (jQuery AJAX, fetch, XHR) with an empty `401` carrying the
- * `X-Session-Expired` / `X-Login-Redirect` headers instead of the login page
- * HTML. Without this interceptor those responses could leave the user staring
- * at a stale module, or the login form could be injected into the page.
- *
  * This script performs a single, full-page redirect to the standalone login
  * screen the moment any such response is observed. HTMX handles the
  * `HX-Redirect` header natively, so it is intentionally not duplicated here.
