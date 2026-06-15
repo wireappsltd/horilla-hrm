@@ -235,9 +235,11 @@ def _build_etf_bi_annual_file(report):
 def _get_payslips_for_period(report):
     """
     Return the payslips that overlap the report period for the report company.
+
     """
     payslips = Payslip.objects.filter(
-        Q(start_date__lte=report.end_date) & Q(end_date__gte=report.start_date)
+        Q(start_date__lte=report.end_date) & Q(end_date__gte=report.start_date),
+        status="paid",
     )
     if report.company_id:
         payslips = payslips.filter(
