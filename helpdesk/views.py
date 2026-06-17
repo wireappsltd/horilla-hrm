@@ -40,6 +40,7 @@ from helpdesk.filter import (
 )
 from helpdesk.forms import (
     AttachmentForm,
+    AccessRequestForm,
     CommentForm,
     DepartmentManagerCreateForm,
     FAQCategoryForm,
@@ -58,8 +59,10 @@ from helpdesk.methods import is_department_manager
 from helpdesk.models import (
     FAQ,
     ISO_GROUP_NAME,
+    DIVISIONAL_HEAD_GROUP_NAME,
     ISO_STATUS_CHOICES,
     TICKET_STATUS,
+    AccessRequest,
     Attachment,
     ClaimRequest,
     Comment,
@@ -2489,6 +2492,32 @@ def _get_iso_officer_users():
     return list(iso_users)
 
 
+def _is_divisional_head(user):
+    """Return True if the user belongs to the Divisional Head group."""
+    return user.groups.filter(name=DIVISIONAL_HEAD_GROUP_NAME).exists()
+
+
+def _get_divisional_head_users():
+    """
+    Return a list of User objects who are Divisional Heads (members of the
+    Divisional Head group) OR superusers. Used for in-app notifications.
+    """
+    dh_users = User.objects.filter(
+        Q(groups__name=DIVISIONAL_HEAD_GROUP_NAME) | Q(is_superuser=True),
+        is_active=True,
+    ).distinct()
+    return list(dh_users)
+
+
+def _is_access_request_owner(user, access_request):
+    """Return True when the authenticated user owns the access request."""
+    current_employee = getattr(user, "employee_get", None)
+    ticket_employee = getattr(access_request.ticket, "employee_id", None)
+    return bool(
+        current_employee and ticket_employee and current_employee == ticket_employee
+    )
+
+
 def _get_forward_employee_ids_and_employees(users):
     """Map selected auth users or employees to employee IDs for Ticket.forwarding compatibility."""
     employee_ids = []
@@ -2548,13 +2577,43 @@ def iso_forms_home(request):
             "description": _("Request password reset access for internal systems."),
             "icon": "key-outline",
             "create_url": reverse("password-reset-request-create"),
-        }
+            "target": "passwordResetModalTarget",
+            "modal": "passwordResetModal",
+        },
+        {
+            "title": _("Access Request & Deactivation"),
+            "description": _(
+                "Request or deactivate system access through a two-stage approval."
+            ),
+            "icon": "shield-checkmark-outline",
+            "create_url": reverse("access-request-create"),
+            "target": "accessRequestModalTarget",
+            "modal": "accessRequestModal",
+        },
     ]
+
+    # ── Access Requests visible to the current user ──
+    access_qs = AccessRequest.objects.select_related(
+        "ticket", "ticket__employee_id"
+    ).order_by("-created_at")
+    is_iso = request.user.is_superuser or _is_iso_officer(request.user)
+    is_dh = request.user.is_superuser or _is_divisional_head(request.user)
+    if not is_iso and not is_dh:
+        if current_employee:
+            access_qs = access_qs.filter(
+                Q(ticket__employee_id=current_employee)
+                | Q(ticket__assigned_to=current_employee)
+                | Q(forward_to=request.user)
+            ).distinct()
+        else:
+            access_qs = access_qs.none()
 
     context = {
         "password_reset_requests": queryset,
+        "access_requests": access_qs,
         "current_employee": current_employee,
         "is_iso_officer": request.user.is_superuser or _is_iso_officer(request.user),
+        "is_divisional_head": is_dh,
         "iso_form_options": iso_form_options,
     }
     return render(request, "helpdesk/iso_forms/index.html", context)
@@ -3203,3 +3262,506 @@ def password_reset_request_delete(request, pr_id):
             messages.error(request, _("You cannot delete this password reset request."))
 
     return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+
+# ── ACCESS REQUEST & DEACTIVATION VIEWS ──────────────────────────────────────
+
+
+def _get_access_request_ticket_type():
+    """Return (creating if needed) the TicketType for Access Request tickets."""
+    ticket_type, _created = TicketType.objects.get_or_create(
+        title="Access Request & Deactivation",
+        defaults={"type": "service_request", "prefix": "ACR"},
+    )
+    return ticket_type
+
+
+def _build_access_request_description(access_request, user_display):
+    """Build the HTML description block shown on the linked Ticket."""
+    return (
+        f"<b>{access_request.get_sub_type_display()} Details:</b><br><br>"
+        f"<b>Sub Type:</b> {access_request.get_sub_type_display()}<br>"
+        f"<b>User ID (Email):</b> {access_request.user_id}<br>"
+        f"<b>Requested Date:</b> {access_request.requested_date}<br>"
+        f"<b>Business Critical Systems:</b> {access_request.get_business_critical_display()}<br>"
+        f"<b>Level of Access:</b> {access_request.get_level_of_access_display()}<br>"
+        f"<b>Domain:</b> {access_request.get_domain_display()}<br>"
+        f"<b>User:</b> {user_display}<br>"
+        f"<b>Reason:</b> {access_request.reason}"
+    )
+
+
+@login_required
+@hx_request_required
+def access_request_create(request):
+    """
+    GET  → renders the Access Request modal form.
+    POST → creates Ticket + AccessRequest (status PENDING), notifies the
+           Divisional Heads (Stage 1 approvers).
+    """
+    form = AccessRequestForm(request=request)
+
+    if request.method == "POST":
+        form = AccessRequestForm(request.POST, request=request)
+        if form.is_valid():
+            ticket_type = _get_access_request_ticket_type()
+            priority = form.cleaned_data.get("priority", "medium")
+            deadline = form.cleaned_data.get("deadline") or (
+                timezone.now() + timedelta(days=7)
+            ).date()
+
+            selected_employee = form.cleaned_data["employee"]
+            selected_forward_users = list(form.cleaned_data["forward_to"])
+            user_display = _format_password_reset_user(selected_employee)
+
+            access_request = form.save(commit=False)
+            access_request.status = "PENDING"
+
+            forward_employee_ids, _emps = _get_forward_employee_ids_and_employees(
+                selected_forward_users
+            )
+            raised_on = ",".join(forward_employee_ids) or str(selected_employee.id)
+
+            ticket = Ticket(
+                title=f"{access_request.get_sub_type_display()} – {access_request.get_domain_display()}",
+                employee_id=selected_employee,
+                ticket_type=ticket_type,
+                description=_build_access_request_description(
+                    access_request, user_display
+                ),
+                priority=priority,
+                assigning_type="individual",
+                raised_on=raised_on,
+                deadline=deadline,
+                status="new",
+            )
+            ticket.save()
+            ticket.assigned_to.add(selected_employee)
+
+            access_request.ticket = ticket
+            access_request.save()
+            access_request.forward_to.set(selected_forward_users)
+
+            notification_actor = getattr(
+                request.user, "employee_get", selected_employee
+            )
+
+            # Stage 1: notify Divisional Heads that a review is required.
+            try:
+                dh_users = [
+                    u
+                    for u in _get_divisional_head_users()
+                    if u.pk != request.user.pk
+                ]
+                if dh_users:
+                    notify.send(
+                        notification_actor,
+                        recipient=dh_users,
+                        verb=(
+                            f"New Access Request submitted by "
+                            f"{selected_employee.get_full_name()} awaiting your approval."
+                        ),
+                        icon="shield-checkmark",
+                        redirect=reverse(
+                            "ticket-detail", kwargs={"ticket_id": ticket.id}
+                        ),
+                    )
+            except Exception as exc:
+                logger.error("Access request DH notify error: %s", exc)
+
+            messages.success(
+                request,
+                _(
+                    "Your access request has been submitted and is pending "
+                    "Divisional Head approval."
+                ),
+            )
+            return HttpResponse("<script>window.location.reload()</script>")
+
+    context = {"form": form}
+    return render(request, "helpdesk/ticket/access_request_form.html", context)
+
+
+@login_required
+@hx_request_required
+def access_request_update(request, ar_id):
+    """Allow the owner / ISO officer to edit a PENDING Access Request."""
+    access_request = AccessRequest.objects.get(id=ar_id)
+    ticket = access_request.ticket
+
+    current_employee = getattr(request.user, "employee_get", None)
+    has_access = (
+        request.user.is_superuser
+        or _is_iso_officer(request.user)
+        or current_employee == ticket.employee_id
+    )
+    if not has_access:
+        messages.info(request, _("You don't have permission."))
+        return HttpResponse("<script>window.location.reload()</script>")
+
+    if access_request.status != "PENDING":
+        messages.info(
+            request,
+            _("This request has already been reviewed and cannot be edited."),
+        )
+        return HttpResponse("<script>window.location.reload()</script>")
+
+    form = AccessRequestForm(instance=access_request, request=request)
+    if request.method == "POST":
+        access_request.refresh_from_db()
+        if access_request.status != "PENDING":
+            messages.info(
+                request,
+                _("This request has already been reviewed and cannot be edited."),
+            )
+            return HttpResponse("<script>window.location.reload()</script>")
+        form = AccessRequestForm(
+            request.POST, instance=access_request, request=request
+        )
+        if form.is_valid():
+            selected_employee = form.cleaned_data["employee"]
+            selected_forward_users = list(form.cleaned_data["forward_to"])
+            user_display = _format_password_reset_user(selected_employee)
+
+            access_request = form.save(commit=False)
+            access_request.save()
+            access_request.forward_to.set(selected_forward_users)
+
+            forward_employee_ids, _emps = _get_forward_employee_ids_and_employees(
+                selected_forward_users
+            )
+            ticket = Ticket.objects.get(pk=access_request.ticket_id)
+            ticket.employee_id = selected_employee
+            ticket.priority = form.cleaned_data.get("priority")
+            ticket.deadline = form.cleaned_data.get("deadline")
+            ticket.title = (
+                f"{access_request.get_sub_type_display()} – "
+                f"{access_request.get_domain_display()}"
+            )
+            ticket.description = _build_access_request_description(
+                access_request, user_display
+            )
+            ticket.raised_on = ",".join(forward_employee_ids) or str(
+                selected_employee.id
+            )
+            ticket.save()
+            ticket.assigned_to.clear()
+            ticket.assigned_to.add(selected_employee)
+
+            messages.success(request, _("Access request updated successfully."))
+            return HttpResponse("<script>window.location.reload()</script>")
+
+    context = {"form": form, "access_request": access_request}
+    return render(request, "helpdesk/ticket/access_request_form.html", context)
+
+
+def _access_review_comment(ticket, actor_user, heading, status_label, body, feedback):
+    """Create an inline comment entry on the ticket (reviewer audit trail)."""
+    try:
+        comment_text = (
+            f"<strong>{heading}</strong><br>"
+            f"<strong>Status:</strong> {status_label}<br>"
+            f"{body}"
+        )
+        if feedback:
+            comment_text += f"<br><strong>Feedback:</strong> {feedback}"
+        Comment.objects.create(
+            comment=comment_text,
+            ticket=ticket,
+            employee_id=actor_user.employee_get,
+        )
+    except Exception as exc:
+        logger.error("Access request review comment error: %s", exc)
+
+
+@login_required
+def divisional_head_review_access_request(request, ar_id):
+    """
+    Stage 1 — Divisional Head approves or rejects a PENDING Access Request.
+    Approval advances the request to Stage 2 (ISO Officer review).
+    """
+    if not request.user.is_superuser and not _is_divisional_head(request.user):
+        messages.info(request, _("Only a Divisional Head can review this request."))
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    access_request = AccessRequest.objects.get(id=ar_id)
+
+    if _is_access_request_owner(request.user, access_request):
+        messages.info(request, _("You cannot approve or reject your own request."))
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    if access_request.status != "PENDING":
+        messages.info(request, _("This request is not awaiting Divisional Head review."))
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    if request.method == "POST":
+        review_form = ISOReviewForm(request.POST)
+        if review_form.is_valid():
+            action = review_form.cleaned_data["action"]
+            feedback = review_form.cleaned_data.get("iso_feedback", "").strip()
+
+            access_request.dh_reviewed_by = request.user
+            access_request.dh_reviewed_at = timezone.now()
+            access_request.feedback = feedback
+            ticket = access_request.ticket
+            requestor = ticket.employee_id
+
+            if action == "approve":
+                access_request.status = "DH_APPROVED"
+                ticket.status = "in_progress"
+                _access_review_comment(
+                    ticket,
+                    request.user,
+                    _("Divisional Head Review – Approved"),
+                    _("Divisional Head Approved"),
+                    _("Forwarded to the ISO Officer for final approval."),
+                    feedback,
+                )
+                verb = _("Your access request has been approved by the Divisional Head and forwarded to ISO.")
+                messages.success(request, _("Access request approved (Stage 1)."))
+                # Notify Stage 2 reviewers (ISO officers).
+                try:
+                    iso_recipients = list(access_request.forward_to.all()) or [
+                        u for u in _get_iso_officer_users()
+                    ]
+                    if iso_recipients:
+                        notify.send(
+                            request.user.employee_get,
+                            recipient=iso_recipients,
+                            verb=(
+                                f"Access request by {requestor.get_full_name()} "
+                                f"is awaiting ISO Officer approval."
+                            ),
+                            icon="shield-checkmark",
+                            redirect=reverse(
+                                "ticket-detail", kwargs={"ticket_id": ticket.id}
+                            ),
+                        )
+                except Exception as exc:
+                    logger.error("Access request ISO notify error: %s", exc)
+            else:
+                access_request.status = "REJECTED"
+                ticket.status = "canceled"
+                _access_review_comment(
+                    ticket,
+                    request.user,
+                    _("Divisional Head Review – Rejected"),
+                    _("Rejected"),
+                    _("Your access request has been rejected by the Divisional Head."),
+                    feedback,
+                )
+                verb = _("Your access request has been rejected by the Divisional Head.")
+                messages.success(request, _("Access request rejected."))
+
+            access_request.save()
+            ticket.save()
+
+            try:
+                notify.send(
+                    request.user.employee_get,
+                    recipient=requestor.employee_user_id,
+                    verb=verb,
+                    icon="shield-checkmark",
+                    redirect=reverse(
+                        "ticket-detail", kwargs={"ticket_id": ticket.id}
+                    ),
+                )
+            except Exception as exc:
+                logger.error("Access request DH review notify error: %s", exc)
+        else:
+            for error in review_form.errors.values():
+                messages.error(request, error)
+
+    return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+
+@login_required
+def iso_review_access_request(request, ar_id):
+    """
+    Stage 2 — ISO Officer approves or rejects an Access Request that has
+    already cleared Stage 1 (Divisional Head). Approval completes the request.
+    """
+    if not request.user.is_superuser and not _is_iso_officer(request.user):
+        messages.info(request, _("Only an ISO Officer can review this request."))
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    access_request = AccessRequest.objects.get(id=ar_id)
+
+    if _is_access_request_owner(request.user, access_request):
+        messages.info(request, _("You cannot approve or reject your own request."))
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    if access_request.status != "DH_APPROVED":
+        messages.info(
+            request,
+            _("This request must be approved by the Divisional Head before ISO review."),
+        )
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    if request.method == "POST":
+        review_form = ISOReviewForm(request.POST)
+        if review_form.is_valid():
+            action = review_form.cleaned_data["action"]
+            feedback = review_form.cleaned_data.get("iso_feedback", "").strip()
+
+            access_request.iso_reviewed_by = request.user
+            access_request.iso_reviewed_at = timezone.now()
+            access_request.feedback = feedback
+            ticket = access_request.ticket
+            requestor = ticket.employee_id
+
+            if action == "approve":
+                access_request.status = "COMPLETED"
+                ticket.status = "resolved"
+                _access_review_comment(
+                    ticket,
+                    request.user,
+                    _("ISO Review – Approved"),
+                    _("Completed"),
+                    _("Your access request has been approved by the ISO Officer."),
+                    feedback,
+                )
+                verb = _("Your access request has been approved by the ISO Officer and completed.")
+                messages.success(request, _("Access request approved (Stage 2)."))
+            else:
+                access_request.status = "REJECTED"
+                ticket.status = "canceled"
+                _access_review_comment(
+                    ticket,
+                    request.user,
+                    _("ISO Review – Rejected"),
+                    _("Rejected"),
+                    _("Your access request has been rejected by the ISO Officer."),
+                    feedback,
+                )
+                verb = _("Your access request has been rejected by the ISO Officer.")
+                messages.success(request, _("Access request rejected."))
+
+            access_request.save()
+            ticket.save()
+
+            try:
+                notify.send(
+                    request.user.employee_get,
+                    recipient=requestor.employee_user_id,
+                    verb=verb,
+                    icon="shield-checkmark",
+                    redirect=reverse(
+                        "ticket-detail", kwargs={"ticket_id": ticket.id}
+                    ),
+                )
+            except Exception as exc:
+                logger.error("Access request ISO review notify error: %s", exc)
+        else:
+            for error in review_form.errors.values():
+                messages.error(request, error)
+
+    return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+
+@login_required
+def access_request_acknowledge(request, ar_id):
+    """Requestor acknowledges a COMPLETED Access Request → CLOSED."""
+    if request.method != "POST":
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    access_request = AccessRequest.objects.get(id=ar_id)
+    if not _is_access_request_owner(request.user, access_request):
+        messages.error(request, _("Only the requestor can close this request."))
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    if access_request.status != "COMPLETED":
+        messages.info(request, _("This request is not ready to be closed."))
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    form = ISOAcknowledgementForm(request.POST)
+    if not form.is_valid():
+        for error in form.errors.values():
+            messages.error(request, error)
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    comment = form.cleaned_data["comment"]
+    ticket = access_request.ticket
+    access_request.status = "CLOSED"
+    access_request.closed_by = request.user
+    access_request.save()
+    ticket.status = "resolved"
+    ticket.save()
+
+    _access_review_comment(
+        ticket,
+        request.user,
+        _("Request Acknowledged – Fulfilled"),
+        _("Closed"),
+        comment,
+        "",
+    )
+    messages.success(request, _("Request closed. Thank you for confirming."))
+    return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+
+@login_required
+def access_request_withdraw(request, ar_id):
+    """Allow the owner to withdraw their own PENDING Access Request."""
+    if request.method != "POST":
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    try:
+        access_request = AccessRequest.objects.get(id=ar_id)
+    except AccessRequest.DoesNotExist:
+        messages.error(request, _("Access request not found."))
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    ticket = access_request.ticket
+    current_employee = getattr(request.user, "employee_get", None)
+    if current_employee != ticket.employee_id:
+        messages.info(request, _("You don't have permission to withdraw this request."))
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    if access_request.status != "PENDING":
+        messages.info(
+            request,
+            _("This request has already been reviewed and cannot be withdrawn."),
+        )
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    ticket_title = str(ticket)
+    access_request.delete()
+    ticket.delete()
+    messages.success(
+        request,
+        _('Your access request "{}" has been withdrawn successfully.').format(
+            ticket_title
+        ),
+    )
+    return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+
+@login_required
+def access_request_delete(request, ar_id):
+    """ISO Officer / Superuser deletes an Access Request and its ticket."""
+    if not request.user.is_superuser and not _is_iso_officer(request.user):
+        messages.info(request, _("You don't have permission."))
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    if request.method == "POST":
+        try:
+            access_request = AccessRequest.objects.get(id=ar_id)
+            ticket = access_request.ticket
+            ticket_title = str(ticket)
+            access_request.delete()
+            ticket.delete()
+            messages.success(
+                request,
+                _('The access request "{}" has been deleted successfully.').format(
+                    ticket_title
+                ),
+            )
+        except AccessRequest.DoesNotExist:
+            messages.error(request, _("Access request not found."))
+        except Exception:
+            messages.error(request, _("You cannot delete this access request."))
+
+    return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+

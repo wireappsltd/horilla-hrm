@@ -1,0 +1,217 @@
+{% load i18n %}
+
+<div class="oh-modal oh-modal--show" id="accessRequestModal">
+    <div class="oh-modal__dialog">
+        <div class="oh-modal__dialog-header">
+            <h2 class="oh-modal__dialog-title">
+                {% trans "Access Request & Deactivation" %}
+            </h2>
+            <button
+                class="oh-modal__close"
+                aria-label="Close"
+                onclick="document.getElementById('accessRequestModal').classList.remove('oh-modal--show')"
+            >
+                <ion-icon name="close-outline"></ion-icon>
+            </button>
+        </div>
+
+        <div class="oh-modal__dialog-body">
+            <form
+                method="post"
+                {% if access_request %}
+                    hx-post="{% url 'access-request-update' access_request.id %}"
+                {% else %}
+                    hx-post="{% url 'access-request-create' %}"
+                {% endif %}
+                hx-target="#accessRequestModalTarget"
+                hx-swap="innerHTML"
+                hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+            >
+                {% csrf_token %}
+                {{ form.employee }}
+
+                <!-- Sub Type -->
+                <div class="oh-layout--row">
+                    <div class="oh-form__group col-md-12">
+                        <label class="oh-label oh-label--mandatory" for="id_sub_type">
+                            {% trans "Sub Type" %} <span style="color: red;">*</span>
+                        </label>
+                        {{ form.sub_type }}
+                        {% if form.sub_type.errors %}
+                            <span class="oh-text--danger" style="font-size:12px;">{{ form.sub_type.errors|join:", " }}</span>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Access Request fields (rendered when "Access Request" is selected) -->
+                <div id="accessRequestFields">
+                    <div class="oh-layout--row mt-2">
+                        <!-- User ID (Email) -->
+                        <div class="oh-form__group col-md-6">
+                            <label class="oh-label oh-label--mandatory" for="id_user_email">
+                                {% trans "User ID (Email)" %} <span style="color: red;">*</span>
+                            </label>
+                            {{ form.user_email }}
+                            {% if form.user_email.errors %}
+                                <span class="oh-text--danger" style="font-size:12px;">{{ form.user_email.errors|join:", " }}</span>
+                            {% endif %}
+                        </div>
+
+                        <!-- Requested Date -->
+                        <div class="oh-form__group col-md-6">
+                            <label class="oh-label oh-label--mandatory" for="id_requested_date">
+                                {% trans "Requested Date" %} <span style="color: red;">*</span>
+                            </label>
+                            {{ form.requested_date }}
+                            {% if form.requested_date.errors %}
+                                <span class="oh-text--danger" style="font-size:12px;">{{ form.requested_date.errors|join:", " }}</span>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <div class="oh-layout--row mt-2">
+                        <!-- Business Critical Systems -->
+                        <div class="oh-form__group col-md-4">
+                            <label class="oh-label oh-label--mandatory" for="id_business_critical">
+                                {% trans "Business Critical Systems" %} <span style="color: red;">*</span>
+                            </label>
+                            {{ form.business_critical }}
+                            {% if form.business_critical.errors %}
+                                <span class="oh-text--danger" style="font-size:12px;">{{ form.business_critical.errors|join:", " }}</span>
+                            {% endif %}
+                        </div>
+
+                        <!-- Level of Access -->
+                        <div class="oh-form__group col-md-4">
+                            <label class="oh-label oh-label--mandatory" for="id_level_of_access">
+                                {% trans "Level of Access" %} <span style="color: red;">*</span>
+                            </label>
+                            {{ form.level_of_access }}
+                            {% if form.level_of_access.errors %}
+                                <span class="oh-text--danger" style="font-size:12px;">{{ form.level_of_access.errors|join:", " }}</span>
+                            {% endif %}
+                        </div>
+
+                        <!-- Domain -->
+                        <div class="oh-form__group col-md-4">
+                            <label class="oh-label oh-label--mandatory" for="id_domain">
+                                {% trans "Domain" %} <span style="color: red;">*</span>
+                            </label>
+                            {{ form.domain }}
+                            {% if form.domain.errors %}
+                                <span class="oh-text--danger" style="font-size:12px;">{{ form.domain.errors|join:", " }}</span>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <!-- Priority & Due Date -->
+                    <div class="oh-layout--row mt-2">
+                        <div class="oh-form__group col-md-6">
+                            <label class="oh-label" for="id_priority">{% trans "Priority" %}</label>
+                            {{ form.priority }}
+                        </div>
+                        <div class="oh-form__group col-md-6">
+                            <label class="oh-label" for="id_deadline">{% trans "Due Date" %}</label>
+                            {{ form.deadline }}
+                            {% if form.deadline.errors %}
+                                <span class="oh-text--danger" style="font-size:12px;">{{ form.deadline.errors|join:", " }}</span>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <!-- Forward To (ISO Officers) -->
+                    <div class="oh-layout--row mt-2">
+                        <div class="oh-form__group col-md-12">
+                            <label class="oh-label oh-label--mandatory" for="id_forward_to">
+                                {% trans "Forward To" %} <span style="color: red;">*</span>
+                            </label>
+                            {{ form.forward_to }}
+                            {% if form.forward_to.errors %}
+                                <span class="oh-text--danger" style="font-size:12px;">{{ form.forward_to.errors|join:", " }}</span>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <!-- Reason for Request -->
+                    <div class="oh-form__group mt-2">
+                        <label class="oh-label oh-label--mandatory" for="id_reason">
+                            {% trans "Reason for Request" %} <span style="color: red;">*</span>
+                        </label>
+                        {{ form.reason }}
+                        <div class="d-flex justify-content-between mt-1">
+                            <span class="oh-text--muted" style="font-size:12px;">
+                                {% blocktrans with max=form.reason.field.max_length %}Max {{ max }} characters{% endblocktrans %}
+                            </span>
+                            <span class="oh-text--muted" id="accessReasonCounter" style="font-size:12px;">
+                                0/{{ form.reason.field.max_length }}
+                            </span>
+                        </div>
+                        <span class="oh-text--danger" id="accessReasonClientError" style="font-size:12px; display:none;"></span>
+                        {% if form.reason.errors %}
+                            <span class="oh-text--danger" style="font-size:12px;">{{ form.reason.errors|join:", " }}</span>
+                        {% endif %}
+                    </div>
+                </div>
+
+                {% if form.non_field_errors %}
+                    <div class="oh-alert oh-alert--danger mt-2">{{ form.non_field_errors }}</div>
+                {% endif %}
+
+                <div class="d-flex justify-content-end mt-3">
+                    <button type="submit" class="oh-btn oh-btn--secondary">{% trans "Save" %}</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    (function () {
+        const modal = document.getElementById("accessRequestModal");
+        if (!modal) { return; }
+
+        const form = modal.querySelector("form");
+        const subType = modal.querySelector("#id_sub_type");
+        const fields = modal.querySelector("#accessRequestFields");
+        const reasonInput = modal.querySelector("#id_reason");
+        const counter = modal.querySelector("#accessReasonCounter");
+        const errorEl = modal.querySelector("#accessReasonClientError");
+
+        // Toggle the structured fields based on the selected sub-type.
+        const toggleFields = function () {
+            if (!subType || !fields) { return; }
+            // The structured fields are required for both sub-types; keep them
+            // visible whenever a sub-type is chosen.
+            fields.style.display = subType.value ? "block" : "block";
+        };
+        if (subType) {
+            subType.addEventListener("change", toggleFields);
+            toggleFields();
+        }
+
+        if (!form || !reasonInput || !counter || !errorEl) { return; }
+        const maxLength = parseInt(reasonInput.dataset.maxlength || "0", 10);
+        if (!maxLength) { return; }
+        const errorMessage = reasonInput.dataset.maxlengthMessage ||
+            `Reason cannot exceed ${maxLength} characters.`;
+
+        const updateReasonState = function () {
+            const currentLength = reasonInput.value.length;
+            counter.textContent = `${currentLength}/${maxLength}`;
+            const exceedsLimit = currentLength > maxLength;
+            errorEl.style.display = exceedsLimit ? "block" : "none";
+            errorEl.textContent = exceedsLimit ? errorMessage : "";
+            reasonInput.setCustomValidity(exceedsLimit ? errorMessage : "");
+            return exceedsLimit;
+        };
+        reasonInput.addEventListener("input", updateReasonState);
+        form.addEventListener("submit", function (event) {
+            if (updateReasonState()) {
+                event.preventDefault();
+                reasonInput.focus();
+            }
+        });
+        updateReasonState();
+    })();
+</script>
+
