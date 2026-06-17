@@ -36,13 +36,7 @@ env = environ.Env(
         list,
         ["https://pmo-alpha.vercel.app"],
     ),
-    # Validity period (in seconds) of password reset links/tokens.
-    # Defaults to 10 minutes. Tokens are also invalidated automatically
-    # once the password has been successfully changed.
-    PASSWORD_RESET_TIMEOUT=(int, 600),
-    # Number of seconds of user inactivity after which the session is
-    # automatically logged out. Defaults to 10 minutes.
-    SESSION_IDLE_TIMEOUT=(int, 600),
+    ENVIRONMENT=(str, "development"),
 )
 
 env.read_env(os.path.join(BASE_DIR, ".env"), overwrite=True)
@@ -54,6 +48,15 @@ SECRET_KEY = env("SECRET_KEY")
 DEBUG = env("DEBUG")
 
 ALLOWED_HOSTS = env("ALLOWED_HOSTS")
+
+# Deployment environment ("development" or "production").
+ENVIRONMENT = env.str("ENVIRONMENT", default="development").strip().lower()
+IS_PRODUCTION = ENVIRONMENT == "production"
+
+# Environment-based timeout defaults (in seconds). Explicit env vars
+# (SESSION_IDLE_TIMEOUT / PASSWORD_RESET_TIMEOUT) always override these.
+_DEFAULT_SESSION_IDLE_TIMEOUT = 3600 if IS_PRODUCTION else 600  # 1h prod / 10m dev
+_DEFAULT_PASSWORD_RESET_TIMEOUT = 86400 if IS_PRODUCTION else 600  # 24h prod / 10m dev
 
 # Application definition
 
@@ -104,8 +107,12 @@ MIDDLEWARE = [
 ]
 
 # Automatic logout after a period of user inactivity (in seconds).
-# Enforced by ``base.middleware.InactivityTimeoutMiddleware``
-SESSION_IDLE_TIMEOUT = env.int("SESSION_IDLE_TIMEOUT", default=600)
+# Enforced by ``base.middleware.InactivityTimeoutMiddleware``.
+# Defaults depend on ENVIRONMENT (10m dev / 1h prod); an explicit
+# SESSION_IDLE_TIMEOUT env var overrides the environment default.
+SESSION_IDLE_TIMEOUT = env.int(
+    "SESSION_IDLE_TIMEOUT", default=_DEFAULT_SESSION_IDLE_TIMEOUT
+)
 
 
 ROOT_URLCONF = "horilla.urls"
@@ -247,7 +254,10 @@ CORS_URLS_REGEX = r"^/api/pmo/.*$"
 LOGIN_URL = "/login"
 
 
-PASSWORD_RESET_TIMEOUT = env("PASSWORD_RESET_TIMEOUT")
+# Validity period (in seconds) of password reset links
+PASSWORD_RESET_TIMEOUT = env.int(
+    "PASSWORD_RESET_TIMEOUT", default=_DEFAULT_PASSWORD_RESET_TIMEOUT
+)
 
 SIMPLE_HISTORY_REVERT_DISABLED = True
 
