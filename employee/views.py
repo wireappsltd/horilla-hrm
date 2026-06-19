@@ -1633,7 +1633,7 @@ def employee_view_update(request, obj_id, **kwargs):
                 instance = EmployeeWorkInformation.objects.filter(
                     employee_id=employee
                 ).first()
-                old_role = instance.job_role_id if instance else None
+                old_role_values = _capture_role_fields(instance)
                 work_form = EmployeeWorkInformationUpdateForm(
                     request.POST, instance=instance
                 )
@@ -1642,20 +1642,7 @@ def employee_view_update(request, obj_id, **kwargs):
                     instance.employee_id = employee
                     instance.save()
                     instance.tags.set(request.POST.getlist("tags"))
-                    new_role = instance.job_role_id
-                    if old_role != new_role:
-                        log_activity(
-                            request.user,
-                            module="employee",
-                            action="Role change",
-                            target=employee,
-                            changes={
-                                "job_role": {
-                                    "from": str(old_role) if old_role else None,
-                                    "to": str(new_role) if new_role else None,
-                                }
-                            },
-                        )
+                    _log_role_changes(request, employee, old_role_values, instance)
                     notify.send(
                         request.user.employee_get,
                         recipient=instance.employee_id.employee_user_id,
@@ -1889,6 +1876,45 @@ def employee_create_update_personal_info(request, obj_id=None):
     return HttpResponse(f'<ul class="alert alert-danger">{errors}</ul>')
 
 
+# Org-role fields whose changes count as a promotion/demotion/reporting-line
+# change and must be audited. The FK fields are named with an `_id` suffix on
+# EmployeeWorkInformation but accessing them returns the related object.
+_ROLE_FIELDS = (
+    ("reporting_manager", "reporting_manager_id"),
+    ("job_position", "job_position_id"),
+    ("job_role", "job_role_id"),
+)
+
+
+def _capture_role_fields(work_info):
+    """Snapshot the current role-related objects, for before/after diffing."""
+    if work_info is None:
+        return {}
+    return {attr: getattr(work_info, attr, None) for _label, attr in _ROLE_FIELDS}
+
+
+def _log_role_changes(request, employee, old_values, work_info):
+    """Write a 'Role change' audit entry for any reporting-manager / job-position
+    / job-role change. No entry is written when none of these changed."""
+    diff = {}
+    for label, attr in _ROLE_FIELDS:
+        old = old_values.get(attr)
+        new = getattr(work_info, attr, None)
+        if old != new:
+            diff[label] = {
+                "from": str(old) if old else None,
+                "to": str(new) if new else None,
+            }
+    if diff:
+        log_activity(
+            request.user,
+            module="employee",
+            action="Role change",
+            target=employee,
+            changes=diff,
+        )
+
+
 @login_required
 @manager_can_enter("employee.change_employeeworkinformation")
 @require_http_methods(["POST"])
@@ -1903,7 +1929,7 @@ def employee_update_work_info(request, obj_id=None):
     existing_work_info = EmployeeWorkInformation.objects.filter(
         employee_id=employee
     ).first()
-    old_role = existing_work_info.job_role_id if existing_work_info else None
+    old_role_values = _capture_role_fields(existing_work_info)
     form = EmployeeWorkInformationForm(
         request.POST,
         instance=existing_work_info,
@@ -1914,20 +1940,7 @@ def employee_update_work_info(request, obj_id=None):
         work_info = form.save(commit=False)
         work_info.employee_id = employee
         work_info.save()
-        new_role = work_info.job_role_id
-        if old_role != new_role:
-            log_activity(
-                request.user,
-                module="employee",
-                action="Role change",
-                target=employee,
-                changes={
-                    "job_role": {
-                        "from": str(old_role) if old_role else None,
-                        "to": str(new_role) if new_role else None,
-                    }
-                },
-            )
+        _log_role_changes(request, employee, old_role_values, work_info)
         return HttpResponse(
             """
 
@@ -2570,20 +2583,8 @@ def employee_work_info_view_create(request, obj_id):
         work_info = work_form.save(commit=False)
         work_info.employee_id = employee
         work_info.save()
-        new_role = work_info.job_role_id
-        if new_role is not None:
-            log_activity(
-                request.user,
-                module="employee",
-                action="Role change",
-                target=employee,
-                changes={
-                    "job_role": {
-                        "from": None,
-                        "to": str(new_role),
-                    }
-                },
-            )
+        # New work info: every role field set goes from None -> value.
+        _log_role_changes(request, employee, {}, work_info)
         messages.success(request, _("Created work information"))
     return render(
         request,
@@ -2612,27 +2613,14 @@ def employee_work_info_view_update(request, obj_id):
     bank_form = EmployeeBankDetailsUpdateForm(
         instance=work_information.employee_id.employee_bank_details
     )
-    old_role = work_information.job_role_id
+    old_role_values = _capture_role_fields(work_information)
     work_form = EmployeeWorkInformationUpdateForm(
         request.POST,
         instance=work_information,
     )
     if work_form.is_valid():
         updated = work_form.save()
-        new_role = updated.job_role_id
-        if old_role != new_role:
-            log_activity(
-                request.user,
-                module="employee",
-                action="Role change",
-                target=updated.employee_id,
-                changes={
-                    "job_role": {
-                        "from": str(old_role) if old_role else None,
-                        "to": str(new_role) if new_role else None,
-                    }
-                },
-            )
+        _log_role_changes(request, updated.employee_id, old_role_values, updated)
         messages.success(request, _("Work Information Updated Successfully"))
     return render(
         request,
