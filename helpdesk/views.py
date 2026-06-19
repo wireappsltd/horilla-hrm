@@ -1137,6 +1137,7 @@ def ticket_detail(request, ticket_id, **kwargs):
 
         context = {
             "ticket": ticket,
+            "display_description": _get_ticket_display_description(ticket),
             "c_form": c_form,
             "f_form": f_form,
             "attachments": attachments,
@@ -1171,6 +1172,7 @@ def ticket_individual_view(request, ticket_id):
     ticket = Ticket.objects.filter(id=ticket_id).first()
     context = {
         "ticket": ticket,
+        "display_description": _get_ticket_display_description(ticket) if ticket else "",
     }
     return render(
         request, "helpdesk/ticket/ticket_individual_view.html", context=context
@@ -3282,13 +3284,22 @@ def _build_access_request_description(access_request, user_display):
         f"<b>{access_request.get_sub_type_display()} Details:</b><br><br>"
         f"<b>Sub Type:</b> {access_request.get_sub_type_display()}<br>"
         f"<b>User ID (Email):</b> {access_request.user_id}<br>"
-        f"<b>Requested Date:</b> {access_request.requested_date}<br>"
         f"<b>Business Critical Systems:</b> {access_request.get_business_critical_display()}<br>"
         f"<b>Level of Access:</b> {access_request.get_level_of_access_display()}<br>"
         f"<b>Domain:</b> {access_request.get_domain_display()}<br>"
         f"<b>User:</b> {user_display}<br>"
         f"<b>Reason:</b> {access_request.reason}"
     )
+
+
+def _get_ticket_display_description(ticket):
+    """Return the live description shown in ticket views."""
+    access_request = getattr(ticket, "access_request", None)
+    if access_request:
+        return _build_access_request_description(
+            access_request, _format_password_reset_user(ticket.employee_id)
+        )
+    return ticket.description
 
 
 @login_required
