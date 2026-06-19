@@ -3,7 +3,7 @@ name: GitLab Sync
 on:
   push:
     branches:
-      - up/bhathiya   # runs on pushes to this branch
+      - development   # runs on pushes to this branch
   workflow_dispatch:   # allows manual trigger
 
 jobs:
