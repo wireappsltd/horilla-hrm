@@ -18,7 +18,7 @@ jobs:
       - name: Set GitLab repo name and default branch
         run: |
           echo "REPO_NAME=horilla-hrm" >> $GITHUB_ENV
-          echo "DEFAULT_BRANCH=up/bhathiya" >> $GITHUB_ENV
+          echo "DEFAULT_BRANCH=development" >> $GITHUB_ENV
 
       - name: Create GitLab repo if not exists
         env:
