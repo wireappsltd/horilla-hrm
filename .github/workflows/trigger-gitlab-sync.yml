@@ -3,22 +3,25 @@ name: GitLab Sync
 on:
   push:
     branches:
-      - development   # runs on pushes to this branch
-  workflow_dispatch:   # allows manual trigger
+      - development
+  workflow_dispatch:
 
 jobs:
   sync:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v2
+
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
 
       - name: Set GitLab repo name and default branch
         run: |
           echo "REPO_NAME=horilla-hrm" >> $GITHUB_ENV
           echo "DEFAULT_BRANCH=development" >> $GITHUB_ENV
+
 
       - name: Create GitLab repo if not exists
         env:
@@ -26,60 +29,103 @@ jobs:
           GITLAB_USERNAME: ${{ secrets.TARGET_USERNAME }}
           REPO_NAME: ${{ env.REPO_NAME }}
           DEFAULT_BRANCH: ${{ env.DEFAULT_BRANCH }}
+
         run: |
+
           echo "Checking GitLab repo '$REPO_NAME'..."
+
           PROJECT_URL_ENCODED=$(echo -n "$GITLAB_USERNAME/$REPO_NAME" | jq -s -R -r @uri)
 
-          RAW_RESPONSE=$(curl -s --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+
+          RAW_RESPONSE=$(curl -s \
+            --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
             "https://gitlab.com/api/v4/projects/${PROJECT_URL_ENCODED}")
+
+
           EXISTS=$(echo "$RAW_RESPONSE" | jq -r '.id // empty')
 
+
           if [ -n "$EXISTS" ]; then
-            echo "✅ Repo already exists. Skipping creation."
+
+            echo "✅ Repo already exists."
+
           else
-            echo "🚀 Creating repo '$REPO_NAME'..."
-            NAMESPACE_ID=$(curl -s --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
-              "https://gitlab.com/api/v4/namespaces?search=$GITLAB_USERNAME" | jq -r '.[0].id')
 
-            CREATE_RESPONSE=$(curl -s --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
-              --header "Content-Type: application/json" \
-              --data "{\"name\":\"$REPO_NAME\",\"namespace_id\":$NAMESPACE_ID}" \
-              https://gitlab.com/api/v4/projects)
+            echo "🚀 Creating GitLab repo..."
 
-            if echo "$CREATE_RESPONSE" | grep -q "has already been taken"; then
-              echo "ℹ Repo already exists in GitLab namespace, continuing..."
-            elif echo "$CREATE_RESPONSE" | jq -e 'has("id")' > /dev/null 2>&1; then
-              echo "✅ Repo created successfully"
-            else
-              echo "❌ Failed to create repo:"
-              echo "$CREATE_RESPONSE"
-              exit 1
-            fi
 
-            echo "Setting GitLab default branch to $DEFAULT_BRANCH"
-            curl -s --request PUT \
+            CREATE_RESPONSE=$(curl -s \
+              --request POST \
               --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
               --header "Content-Type: application/json" \
-              --data "{\"default_branch\":\"$DEFAULT_BRANCH\"}" \
-              "https://gitlab.com/api/v4/projects/${PROJECT_URL_ENCODED}" > /dev/null
+              --data "{\"name\":\"$REPO_NAME\",\"path\":\"$REPO_NAME\"}" \
+              https://gitlab.com/api/v4/projects)
+
+
+            if echo "$CREATE_RESPONSE" | jq -e '.id' > /dev/null 2>&1; then
+
+              echo "✅ Repo created successfully"
+
+            else
+
+              echo "❌ Failed creating repo"
+              echo "$CREATE_RESPONSE"
+              exit 1
+
+            fi
+
           fi
+
+
+
+          echo "Setting GitLab default branch: $DEFAULT_BRANCH"
+
+
+          PROJECT_ID=$(curl -s \
+            --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+            "https://gitlab.com/api/v4/projects/${PROJECT_URL_ENCODED}" \
+            | jq -r '.id')
+
+
+          curl -s \
+            --request PUT \
+            --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+            --header "Content-Type: application/json" \
+            --data "{\"default_branch\":\"$DEFAULT_BRANCH\"}" \
+            "https://gitlab.com/api/v4/projects/$PROJECT_ID"
+
+
 
       - name: Fetch and checkout default branch
         run: |
-          echo "Fetching $DEFAULT_BRANCH branch from GitHub..."
+
+          echo "Fetching $DEFAULT_BRANCH..."
+
           git fetch origin $DEFAULT_BRANCH
+
           git checkout $DEFAULT_BRANCH
+
+
 
       - name: Add GitLab remote
         env:
           GITLAB_TOKEN: ${{ secrets.TARGET_TOKEN }}
           REPO_NAME: ${{ env.REPO_NAME }}
+
         run: |
+
           git remote remove gitlab 2>/dev/null || true
-          git remote add gitlab https://oauth2:${GITLAB_TOKEN}@gitlab.com/${{ secrets.TARGET_USERNAME }}/${REPO_NAME}.git
+
+          git remote add gitlab \
+          https://oauth2:${GITLAB_TOKEN}@gitlab.com/${{ secrets.TARGET_USERNAME }}/${REPO_NAME}.git
+
+
 
       - name: Push branch to GitLab
         run: |
-          echo "🚀 Pushing $DEFAULT_BRANCH branch to GitLab..."
+
+          echo "🚀 Syncing $DEFAULT_BRANCH to GitLab..."
+
           git push gitlab $DEFAULT_BRANCH --force
-          echo "✅ $DEFAULT_BRANCH branch synced to GitLab."
+
+          echo "✅ Sync completed"
