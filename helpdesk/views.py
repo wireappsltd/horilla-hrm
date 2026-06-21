@@ -16,6 +16,7 @@ from django.shortcuts import redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.html import format_html
 from django.utils.translation import gettext as _
 from django.views.decorators.http import require_http_methods
 
@@ -3279,16 +3280,30 @@ def _get_access_request_ticket_type():
 
 
 def _build_access_request_description(access_request, user_display):
-    """Build the HTML description block shown on the linked Ticket."""
-    return (
-        f"<b>{access_request.get_sub_type_display()} Details:</b><br><br>"
-        f"<b>Sub Type:</b> {access_request.get_sub_type_display()}<br>"
-        f"<b>User ID (Email):</b> {access_request.user_id}<br>"
-        f"<b>Business Critical Systems:</b> {access_request.get_business_critical_display()}<br>"
-        f"<b>Level of Access:</b> {access_request.get_level_of_access_display()}<br>"
-        f"<b>Domain:</b> {access_request.get_domain_display()}<br>"
-        f"<b>User:</b> {user_display}<br>"
-        f"<b>Reason:</b> {access_request.reason}"
+    """Build the HTML description block shown on the linked Ticket.
+
+    User-controlled values (``user_id``, ``user_display`` and ``reason``) are
+    interpolated via :func:`~django.utils.html.format_html`, which escapes every
+    argument. This prevents stored XSS even though the resulting description is
+    later rendered with the ``|safe`` filter.
+    """
+    return format_html(
+        "<b>{} Details:</b><br><br>"
+        "<b>Sub Type:</b> {}<br>"
+        "<b>User ID (Email):</b> {}<br>"
+        "<b>Business Critical Systems:</b> {}<br>"
+        "<b>Level of Access:</b> {}<br>"
+        "<b>Domain:</b> {}<br>"
+        "<b>User:</b> {}<br>"
+        "<b>Reason:</b> {}",
+        access_request.get_sub_type_display(),
+        access_request.get_sub_type_display(),
+        access_request.user_id,
+        access_request.get_business_critical_display(),
+        access_request.get_level_of_access_display(),
+        access_request.get_domain_display(),
+        user_display,
+        access_request.reason,
     )
 
 
