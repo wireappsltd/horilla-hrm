@@ -3482,15 +3482,21 @@ def access_request_update(request, ar_id):
 
 
 def _access_review_comment(ticket, actor_user, heading, status_label, body, feedback):
-    """Create an inline comment entry on the ticket (reviewer audit trail)."""
+    """Create an inline comment entry on the ticket (reviewer audit trail).
+    """
     try:
-        comment_text = (
-            f"<strong>{heading}</strong><br>"
-            f"<strong>Status:</strong> {status_label}<br>"
-            f"{body}"
+        comment_text = format_html(
+            "<strong>{}</strong><br>"
+            "<strong>Status:</strong> {}<br>"
+            "{}",
+            heading,
+            status_label,
+            body,
         )
         if feedback:
-            comment_text += f"<br><strong>Feedback:</strong> {feedback}"
+            comment_text += format_html(
+                "<br><strong>Feedback:</strong> {}", feedback
+            )
         Comment.objects.create(
             comment=comment_text,
             ticket=ticket,
