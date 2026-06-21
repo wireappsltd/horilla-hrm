@@ -106,7 +106,6 @@ ACCESS_DOMAIN_CHOICES = [
 ACCESS_REQUEST_STATUS_CHOICES = [
     ("PENDING", "Pending"),
     ("DH_APPROVED", "Divisional Head Approved"),
-    ("ISO_APPROVED", "ISO Approved"),
     ("COMPLETED", "Completed"),
     ("CLOSED", "Closed"),
     ("REJECTED", "Rejected"),
