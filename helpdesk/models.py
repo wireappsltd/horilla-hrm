@@ -26,6 +26,10 @@ PRIORITY = [
 # Name of the Django auth Group whose members act as ISO Officers.
 ISO_GROUP_NAME = "ISO"
 
+# Name of the Django auth Group whose members act as Divisional Heads (Stage 1
+# approvers of the two-stage Access Request workflow).
+DIVISIONAL_HEAD_GROUP_NAME = "Divisional Head"
+
 MANAGER_TYPES = [
     ("department", "Department"),
     ("job_position", "Job Position"),
@@ -68,6 +72,43 @@ ISO_STATUS_CHOICES = [
 
 ISO_REQUEST_TYPE_CHOICES = [
     ("password_reset", "Password Reset Request"),
+]
+
+# ── Access Request & Deactivation (ISO Forms) ────────────────────────────────
+
+# Sub-type selector shown in the "Access Request & Deactivation" modal.
+ACCESS_REQUEST_SUBTYPE_CHOICES = [
+    ("access_request", "Access Request"),
+    ("access_deactivation", "Access Deactivation"),
+]
+
+ACCESS_BUSINESS_CRITICAL_CHOICES = [
+    ("yes", "Yes"),
+    ("no", "No"),
+]
+
+ACCESS_LEVEL_CHOICES = [
+    ("read", "Read"),
+    ("write", "Write"),
+    ("repository", "Repository"),
+]
+
+ACCESS_DOMAIN_CHOICES = [
+    ("ftp_access", "FTP Access"),
+    ("o365_access", "O365 Access"),
+    ("email", "Email"),
+]
+
+# Two-stage approval lifecycle for Access Requests:
+#   PENDING → (Divisional Head approves) DH_APPROVED → (ISO approves) COMPLETED
+#           → (requestor acknowledges) CLOSED
+# Rejection at either stage is terminal → REJECTED.
+ACCESS_REQUEST_STATUS_CHOICES = [
+    ("PENDING", "Pending"),
+    ("DH_APPROVED", "Divisional Head Approved"),
+    ("COMPLETED", "Completed"),
+    ("CLOSED", "Closed"),
+    ("REJECTED", "Rejected"),
 ]
 
 
@@ -376,6 +417,121 @@ class PasswordResetRequest(HorillaModel):
         if self.iso_status == "REJECTED" and not self.iso_feedback:
             raise ValidationError(
                 {"iso_feedback": _("Feedback is required when rejecting a request.")}
+            )
+
+
+class AccessRequest(HorillaModel):
+    """
+    Stores the extra details for an "Access Request & Deactivation" ticket
+    (ISO Forms category). Linked 1-to-1 with a Ticket via the ``ticket`` field.
+
+    Mirrors :class:`PasswordResetRequest` but adds the structured access-request
+    fields and a two-stage approval workflow (Divisional Head → ISO Officer).
+    """
+
+    ticket = models.OneToOneField(
+        Ticket,
+        on_delete=models.CASCADE,
+        related_name="access_request",
+    )
+    sub_type = models.CharField(
+        max_length=30,
+        choices=ACCESS_REQUEST_SUBTYPE_CHOICES,
+        default="access_request",
+        verbose_name=_("Sub Type"),
+    )
+    user_id = models.EmailField(verbose_name=_("User ID (Email)"))
+    requested_date = models.DateField(verbose_name=_("Requested Date"))
+    business_critical = models.CharField(
+        max_length=3,
+        choices=ACCESS_BUSINESS_CRITICAL_CHOICES,
+        verbose_name=_("Business Critical Systems"),
+    )
+    level_of_access = models.CharField(
+        max_length=20,
+        choices=ACCESS_LEVEL_CHOICES,
+        verbose_name=_("Level of Access"),
+    )
+    domain = models.CharField(
+        max_length=20,
+        choices=ACCESS_DOMAIN_CHOICES,
+        verbose_name=_("Domain"),
+    )
+    reason = models.TextField(verbose_name=_("Reason for Request"))
+    forward_to = models.ManyToManyField(
+        User,
+        blank=True,
+        related_name="forwarded_access_requests",
+        verbose_name=_("Forward To"),
+    )
+
+    status = models.CharField(
+        max_length=20,
+        choices=ACCESS_REQUEST_STATUS_CHOICES,
+        default="PENDING",
+        verbose_name=_("Status"),
+    )
+    feedback = models.TextField(blank=True, null=True, verbose_name=_("Feedback"))
+
+    # Stage 1 — Divisional Head review
+    dh_reviewed_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="dh_reviewed_access_requests",
+        verbose_name=_("Divisional Head"),
+    )
+    dh_reviewed_at = models.DateTimeField(null=True, blank=True)
+
+    # Stage 2 — ISO Officer review
+    iso_reviewed_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="iso_reviewed_access_requests",
+        verbose_name=_("ISO Officer"),
+    )
+    iso_reviewed_at = models.DateTimeField(null=True, blank=True)
+
+    closed_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="closed_access_requests",
+        verbose_name=_("Closed By"),
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True, verbose_name=_("Updated At"))
+
+    class Meta:
+        verbose_name = _("Access Request")
+        verbose_name_plural = _("Access Requests")
+
+    def __str__(self):
+        return f"Access Request – {self.get_domain_display()} – {self.ticket}"
+
+    def get_forward_to_users(self):
+        """Return selected forwarding users as a queryset."""
+        return self.forward_to.select_related("employee_get").all()
+
+    def get_forward_to_display(self):
+        """Return a comma-separated list of forwarded-to user display names."""
+        names = []
+        for user in self.get_forward_to_users():
+            try:
+                names.append(user.employee_get.get_full_name())
+            except Exception:
+                names.append(user.get_full_name() or user.username)
+        return ", ".join([name for name in names if name])
+
+    def clean(self, *args, **kwargs):
+        super().clean(*args, **kwargs)
+        if self.status == "REJECTED" and not self.feedback:
+            raise ValidationError(
+                {"feedback": _("Feedback is required when rejecting a request.")}
             )
 
 

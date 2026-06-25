@@ -40,6 +40,7 @@ from helpdesk.models import (
     FAQ,
     PRIORITY,
     ISO_GROUP_NAME,
+    AccessRequest,
     Attachment,
     Comment,
     DepartmentManager,
@@ -451,6 +452,224 @@ class PasswordResetRequestForm(forms.ModelForm):
         except Exception:
             # Audit-log consolidation must never block the save flow.
             pass
+
+
+class AccessRequestForm(forms.ModelForm):
+    """
+    Form for employees to submit an "Access Request" (ISO Forms category).
+
+    Mirrors :class:`PasswordResetRequestForm`:
+      * ``User ID (Email)`` is auto-populated with the logged-in user and is
+        read-only.
+      * ``Requested Date`` is auto-populated with today's date and read-only.
+      * ``Reason for Request`` is a rich-text comment area capped at 250 chars.
+    """
+
+    REASON_MAX_LENGTH = 250
+
+    employee = forms.ModelChoiceField(
+        queryset=Employee.objects.none(),
+        widget=forms.HiddenInput(),
+        required=True,
+    )
+    user_email = forms.CharField(
+        label=_("User ID (Email)"),
+        required=False,
+        widget=forms.TextInput(
+            attrs={"class": "oh-input w-100", "readonly": "readonly"}
+        ),
+    )
+    requested_date = forms.DateField(
+        label=_("Requested Date"),
+        widget=forms.DateInput(
+            attrs={
+                "class": "oh-input w-100",
+                "type": "date",
+                "readonly": "readonly",
+            }
+        ),
+    )
+    priority = forms.ChoiceField(
+        choices=PRIORITY,
+        initial="medium",
+        label=_("Priority"),
+        widget=forms.Select(attrs={"class": "oh-select oh-select-2 w-100"}),
+    )
+    forward_to = forms.ModelMultipleChoiceField(
+        queryset=User.objects.none(),
+        label=_("Forward To"),
+        required=True,
+        widget=forms.SelectMultiple(attrs={"class": "oh-select oh-select-2 w-100"}),
+    )
+    deadline = forms.DateField(
+        required=False,
+        label=_("Due Date"),
+        widget=forms.DateInput(attrs={"class": "oh-input w-100", "type": "date"}),
+    )
+
+    class Meta:
+        model = AccessRequest
+        fields = [
+            "sub_type",
+            "business_critical",
+            "level_of_access",
+            "domain",
+            "forward_to",
+            "reason",
+        ]
+        widgets = {
+            "sub_type": forms.Select(attrs={"class": "oh-select oh-select-2 w-100"}),
+            "business_critical": forms.Select(
+                attrs={"class": "oh-select oh-select-2 w-100"}
+            ),
+            "level_of_access": forms.Select(
+                attrs={"class": "oh-select oh-select-2 w-100"}
+            ),
+            "domain": forms.Select(attrs={"class": "oh-select oh-select-2 w-100"}),
+            "reason": forms.Textarea(
+                attrs={
+                    "class": "oh-input w-100",
+                    "rows": 4,
+                    "placeholder": _("Describe why you need this access"),
+                }
+            ),
+        }
+        labels = {
+            "sub_type": _("Sub Type"),
+            "business_critical": _("Business Critical Systems"),
+            "level_of_access": _("Level of Access"),
+            "domain": _("Domain"),
+            "reason": _("Reason for Request"),
+        }
+
+    def __init__(self, *args, request=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.request = request
+        today = timezone.localdate()
+        self.fields["deadline"].widget.attrs["min"] = today.isoformat()
+
+        # Resolve the logged-in user's Employee (ticket owner).
+        current_employee = None
+        if request is not None:
+            try:
+                current_employee = request.user.employee_get
+            except Exception:
+                current_employee = None
+
+        # Editing: derive owner/email/date from the saved instance.
+        if self.instance and self.instance.pk and getattr(self.instance, "ticket", None):
+            owner = getattr(self.instance.ticket, "employee_id", None) or current_employee
+            self.initial["requested_date"] = self.instance.requested_date
+            email_initial = self.instance.user_id
+        else:
+            owner = current_employee
+            self.initial["requested_date"] = today
+            email_initial = self._employee_email(owner)
+
+        if owner:
+            self.fields["employee"].queryset = Employee.objects.filter(pk=owner.pk)
+            self.initial["employee"] = owner
+            self.fields["employee"].initial = owner
+        self.initial["user_email"] = email_initial
+
+        # Forward To → Stage 2 reviewers (ISO group members).
+        self.fields["forward_to"].queryset = (
+            User.objects.filter(groups__name=ISO_GROUP_NAME, is_active=True)
+            .distinct()
+            .order_by("first_name", "username")
+        )
+        self.fields["forward_to"].label_from_instance = self._forward_to_label
+
+        # Reason character cap (mirrors Password Reset behaviour).
+        reason_error_message = _(
+            "Reason cannot exceed %(max_length)s characters."
+        ) % {"max_length": self.REASON_MAX_LENGTH}
+        reason_field = self.fields["reason"]
+        reason_field.max_length = self.REASON_MAX_LENGTH
+        reason_field.error_messages["max_length"] = reason_error_message
+        reason_field.widget.attrs.update(
+            {
+                "data-maxlength": str(self.REASON_MAX_LENGTH),
+                "data-maxlength-message": reason_error_message,
+                "maxlength": str(self.REASON_MAX_LENGTH),
+            }
+        )
+
+        iso_user_qs = self.fields["forward_to"].queryset
+        if self.instance and self.instance.pk:
+            saved_forward = self.instance.forward_to.filter(
+                groups__name=ISO_GROUP_NAME, is_active=True
+            ).distinct()
+            if saved_forward.exists():
+                self.initial["forward_to"] = list(
+                    saved_forward.values_list("pk", flat=True)
+                )
+            else:
+                self.initial["forward_to"] = list(
+                    iso_user_qs.values_list("pk", flat=True)
+                )
+            if hasattr(self.instance, "ticket") and self.instance.ticket:
+                self.fields["priority"].initial = self.instance.ticket.priority
+                self.fields["deadline"].initial = self.instance.ticket.deadline
+        else:
+            self.initial["forward_to"] = list(iso_user_qs.values_list("pk", flat=True))
+
+    @staticmethod
+    def _employee_email(employee):
+        if not employee:
+            return ""
+        for getter in (
+            lambda e: e.employee_work_info.email,
+            lambda e: e.employee_user_id.email,
+            lambda e: e.email,
+        ):
+            try:
+                email = getter(employee) or ""
+                if email:
+                    return email
+            except Exception:
+                continue
+        return ""
+
+    def _forward_to_label(self, user):
+        try:
+            full_name = user.employee_get.get_full_name()
+            if full_name:
+                return full_name
+        except Exception:
+            pass
+        return user.get_full_name() or user.username
+
+    def clean_reason(self):
+        reason = (self.cleaned_data.get("reason") or "").strip()
+        if not reason:
+            raise forms.ValidationError(_("This field is required."))
+        if len(reason) > self.REASON_MAX_LENGTH:
+            raise forms.ValidationError(
+                _("Reason cannot exceed %(max_length)s characters.")
+                % {"max_length": self.REASON_MAX_LENGTH}
+            )
+        return reason
+
+    def clean_deadline(self):
+        deadline = self.cleaned_data.get("deadline")
+        if deadline is None:
+            return deadline
+        if deadline < timezone.localdate():
+            raise forms.ValidationError(_("Due date cannot be in the past."))
+        return deadline
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        employee = self.cleaned_data.get("employee")
+        instance.requested_date = self.cleaned_data.get(
+            "requested_date"
+        ) or timezone.localdate()
+        instance.user_id = self._employee_email(employee)
+        if commit:
+            instance.save()
+            instance.forward_to.set(self.cleaned_data.get("forward_to", []))
+        return instance
 
 
 class ISOReviewForm(forms.Form):

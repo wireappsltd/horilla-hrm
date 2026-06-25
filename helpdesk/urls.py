@@ -192,5 +192,42 @@ urlpatterns = [
         views.password_reset_request_delete,
         name="password-reset-request-delete",
     ),
+
+    # ── Access Request & Deactivation URLs ───────────────────────────────────
+    path(
+        "access-request/create/",
+        views.access_request_create,
+        name="access-request-create",
+    ),
+    path(
+        "access-request/update/<int:ar_id>/",
+        views.access_request_update,
+        name="access-request-update",
+    ),
+    path(
+        "access-request/dh-review/<int:ar_id>/",
+        views.divisional_head_review_access_request,
+        name="access-request-dh-review",
+    ),
+    path(
+        "access-request/iso-review/<int:ar_id>/",
+        views.iso_review_access_request,
+        name="access-request-iso-review",
+    ),
+    path(
+        "access-request/acknowledge/<int:ar_id>/",
+        views.access_request_acknowledge,
+        name="access-request-acknowledge",
+    ),
+    path(
+        "access-request/withdraw/<int:ar_id>/",
+        views.access_request_withdraw,
+        name="access-request-withdraw",
+    ),
+    path(
+        "access-request/delete/<int:ar_id>/",
+        views.access_request_delete,
+        name="access-request-delete",
+    ),
 ]
 
