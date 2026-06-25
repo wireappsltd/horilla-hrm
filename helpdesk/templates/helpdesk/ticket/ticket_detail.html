@@ -150,6 +150,16 @@
                                         </option>
                                     {% endfor %}
                                 </select>
+                            {% elif access_request %}
+                                {# Access requests follow the two-stage approval workflow; read-only since transitions go through the action buttons. #}
+                                <select name="access_status_display" title='{% trans "Access Request Status" %}' class="oh-select" disabled
+                                    style="width:220px; align-items: center; border: 1px solid #aaa; border-radius: 2px; background-color: #fff;">
+                                    {% for status in access_request_status_choices %}
+                                        <option value="{{status.0}}" {% if status.0 == access_request.status %}selected{% endif %}>
+                                            {{status.1}}
+                                        </option>
+                                    {% endfor %}
+                                </select>
                             {% elif perms.helpdesk.change_ticket or request.user.employee_get|is_department_manager:ticket or request.user.employee_get in ticket.assigned_to.all or request.user.employee_get == ticket.employee_id %}
                                 <select name="status_update" title='{% trans "Status" %}' class="oh-select"
                                     onchange="updateStatus()"
@@ -200,6 +210,43 @@
                             <button type="button" class="oh-btn oh-btn--success iso-action-btn"
                                 title="{% trans 'Yes – Fulfilled' %}"
                                 onclick="openIsoAcknowledgeModal('{% url 'password-reset-acknowledge' password_reset_request.id %}');">
+                                <ion-icon name="checkmark-done-outline" class="me-1"></ion-icon>{% trans "Yes" %}
+                            </button>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                    {% if access_request %}
+                    {# ── Access request workflow action buttons (two-stage approval) ── #}
+                    <div class="d-flex align-items-center gap-2 ms-4 iso-action-group">
+                        {% if access_request.status == 'PENDING' and is_divisional_head and request.user.employee_get != ticket.employee_id %}
+                            {# Stage 1 — Divisional Head Approve / Reject. #}
+                            <button type="button" class="oh-btn oh-btn--success iso-action-btn iso-action-btn--equal"
+                                title="{% trans 'Approve' %}"
+                                onclick="openIsoApproveModal('{% url 'access-request-dh-review' access_request.id %}');">
+                                <ion-icon name="checkmark-outline" class="me-1"></ion-icon>{% trans "Approve" %}
+                            </button>
+                            <button type="button" class="oh-btn oh-btn--danger iso-action-btn iso-action-btn--equal"
+                                title="{% trans 'Reject' %}"
+                                onclick="openIsoRejectModal('{% url 'access-request-dh-review' access_request.id %}');">
+                                <ion-icon name="close-outline" class="me-1"></ion-icon>{% trans "Reject" %}
+                            </button>
+                        {% elif access_request.status == 'DH_APPROVED' and is_iso_officer and request.user.employee_get != ticket.employee_id %}
+                            {# Stage 2 — ISO Officer Approve / Reject. #}
+                            <button type="button" class="oh-btn oh-btn--success iso-action-btn iso-action-btn--equal"
+                                title="{% trans 'Approve' %}"
+                                onclick="openIsoApproveModal('{% url 'access-request-iso-review' access_request.id %}');">
+                                <ion-icon name="checkmark-outline" class="me-1"></ion-icon>{% trans "Approve" %}
+                            </button>
+                            <button type="button" class="oh-btn oh-btn--danger iso-action-btn iso-action-btn--equal"
+                                title="{% trans 'Reject' %}"
+                                onclick="openIsoRejectModal('{% url 'access-request-iso-review' access_request.id %}');">
+                                <ion-icon name="close-outline" class="me-1"></ion-icon>{% trans "Reject" %}
+                            </button>
+                        {% elif access_request.status == 'COMPLETED' and request.user.employee_get == ticket.employee_id %}
+                            {# Requestor acknowledgement — original requestor only (confirm = close). #}
+                            <button type="button" class="oh-btn oh-btn--success iso-action-btn"
+                                title="{% trans 'Yes – Fulfilled' %}"
+                                onclick="openIsoAcknowledgeModal('{% url 'access-request-acknowledge' access_request.id %}');">
                                 <ion-icon name="checkmark-done-outline" class="me-1"></ion-icon>{% trans "Yes" %}
                             </button>
                         {% endif %}
@@ -635,6 +682,80 @@
                     </div>
                 </div>
                 <!-- End of ISO Review Status Card -->
+                {% endif %}
+                {% if access_request %}
+                <!-- Access Request Review Status Card -->
+                <div class="oh-helpdesk__card">
+                    <div class="oh-helpdesk__card-header d-flex justify-content-between align-items-center">
+                        <span class="oh-helpdesk__card-title">{% trans "Access Request Review" %}</span>
+                        {% if access_request.status == 'PENDING' %}
+                            <span class="oh-badge oh-badge--iso-pending">{{ access_request.get_status_display }}</span>
+                        {% elif access_request.status == 'DH_APPROVED' %}
+                            <span class="oh-badge oh-badge--iso-action">{{ access_request.get_status_display }}</span>
+                        {% elif access_request.status == 'COMPLETED' %}
+                            <span class="oh-badge oh-badge--iso-awaiting">{{ access_request.get_status_display }}</span>
+                        {% elif access_request.status == 'CLOSED' %}
+                            <span class="oh-badge oh-badge--iso-closed">{{ access_request.get_status_display }}</span>
+                        {% elif access_request.status == 'REJECTED' %}
+                            <span class="oh-badge oh-badge--iso-rejected">{{ access_request.get_status_display }}</span>
+                        {% else %}
+                            <span class="oh-badge oh-badge--iso-default">{{ access_request.get_status_display }}</span>
+                        {% endif %}
+                    </div>
+                    <div class="oh-helpdesk__card-body">
+                        <ul class="helpdesk__card-items">
+                            <li class="helpdesk__card-item">
+                                <span class="helpdesk__card-label">{% trans "Sub Type:" %}</span>
+                                <span class="helpdesk__card-value">{{ access_request.get_sub_type_display }}</span>
+                            </li>
+                            <li class="helpdesk__card-item">
+                                <span class="helpdesk__card-label">{% trans "Domain:" %}</span>
+                                <span class="helpdesk__card-value">{{ access_request.get_domain_display }}</span>
+                            </li>
+                            <li class="helpdesk__card-item">
+                                <span class="helpdesk__card-label">{% trans "User:" %}</span>
+                                <span class="helpdesk__card-value">{{ ticket.employee_id.get_full_name|default:access_request.user_id }}</span>
+                            </li>
+                            {% if access_request.dh_reviewed_by %}
+                            <li class="helpdesk__card-item">
+                                <span class="helpdesk__card-label">{% trans "Divisional Head:" %}</span>
+                                <span class="helpdesk__card-value">{{ access_request.dh_reviewed_by.employee_get.get_full_name|default:access_request.dh_reviewed_by.username }}</span>
+                            </li>
+                            {% endif %}
+                            {% if access_request.dh_reviewed_at %}
+                            <li class="helpdesk__card-item">
+                                <span class="helpdesk__card-label">{% trans "DH reviewed at:" %}</span>
+                                <span class="helpdesk__card-value">{{ access_request.dh_reviewed_at }}</span>
+                            </li>
+                            {% endif %}
+                            {% if access_request.iso_reviewed_by %}
+                            <li class="helpdesk__card-item">
+                                <span class="helpdesk__card-label">{% trans "ISO Officer:" %}</span>
+                                <span class="helpdesk__card-value">{{ access_request.iso_reviewed_by.employee_get.get_full_name|default:access_request.iso_reviewed_by.username }}</span>
+                            </li>
+                            {% endif %}
+                            {% if access_request.iso_reviewed_at %}
+                            <li class="helpdesk__card-item">
+                                <span class="helpdesk__card-label">{% trans "ISO reviewed at:" %}</span>
+                                <span class="helpdesk__card-value">{{ access_request.iso_reviewed_at }}</span>
+                            </li>
+                            {% endif %}
+                            {% if access_request.closed_by %}
+                            <li class="helpdesk__card-item">
+                                <span class="helpdesk__card-label">{% trans "Closed by:" %}</span>
+                                <span class="helpdesk__card-value">{{ access_request.closed_by.employee_get.get_full_name|default:access_request.closed_by.username }}</span>
+                            </li>
+                            {% endif %}
+                            {% if access_request.feedback %}
+                            <li class="helpdesk__card-item">
+                                <span class="helpdesk__card-label">{% trans "Feedback:" %}</span>
+                                <span class="helpdesk__card-value">{{ access_request.feedback }}</span>
+                            </li>
+                            {% endif %}
+                        </ul>
+                    </div>
+                </div>
+                <!-- End of Access Request Review Status Card -->
                 {% endif %}
                 <!-- Responsibility Card -->
                 <div class="oh-helpdesk__card">
@@ -1137,7 +1258,7 @@
 
 <div id="passwordResetModalTarget"></div>
 
-{% if password_reset_request %}
+{% if password_reset_request or access_request %}
 {# ── ISO Workflow Modals (detail view) ── #}
 <div class="oh-modal" id="isoApproveModal" role="dialog" aria-hidden="true">
     <div class="oh-modal__dialog">

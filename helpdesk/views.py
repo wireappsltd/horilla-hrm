@@ -61,6 +61,7 @@ from helpdesk.models import (
     FAQ,
     ISO_GROUP_NAME,
     DIVISIONAL_HEAD_GROUP_NAME,
+    ACCESS_REQUEST_STATUS_CHOICES,
     ISO_STATUS_CHOICES,
     TICKET_STATUS,
     AccessRequest,
@@ -1000,12 +1001,18 @@ def _suppress_initial_set_changes(trackings):
 def ticket_detail(request, ticket_id, **kwargs):
     ticket = Ticket.objects.get(id=ticket_id)
     # Allow ISO officers to view password reset tickets
-    is_iso = _is_iso_officer(request.user)
+    is_iso = request.user.is_superuser or _is_iso_officer(request.user)
+    is_dh = request.user.is_superuser or _is_divisional_head(request.user)
     has_pr = hasattr(ticket, "password_reset_request")
     # Check if the user is a forward_to recipient for a password reset request
     pr = getattr(ticket, "password_reset_request", None)
     is_forward_to_user = (
         pr is not None and pr.forward_to.filter(pk=request.user.pk).exists()
+    )
+    access_request = getattr(ticket, "access_request", None)
+    has_ar = access_request is not None
+    is_ar_forward_to_user = (
+        has_ar and access_request.forward_to.filter(pk=request.user.pk).exists()
     )
     if (
         request.user.has_perm("helpdesk.view_ticket")
@@ -1015,6 +1022,8 @@ def ticket_detail(request, ticket_id, **kwargs):
         or request.user.employee_get in ticket.assigned_to.all()
         or (has_pr and is_iso)
         or is_forward_to_user
+        or (has_ar and (is_iso or is_dh))
+        or is_ar_forward_to_user
     ):
         today = datetime.now().date()
         c_form = CommentForm()
@@ -1136,6 +1145,12 @@ def ticket_detail(request, ticket_id, **kwargs):
         password_reset_request = getattr(ticket, "password_reset_request", None)
         iso_review_form = ISOReviewForm() if password_reset_request else None
 
+        # Fetch access request if it exists for this ticket. Mirrors the
+        # password-reset accept/reject workflow, but uses the two-stage
+        # (Divisional Head → ISO Officer) approval procedure.
+        access_request = getattr(ticket, "access_request", None)
+        access_review_form = ISOReviewForm() if access_request else None
+
         context = {
             "ticket": ticket,
             "display_description": _get_ticket_display_description(ticket),
@@ -1144,6 +1159,7 @@ def ticket_detail(request, ticket_id, **kwargs):
             "attachments": attachments,
             "ticket_status": TICKET_STATUS,
             "iso_status_choices": ISO_STATUS_CHOICES,
+            "access_request_status_choices": ACCESS_REQUEST_STATUS_CHOICES,
             "tag_form": TicketTagForm(instance=ticket),
             "sorted_activity_list": sorted_activity_list,
             "create_tag_f": TagsForm(),
@@ -1152,7 +1168,11 @@ def ticket_detail(request, ticket_id, **kwargs):
             "rating": rating,
             "password_reset_request": password_reset_request,
             "iso_review_form": iso_review_form,
+            "access_request": access_request,
+            "access_review_form": access_review_form,
             "is_iso_officer": request.user.is_superuser or _is_iso_officer(request.user),
+            "is_divisional_head": request.user.is_superuser
+            or _is_divisional_head(request.user),
         }
         return render(request, "helpdesk/ticket/ticket_detail.html", context=context)
     else:
@@ -3423,7 +3443,11 @@ def access_request_update(request, ar_id):
     )
     if not has_access:
         messages.info(request, _("You don't have permission."))
-        return HttpResponse("<script>window.location.reload()</script>")
+        if "HTTP_HX_REQUEST" in request.META:
+            return render(request, "decorator_404.html")
+        return HttpResponse(
+            f'<script>window.location.href = "{request.META.get("HTTP_REFERER", "/")}"</script>'
+        )
 
     if access_request.status != "PENDING":
         messages.info(
