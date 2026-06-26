@@ -3,8 +3,69 @@ import importlib
 
 from django.contrib.auth.models import User
 from django.contrib.contenttypes.models import ContentType
+from django.http import HttpResponse
 
 from horilla.horilla_settings import APP_URLS, DYNAMIC_URL_PATTERNS
+
+
+def is_full_page_navigation(request):
+    """
+    Return ``True`` only for top-level document navigations (typing a URL,
+    clicking a normal link, submitting a non-AJAX form).
+
+    Every partial request issued by HTMX, jQuery AJAX, ``fetch`` or
+    ``XMLHttpRequest`` returns ``False`` so a login page / redirect is never
+    swapped into the currently open module. Those callers must instead be told
+    to perform a full-page redirect (see :func:`session_expired_response`).
+    """
+    headers = request.headers
+
+    # HTMX requests.
+    if headers.get("HX-Request"):
+        return False
+
+    # jQuery / classic XMLHttpRequest.
+    if headers.get("x-requested-with") == "XMLHttpRequest":
+        return False
+
+    # Modern browsers advertise the request context via Fetch Metadata.
+    # ``navigate`` is sent for real page navigations; fetch()/XHR send
+    # ``cors``/``same-origin``/``no-cors`` instead.
+    sec_fetch_mode = headers.get("Sec-Fetch-Mode")
+    if sec_fetch_mode:
+        return sec_fetch_mode == "navigate"
+
+    # ``Sec-Fetch-Dest`` is ``document`` for full-page loads and ``empty``
+    # for programmatic fetch/XHR requests.
+    sec_fetch_dest = headers.get("Sec-Fetch-Dest")
+    if sec_fetch_dest:
+        return sec_fetch_dest == "document"
+
+    # Fallback for older clients without Fetch Metadata: treat it as a real
+    # navigation only when the client explicitly asks for an HTML document.
+    accept = headers.get("Accept", "")
+    return "text/html" in accept
+
+
+def session_expired_response(location):
+    """
+    Build a response that forces the browser to perform a *full-page* redirect
+    to the standalone login screen.
+
+    HTMX honours ``HX-Redirect`` natively, while the ``X-Session-Expired`` /
+    ``X-Login-Redirect`` headers are picked up by ``static/index/sessionExpiry.js``
+    for jQuery AJAX, ``fetch`` and raw ``XMLHttpRequest`` calls. Returning a 401
+    (instead of a 302) prevents the login page HTML from being transparently
+    fetched and swapped into the current module.
+    """
+    response = HttpResponse(status=401)
+    response["HX-Redirect"] = location
+    response["X-Session-Expired"] = "1"
+    response["X-Login-Redirect"] = location
+    response["Cache-Control"] = (
+        "no-store, no-cache, must-revalidate, max-age=0, private"
+    )
+    return response
 
 
 def get_horilla_model_class(app_label, model):
