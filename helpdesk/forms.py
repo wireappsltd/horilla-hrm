@@ -481,11 +481,22 @@ class AccessRequestForm(forms.ModelForm):
     )
     requested_date = forms.DateField(
         label=_("Requested Date"),
+        required=False,
         widget=forms.DateInput(
             attrs={
                 "class": "oh-input w-100",
                 "type": "date",
                 "readonly": "readonly",
+            }
+        ),
+    )
+    effective_date = forms.DateField(
+        label=_("Effective Date"),
+        required=False,
+        widget=forms.DateInput(
+            attrs={
+                "class": "oh-input w-100",
+                "type": "date",
             }
         ),
     )
@@ -547,6 +558,11 @@ class AccessRequestForm(forms.ModelForm):
         self.request = request
         today = timezone.localdate()
         self.fields["deadline"].widget.attrs["min"] = today.isoformat()
+        self.fields["effective_date"].widget.attrs["min"] = today.isoformat()
+
+        # Business Critical / Level of Access apply to the "Access Request"
+        self.fields["business_critical"].required = False
+        self.fields["level_of_access"].required = False
 
         # Resolve the logged-in user's Employee (ticket owner).
         current_employee = None
@@ -560,6 +576,7 @@ class AccessRequestForm(forms.ModelForm):
         if self.instance and self.instance.pk and getattr(self.instance, "ticket", None):
             owner = getattr(self.instance.ticket, "employee_id", None) or current_employee
             self.initial["requested_date"] = self.instance.requested_date
+            self.initial["effective_date"] = self.instance.effective_date
             email_initial = self.instance.user_id
         else:
             owner = current_employee
@@ -659,12 +676,48 @@ class AccessRequestForm(forms.ModelForm):
             raise forms.ValidationError(_("Due date cannot be in the past."))
         return deadline
 
+    def clean_effective_date(self):
+        effective_date = self.cleaned_data.get("effective_date")
+        if effective_date is None:
+            return effective_date
+        if effective_date < timezone.localdate():
+            raise forms.ValidationError(
+                _("Effective date cannot be in the past.")
+            )
+        return effective_date
+
+    def clean(self):
+        cleaned_data = super().clean()
+        sub_type = cleaned_data.get("sub_type")
+        required_message = _("This field is required.")
+
+        if sub_type == "access_deactivation":
+            # Deactivation captures the domain + effective date only
+            if not cleaned_data.get("effective_date"):
+                self.add_error("effective_date", required_message)
+            cleaned_data["business_critical"] = None
+            cleaned_data["level_of_access"] = None
+        else:
+            # Access Request requires the structured access fields.
+            if not cleaned_data.get("business_critical"):
+                self.add_error("business_critical", required_message)
+            if not cleaned_data.get("level_of_access"):
+                self.add_error("level_of_access", required_message)
+            cleaned_data["effective_date"] = None
+
+        if not cleaned_data.get("domain"):
+            self.add_error("domain", required_message)
+        return cleaned_data
+
     def save(self, commit=True):
         instance = super().save(commit=False)
         employee = self.cleaned_data.get("employee")
         instance.requested_date = self.cleaned_data.get(
             "requested_date"
         ) or timezone.localdate()
+        instance.effective_date = self.cleaned_data.get("effective_date")
+        instance.business_critical = self.cleaned_data.get("business_critical")
+        instance.level_of_access = self.cleaned_data.get("level_of_access")
         instance.user_id = self._employee_email(employee)
         if commit:
             instance.save()
