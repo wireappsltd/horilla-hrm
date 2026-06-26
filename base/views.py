@@ -567,7 +567,7 @@ def initialize_job_position_delete(request, obj_id):
     )
 
 
-TURNSTILE_VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
+# TURNSTILE_VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
 
 
 def _client_ip(request):
@@ -578,47 +578,48 @@ def _client_ip(request):
     return request.META.get("REMOTE_ADDR", "")
 
 
-def verify_turnstile_token(request):
-    """
-    Verify the Cloudflare Turnstile token submitted with the login form.
-
-    Returns True when the challenge passes (or when no secret key is
-    configured — in which case the feature is effectively disabled).
-    Returns False when Cloudflare positively says the token is invalid.
-    A network/transport failure is treated as a pass with a logged warning
-    so an outage at Cloudflare cannot lock every user out of the system.
-    """
-    import logging
-
-    import requests
-
-    secret = getattr(settings, "TURNSTILE_SECRETKEY", "")
-    if not secret:
-        return True
-
-    token = request.POST.get("cf-turnstile-response", "")
-    if not token:
-        return False
-
-    try:
-        resp = requests.post(
-            TURNSTILE_VERIFY_URL,
-            data={
-                "secret": secret,
-                "response": token,
-                "remoteip": _client_ip(request),
-            },
-            timeout=5,
-        )
-        data = resp.json()
-    except Exception as exc:
-        logging.getLogger(__name__).warning(
-            "Turnstile verification request failed; allowing login through: %s",
-            exc,
-        )
-        return True
-
-    return bool(data.get("success"))
+# Cloudflare Turnstile (captcha) verification is temporarily disabled.
+# def verify_turnstile_token(request):
+#     """
+#     Verify the Cloudflare Turnstile token submitted with the login form.
+#
+#     Returns True when the challenge passes (or when no secret key is
+#     configured — in which case the feature is effectively disabled).
+#     Returns False when Cloudflare positively says the token is invalid.
+#     A network/transport failure is treated as a pass with a logged warning
+#     so an outage at Cloudflare cannot lock every user out of the system.
+#     """
+#     import logging
+#
+#     import requests
+#
+#     secret = getattr(settings, "TURNSTILE_SECRETKEY", "")
+#     if not secret:
+#         return True
+#
+#     token = request.POST.get("cf-turnstile-response", "")
+#     if not token:
+#         return False
+#
+#     try:
+#         resp = requests.post(
+#             TURNSTILE_VERIFY_URL,
+#             data={
+#                 "secret": secret,
+#                 "response": token,
+#                 "remoteip": _client_ip(request),
+#             },
+#             timeout=5,
+#         )
+#         data = resp.json()
+#     except Exception as exc:
+#         logging.getLogger(__name__).warning(
+#             "Turnstile verification request failed; allowing login through: %s",
+#             exc,
+#         )
+#         return True
+#
+#     return bool(data.get("success"))
 
 
 @never_cache
@@ -652,22 +653,23 @@ def login_user(request):
         # Block automated and rapid-fire login attempts via Cloudflare
         # Turnstile. Verified before any password work so failed challenges
         # also count toward the login lockout counter (defence in depth).
-        if not verify_turnstile_token(request):
-            increment_login_attempts(username)
-            log_login(
-                username=username,
-                ip_address=_client_ip(request),
-                status="failed",
-                failure_reason="captcha_failed",
-            )
-            messages.error(
-                request,
-                _(
-                    "Verification failed. Please complete the security check "
-                    "and try again."
-                ),
-            )
-            return redirect("login")
+        # NOTE: Captcha (Turnstile) check temporarily disabled;
+        # if not verify_turnstile_token(request):
+        #     increment_login_attempts(username)
+        #     log_login(
+        #         username=username,
+        #         ip_address=_client_ip(request),
+        #         status="failed",
+        #         failure_reason="captcha_failed",
+        #     )
+        #     messages.error(
+        #         request,
+        #         _(
+        #             "Verification failed. Please complete the security check "
+        #             "and try again."
+        #         ),
+        #     )
+        #     return redirect("login")
 
         user = authenticate(request, username=username, password=password)
 
@@ -824,7 +826,8 @@ def login_user(request):
         "login.html",
         {
             "initialize_database": initialize_database_condition(),
-            "turnstile_sitekey": getattr(settings, "TURNSTILE_SITEKEY", ""),
+            # Captcha (Turnstile) temporarily disabled;
+            # "turnstile_sitekey": getattr(settings, "TURNSTILE_SITEKEY", ""),
         },
     )
 
