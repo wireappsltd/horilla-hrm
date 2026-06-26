@@ -1,0 +1,157 @@
+{% load i18n %}
+
+<div class="oh-modal oh-modal--show" id="exceptionRequestModal">
+    <div class="oh-modal__dialog">
+        <div class="oh-modal__dialog-header">
+            <h2 class="oh-modal__dialog-title">
+                {% if exception_request %}
+                    {% trans "Edit Exception Request" %}
+                {% else %}
+                    {% trans "Exception Request" %}
+                {% endif %}
+            </h2>
+            <button
+                class="oh-modal__close"
+                aria-label="Close"
+                onclick="document.getElementById('exceptionRequestModal').classList.remove('oh-modal--show')"
+            >
+                <ion-icon name="close-outline"></ion-icon>
+            </button>
+        </div>
+
+        <div class="oh-modal__dialog-body">
+            <form
+                method="post"
+                {% if exception_request %}
+                    hx-post="{% url 'exception-request-update' exception_request.id %}"
+                {% else %}
+                    hx-post="{% url 'exception-request-create' %}"
+                {% endif %}
+                hx-target="#exceptionRequestModalTarget"
+                hx-swap="innerHTML"
+                hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+            >
+                {% csrf_token %}
+                {{ form.employee }}
+
+                <!-- User ID (Email) -->
+                <div class="oh-layout--row">
+                    <div class="oh-form__group col-md-12">
+                        <label class="oh-label oh-label--mandatory" for="id_user_email">
+                            {% trans "User ID (Email)" %} <span style="color: red;">*</span>
+                        </label>
+                        {{ form.user_email }}
+                        {% if form.user_email.errors %}
+                            <span class="oh-text--danger" style="font-size:12px;">{{ form.user_email.errors|join:", " }}</span>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- ISMS Reference -->
+                <div class="oh-layout--row mt-2">
+                    <div class="oh-form__group col-md-12">
+                        <label class="oh-label oh-label--mandatory" for="id_isms_reference">
+                            {% trans "ISMS Reference" %} <span style="color: red;">*</span>
+                        </label>
+                        {{ form.isms_reference }}
+                        {% if form.isms_reference.errors %}
+                            <span class="oh-text--danger" style="font-size:12px;">{{ form.isms_reference.errors|join:", " }}</span>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Priority & Due Date -->
+                <div class="oh-layout--row mt-2">
+                    <div class="oh-form__group col-md-6">
+                        <label class="oh-label" for="id_priority">{% trans "Priority" %}</label>
+                        {{ form.priority }}
+                    </div>
+                    <div class="oh-form__group col-md-6">
+                        <label class="oh-label" for="id_deadline">{% trans "Due Date" %}</label>
+                        {{ form.deadline }}
+                        {% if form.deadline.errors %}
+                            <span class="oh-text--danger" style="font-size:12px;">{{ form.deadline.errors|join:", " }}</span>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Forward To (IS Council) -->
+                <div class="oh-layout--row mt-2">
+                    <div class="oh-form__group col-md-12">
+                        <label class="oh-label oh-label--mandatory" for="id_forward_to">
+                            {% trans "Forward To" %} <span style="color: red;">*</span>
+                        </label>
+                        {{ form.forward_to }}
+                        {% if form.forward_to.errors %}
+                            <span class="oh-text--danger" style="font-size:12px;">{{ form.forward_to.errors|join:", " }}</span>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Description of Exception -->
+                <div class="oh-form__group mt-2">
+                    <label class="oh-label oh-label--mandatory" for="id_description">
+                        {% trans "Description of Exception" %} <span style="color: red;">*</span>
+                    </label>
+                    {{ form.description }}
+                    <div class="d-flex justify-content-between mt-1">
+                        <span class="oh-text--muted" style="font-size:12px;">
+                            {% blocktrans with max=form.description.field.max_length %}Max {{ max }} characters{% endblocktrans %}
+                        </span>
+                        <span class="oh-text--muted" id="exceptionDescriptionCounter" style="font-size:12px;">
+                            0/{{ form.description.field.max_length }}
+                        </span>
+                    </div>
+                    <span class="oh-text--danger" id="exceptionDescriptionClientError" style="font-size:12px; display:none;"></span>
+                    {% if form.description.errors %}
+                        <span class="oh-text--danger" style="font-size:12px;">{{ form.description.errors|join:", " }}</span>
+                    {% endif %}
+                </div>
+
+                {% if form.non_field_errors %}
+                    <div class="oh-alert oh-alert--danger mt-2">{{ form.non_field_errors }}</div>
+                {% endif %}
+
+                <div class="d-flex justify-content-end mt-3">
+                    <button type="submit" class="oh-btn oh-btn--secondary">{% trans "Save" %}</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    (function () {
+        const modal = document.getElementById("exceptionRequestModal");
+        if (!modal) { return; }
+
+        const form = modal.querySelector("form");
+        const descriptionInput = modal.querySelector("#id_description");
+        const counter = modal.querySelector("#exceptionDescriptionCounter");
+        const errorEl = modal.querySelector("#exceptionDescriptionClientError");
+
+        if (!form || !descriptionInput || !counter || !errorEl) { return; }
+        const maxLength = parseInt(descriptionInput.dataset.maxlength || "0", 10);
+        if (!maxLength) { return; }
+        const errorMessage = descriptionInput.dataset.maxlengthMessage ||
+            `Description cannot exceed ${maxLength} characters.`;
+
+        const updateState = function () {
+            const currentLength = descriptionInput.value.length;
+            counter.textContent = `${currentLength}/${maxLength}`;
+            const exceedsLimit = currentLength > maxLength;
+            errorEl.style.display = exceedsLimit ? "block" : "none";
+            errorEl.textContent = exceedsLimit ? errorMessage : "";
+            descriptionInput.setCustomValidity(exceedsLimit ? errorMessage : "");
+            return exceedsLimit;
+        };
+        descriptionInput.addEventListener("input", updateState);
+        form.addEventListener("submit", function (event) {
+            if (updateState()) {
+                event.preventDefault();
+                descriptionInput.focus();
+            }
+        });
+        updateState();
+    })();
+</script>

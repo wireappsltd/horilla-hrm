@@ -229,5 +229,41 @@ urlpatterns = [
         views.access_request_delete,
         name="access-request-delete",
     ),
+    # ── Exception Request URLs ───────────────────────────────────────────────
+    path(
+        "exception-request/create/",
+        views.exception_request_create,
+        name="exception-request-create",
+    ),
+    path(
+        "exception-request/update/<int:er_id>/",
+        views.exception_request_update,
+        name="exception-request-update",
+    ),
+    path(
+        "exception-request/iso-review/<int:er_id>/",
+        views.iso_review_exception_request,
+        name="exception-request-iso-review",
+    ),
+    path(
+        "exception-request/isc-review/<int:er_id>/",
+        views.isc_review_exception_request,
+        name="exception-request-isc-review",
+    ),
+    path(
+        "exception-request/acknowledge/<int:er_id>/",
+        views.exception_request_acknowledge,
+        name="exception-request-acknowledge",
+    ),
+    path(
+        "exception-request/withdraw/<int:er_id>/",
+        views.exception_request_withdraw,
+        name="exception-request-withdraw",
+    ),
+    path(
+        "exception-request/delete/<int:er_id>/",
+        views.exception_request_delete,
+        name="exception-request-delete",
+    ),
 ]
 

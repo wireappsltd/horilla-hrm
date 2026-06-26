@@ -30,6 +30,10 @@ ISO_GROUP_NAME = "ISO"
 # approvers of the two-stage Access Request workflow).
 DIVISIONAL_HEAD_GROUP_NAME = "Divisional Head"
 
+# Name of the Django auth Group whose members act as IS Council (ISC) members
+# (Stage 2 approvers of the two-stage Exception Request workflow).
+ISC_GROUP_NAME = "IS Council"
+
 MANAGER_TYPES = [
     ("department", "Department"),
     ("job_position", "Job Position"),
@@ -106,6 +110,18 @@ ACCESS_DOMAIN_CHOICES = [
 ACCESS_REQUEST_STATUS_CHOICES = [
     ("PENDING", "Pending"),
     ("DH_APPROVED", "Divisional Head Approved"),
+    ("COMPLETED", "Completed"),
+    ("CLOSED", "Closed"),
+    ("REJECTED", "Rejected"),
+]
+
+# Two-stage approval lifecycle for Exception Requests:
+#   PENDING → (ISO Officer approves) ISO_APPROVED → (IS Council approves)
+#           COMPLETED → (requestor acknowledges) CLOSED
+# Rejection at either stage is terminal → REJECTED.
+EXCEPTION_REQUEST_STATUS_CHOICES = [
+    ("PENDING", "Pending"),
+    ("ISO_APPROVED", "ISO Approved"),
     ("COMPLETED", "Completed"),
     ("CLOSED", "Closed"),
     ("REJECTED", "Rejected"),
@@ -512,6 +528,100 @@ class AccessRequest(HorillaModel):
 
     def __str__(self):
         return f"Access Request – {self.get_domain_display()} – {self.ticket}"
+
+    def get_forward_to_users(self):
+        """Return selected forwarding users as a queryset."""
+        return self.forward_to.select_related("employee_get").all()
+
+    def get_forward_to_display(self):
+        """Return a comma-separated list of forwarded-to user display names."""
+        names = []
+        for user in self.get_forward_to_users():
+            try:
+                names.append(user.employee_get.get_full_name())
+            except Exception:
+                names.append(user.get_full_name() or user.username)
+        return ", ".join([name for name in names if name])
+
+    def clean(self, *args, **kwargs):
+        super().clean(*args, **kwargs)
+        if self.status == "REJECTED" and not self.feedback:
+            raise ValidationError(
+                {"feedback": _("Feedback is required when rejecting a request.")}
+            )
+
+
+class ExceptionRequest(HorillaModel):
+    """
+    Stores the extra details for an "Exception Request" ticket (ISO Forms
+    category).
+    """
+
+    ticket = models.OneToOneField(
+        Ticket,
+        on_delete=models.CASCADE,
+        related_name="exception_request",
+    )
+    user_id = models.EmailField(verbose_name=_("User ID (Email)"))
+    description = models.TextField(verbose_name=_("Description of Exception"))
+    isms_reference = models.CharField(
+        max_length=250,
+        verbose_name=_("ISMS Reference"),
+    )
+    forward_to = models.ManyToManyField(
+        User,
+        blank=True,
+        related_name="forwarded_exception_requests",
+        verbose_name=_("Forward To"),
+    )
+
+    status = models.CharField(
+        max_length=20,
+        choices=EXCEPTION_REQUEST_STATUS_CHOICES,
+        default="PENDING",
+        verbose_name=_("Status"),
+    )
+    feedback = models.TextField(blank=True, null=True, verbose_name=_("Feedback"))
+
+    # Stage 1 — ISO Officer review
+    iso_reviewed_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="iso_reviewed_exception_requests",
+        verbose_name=_("ISO Officer"),
+    )
+    iso_reviewed_at = models.DateTimeField(null=True, blank=True)
+
+    # Stage 2 — IS Council review
+    isc_reviewed_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="isc_reviewed_exception_requests",
+        verbose_name=_("IS Council"),
+    )
+    isc_reviewed_at = models.DateTimeField(null=True, blank=True)
+
+    closed_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="closed_exception_requests",
+        verbose_name=_("Closed By"),
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True, verbose_name=_("Updated At"))
+
+    class Meta:
+        verbose_name = _("Exception Request")
+        verbose_name_plural = _("Exception Requests")
+
+    def __str__(self):
+        return f"Exception Request – {self.isms_reference} – {self.ticket}"
 
     def get_forward_to_users(self):
         """Return selected forwarding users as a queryset."""
