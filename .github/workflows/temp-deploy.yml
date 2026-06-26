@@ -17,11 +17,8 @@ jobs:
       - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
-
-          # TEMP KEY (your temphorilla.pem)
           echo "${{ secrets.TEMP_SSH_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-
           ssh-keyscan -H ${{ secrets.EC2_TEMP_HOST }} >> ~/.ssh/known_hosts
 
       - name: Deploy to TEMP EC2
@@ -38,11 +35,12 @@ jobs:
 
           git fetch origin
           git checkout prod-temp
-          git pull origin prod-temp
+          git reset --hard origin/prod-temp
 
           fuser -k 8000/tcp || true
 
           source ../venv/bin/activate
+
           pip install -r requirements.txt
 
           python manage.py makemigrations --noinput
@@ -52,4 +50,5 @@ jobs:
           nohup python3 manage.py runserver 0.0.0.0:8000 > django.log 2>&1 &
 
           echo "✅ TEMP deployment done"
+
           EOF
