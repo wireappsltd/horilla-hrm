@@ -97,14 +97,32 @@ def pipeline_grouper(filters={}, offboardings=[]):
         stages = PipelineStageFilter(
             filters, queryset=offboarding.offboardingstage_set.all()
         ).qs.order_by("sequence")
+
+        # Build the employee FilterSet ONCE per offboarding flow instead of
+        # once per stage. PipelineEmployeeFilter has 8 ModelChoice fields, each
+        # of which queries its FK table to populate dropdown options when the
+        # FilterSet is instantiated -- doing that per stage was the main source
+        # of the pagination latency.
+        flow_employee_qs = (
+            OffboardingEmployee.objects.filter(stage_id__offboarding_id=offboarding)
+            .select_related(
+                "employee_id",
+                "employee_id__employee_work_info",
+                "employee_id__employee_work_info__department_id",
+                "employee_id__employee_work_info__job_position_id",
+                "stage_id",
+                "stage_id__offboarding_id",
+            )
+        )
+        filtered_flow_qs = PipelineEmployeeFilter(filters, flow_employee_qs).qs
+
         all_stages_grouper = []
         data = {"offboarding": offboarding, "stages": [], "employees": []}
         for stage in stages:
             all_stages_grouper.append({"grouper": stage, "list": []})
-            stage_employees = PipelineEmployeeFilter(
-                filters,
-                OffboardingEmployee.objects.filter(stage_id=stage),
-            ).qs.order_by("stage_id__id")
+            stage_employees = filtered_flow_qs.filter(stage_id=stage).order_by(
+                "stage_id__id"
+            )
 
             if request and not (
                     request.user.has_perm("offboarding.view_offboarding")
@@ -121,9 +139,9 @@ def pipeline_grouper(filters={}, offboardings=[]):
                 filters.get(page_name),
                 page_name,
             ).object_list
-            employees = employees + [
-                employee.id for employee in stage.offboardingemployee_set.all()
-            ]
+            employees = employees + list(
+                stage.offboardingemployee_set.values_list("id", flat=True)
+            )
             data["stages"] = data["stages"] + employee_grouper
 
         ordered_data = []
@@ -424,7 +442,11 @@ def add_employee(request):
 
             from django.db.models import Q
             tasks_for_stage = OffboardingTask.objects.filter(
-                Q(stage_id=stage) | Q(stage_id__isnull=True),
+                Q(stage_id=stage)
+                | (
+                    Q(stage_id__isnull=True)
+                    & (Q(stage_title=stage.title) | Q(stage_title__isnull=True))
+                ),
                 is_active=True,
                 is_fine=False,
             )
@@ -951,6 +973,13 @@ def offboarding_individual_view(request, emp_id):
         emp_id(int): the id of the offboarding employee
     """
     employee = OffboardingEmployee.objects.get(id=emp_id)
+    # Ensure EmployeeTask rows exist for every OffboardingTask defined on the
+    # employee's current stage and any global tasks. Idempotent — safe to call
+    # on every render. Covers the case where signals didn't fire (historical
+    # data created before the signals were deployed, or on environments where
+    # for any reason post_save did not run).
+    from offboarding.methods import assign_stage_tasks_to_employee
+    assign_stage_tasks_to_employee(employee)
     tasks = EmployeeTask.objects.filter(employee_id=emp_id)
     stage_forms = {}
     offboarding_stages = OffboardingStage.objects.filter(
@@ -1597,12 +1626,26 @@ def edit_common_task(request, task_id):
 
 
 @login_required
+@permission_required("offboarding.delete_offboardingtask")
 def delete_common_task(request, task_id):
     task = get_object_or_404(OffboardingTask, id=task_id)
-    task.delete()
+    assigned_count = EmployeeTask.objects.filter(task_id=task).count()
+    error_message = None
+    if assigned_count:
+        error_message = _(
+            "This task is assigned to %(count)d employee(s) and cannot be deleted."
+        ) % {"count": assigned_count}
+    else:
+        task.delete()
 
-    tasks = OffboardingTask.objects.filter(is_active=True, is_fine=False)
-    return render(request, "offboarding/task/common_task_list.html", {"tasks": tasks})
+    task_list = OffboardingTask.objects.filter(is_active=True, is_fine=False).order_by("-id")
+    paginator = Paginator(task_list, 5)
+    tasks = paginator.get_page(request.GET.get("page", 1))
+    return render(
+        request,
+        "offboarding/task/common_task_list.html",
+        {"tasks": tasks, "error_message": error_message},
+    )
 
 
 def create_common_task(request):

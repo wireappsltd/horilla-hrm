@@ -347,6 +347,10 @@
 									data-cell-index="203" data-cell-title='{% trans "Return Date" %}'
 									hx-get="{% url 'asset-request-allocation-view-search-filter' %}?{{pg}}&assign_sortby=return_date"
 									hx-target="#asset_request_allocation_list">{% trans "Return Date" %}</div>
+								<div class="oh-sticky-table__th">{% trans "Yearly Check-up Status" %}</div>
+								<div class="oh-sticky-table__th {% if request.sort_option.order == '-yearly_checkup_date' %}arrow-up {% elif request.sort_option.order == 'yearly_checkup_date' %}arrow-down {% else %}arrow-up-down {% endif %}"
+									hx-get="{% url 'asset-request-allocation-view-search-filter' %}?{{pg}}&assign_sortby=yearly_checkup_date"
+									hx-target="#asset_request_allocation_list">{% trans "Yearly Check-up Date" %}</div>
 								<div class="oh-sticky-table__th">{% trans "Actions" %}</div>
 							</div>
 						</div>
@@ -392,23 +396,63 @@
 											</div>
 										{% endif %}
 									{% endif %}
-									{% if not asset_allocation.return_status %}
-										<div class="oh-sticky-table__td">
-											<button href="#" class="oh-btn oh-btn--secondary" role="button"
-												data-toggle="oh-modal-toggle" data-target="#objectCreateModal"
-												hx-get="{% url 'asset-allocate-return'  asset_id=asset_allocation.asset_id.id %}"
-												hx-target="#objectCreateModalTarget">
-												<ion-icon name="return-down-back-sharp"></ion-icon>{% trans "Return" %}
-											</button>
-										</div>
-									{% else %}
-										<div class="oh-sticky-table__td">
+									<div class="oh-sticky-table__td">
+										{% if asset_allocation.yearly_checkup_status == "Complete" %}
 											<div class="d-flex align-items-center">
-												<span class="oh-dot oh-dot--small me-1 oh-dot--color oh-dot--info"></span>
-												<span class="link-primary"> {% trans "Returned" %} </span>
+												<span class="oh-dot oh-dot--small me-1 oh-dot--color oh-dot--success"></span>
+												<span class="link-success">{% trans "Complete" %}</span>
 											</div>
+										{% elif asset_allocation.yearly_checkup_status == "Overdue" %}
+											<div class="d-flex align-items-center">
+												<span class="oh-dot oh-dot--small me-1 oh-dot--color oh-dot--danger"></span>
+												<span class="link-danger">{% trans "Overdue" %}</span>
+											</div>
+										{% else %}
+											<div class="d-flex align-items-center">
+												<span class="oh-dot oh-dot--small me-1 oh-dot--color oh-dot--warning"></span>
+												<span class="link-warning">{% trans "Pending" %}</span>
+											</div>
+										{% endif %}
+									</div>
+									<div class="oh-sticky-table__td dateformat_changer" style="vertical-align: middle;">
+										{{ asset_allocation.yearly_checkup_date|default:"-" }}
+									</div>
+									<div class="oh-sticky-table__td">
+										<div class="d-flex align-items-center" style="gap: 4px;">
+											{% if asset_allocation.is_checkup_button_enabled %}
+												<button class="oh-btn oh-btn--warning oh-btn--x-small" role="button"
+													style="white-space: nowrap;"
+													onclick="event.stopPropagation()"
+													data-toggle="oh-modal-toggle" data-target="#objectCreateModal"
+													hx-get="{% url 'asset-yearly-checkup-submit' asset_allocation_id=asset_allocation.id %}"
+													hx-target="#objectCreateModalTarget">
+													<ion-icon name="construct-outline"></ion-icon>{% trans "Yearly Check-up" %}
+												</button>
+											{% else %}
+												<button class="oh-btn oh-btn--warning oh-btn--x-small oh-btn--disabled" role="button"
+													style="white-space: nowrap;"
+													onclick="event.stopPropagation()"
+													disabled>
+													<ion-icon name="construct-outline"></ion-icon>{% trans "Yearly Check-up" %}
+												</button>
+											{% endif %}
+											{% if not asset_allocation.return_status %}
+												<button class="oh-btn oh-btn--secondary oh-btn--x-small" role="button"
+													style="white-space: nowrap;"
+													onclick="event.stopPropagation()"
+													data-toggle="oh-modal-toggle" data-target="#objectCreateModal"
+													hx-get="{% url 'asset-allocate-return'  asset_id=asset_allocation.asset_id.id %}"
+													hx-target="#objectCreateModalTarget">
+													<ion-icon name="return-down-back-sharp"></ion-icon>{% trans "Return" %}
+												</button>
+											{% else %}
+												<div class="d-flex align-items-center">
+													<span class="oh-dot oh-dot--small me-1 oh-dot--color oh-dot--info"></span>
+													<span class="link-primary"> {% trans "Returned" %} </span>
+												</div>
+											{% endif %}
 										</div>
-									{% endif %}
+									</div>
 								</div>
 								<!-- End of asset allocations -->
 							{% endfor %}

@@ -456,7 +456,10 @@ class PasswordResetRequestForm(forms.ModelForm):
 class ISOReviewForm(forms.Form):
     """
     Form used by ISO/Admin to approve or reject a Password Reset request.
-    iso_feedback is required when action == 'reject'.
+
+    A comment (iso_feedback) is now MANDATORY for both actions:
+      * Approve → the Review Comment is required (spec §4).
+      * Reject  → the Reason for Rejection is required (unchanged).
     """
 
     ACTION_CHOICES = [
@@ -469,26 +472,78 @@ class ISOReviewForm(forms.Form):
         widget=forms.HiddenInput(),
     )
     iso_feedback = forms.CharField(
-        required=False,
-        label=_("Feedback / Reason for Rejection"),
+        # Server-side authoritative: required for both approve and reject.
+        required=True,
+        label=_("Comment"),
         widget=forms.Textarea(
             attrs={
                 "class": "oh-input w-100",
                 "rows": 3,
-                "placeholder": _("Provide feedback (required when rejecting)..."),
+                "placeholder": _("A comment is required..."),
             }
         ),
     )
 
     def clean(self):
         cleaned_data = super().clean()
-        action = cleaned_data.get("action")
-        feedback = cleaned_data.get("iso_feedback", "").strip()
-        if action == "reject" and not feedback:
-            raise forms.ValidationError(
-                _("Feedback is required when rejecting a request.")
-            )
+        feedback = (cleaned_data.get("iso_feedback") or "").strip()
+        if not feedback:
+            # Authoritative server-side mandatory-comment enforcement.
+            raise forms.ValidationError(_("A comment is required."))
+        cleaned_data["iso_feedback"] = feedback
         return cleaned_data
+
+
+class ISOCommentTransitionForm(forms.Form):
+    """
+    Generic single-comment transition form used by the ISO workflow steps that
+    only require a mandatory comment:
+      * In Action → Awaiting Acknowledgement (ISO officer, §5).
+    """
+
+    comment = forms.CharField(
+        required=True,
+        label=_("Comment"),
+        widget=forms.Textarea(
+            attrs={
+                "class": "oh-input w-100",
+                "rows": 3,
+                "placeholder": _("A comment is required..."),
+            }
+        ),
+    )
+
+    def clean_comment(self):
+        comment = (self.cleaned_data.get("comment") or "").strip()
+        if not comment:
+            raise forms.ValidationError(_("A comment is required."))
+        return comment
+
+
+class ISOAcknowledgementForm(forms.Form):
+    """
+    Requestor acknowledgement form (§6) driven from the detail top-bar control.
+    The employee confirms the request was fulfilled (→ Closed) with a mandatory
+    comment. (The "No"/reopen branch has been removed.)
+    """
+
+    comment = forms.CharField(
+        required=True,
+        label=_("Comment"),
+        widget=forms.Textarea(
+            attrs={
+                "class": "oh-input w-100",
+                "rows": 3,
+                "placeholder": _("A comment is required..."),
+            }
+        ),
+    )
+
+    def clean_comment(self):
+        comment = (self.cleaned_data.get("comment") or "").strip()
+        if not comment:
+            raise forms.ValidationError(_("A comment is required."))
+        return comment
 
 
 class TicketTagForm(ModelForm):

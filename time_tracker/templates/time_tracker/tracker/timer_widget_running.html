@@ -1,0 +1,25 @@
+{% load i18n %}
+<div id="tt-widget" class="oh-navbar__tt-widget oh-navbar__tt-widget--running">
+  <!-- Heartbeat ping every 30s -->
+  <div hx-post="/time-tracker/timer/heartbeat/"
+       hx-trigger="every 30s"
+       hx-swap="none"
+       hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+       style="display:none;"></div>
+  {% if project_name %}
+  <span class="oh-navbar__tt-badge"
+        style="background-color:{{ project_color }}">
+    {{ project_name|truncatechars:16 }}
+  </span>
+  {% endif %}
+  <span class="oh-navbar__tt-counter" data-tt-counter
+        data-started-at="{{ started_at|date:'c' }}">00:00:00</span>
+  <button class="oh-btn oh-btn--danger oh-btn--sm"
+          title="{% trans 'Stop Timer' %}"
+          hx-post="/time-tracker/timer/stop/"
+          hx-target="#tt-timer-widget-container"
+          hx-swap="innerHTML"
+          hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
+    <ion-icon name="stop-circle-outline"></ion-icon>
+  </button>
+</div>

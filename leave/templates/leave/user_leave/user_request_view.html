@@ -275,7 +275,12 @@
 	{% trans "Selected Requests" %}
 </div>
 
-{% include 'leave/user_leave/user_leave.html' %}
+<div id="userLeavesSummary"
+	hx-get="{% url 'user-leave-filter' %}"
+	hx-trigger="leaveStatsRefresh from:body"
+	hx-swap="innerHTML">
+	{% include 'leave/user_leave/user_leave.html' %}
+</div>
 
 <div class="oh-wrapper" id="userRequest">
 	{% if leave_requests %}

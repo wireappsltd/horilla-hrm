@@ -22,6 +22,71 @@
 </div>
 
 <script>
+    // Prevent the admin from selecting the same employee as the Covering
+    // Person. The manager dropdown is rendered once with the full active
+    // employee list; whenever the Employee selection changes we remove the
+    // matching <option> (caching it so we can restore it later) and clear
+    // the manager value if it was the same person. This mirrors the
+    // server-side validation in `_validate_covering_person_not_self`.
+    (function () {
+        const form = document.getElementById("leaveRequestCreateForm");
+        if (!form) return;
+        const employeeSelect = form.querySelector('[name="employee_id"]');
+        const managerSelect = form.querySelector('[name="manager"]');
+        if (!employeeSelect || !managerSelect) return;
+
+        // Cache of options that we've removed, keyed by their value, so we
+        // can restore them when the employee selection changes again.
+        const removedOptions = {};
+
+        function syncCoveringPersonOptions() {
+            const selectedEmpId = String(employeeSelect.value || "");
+
+            // Restore any previously removed options that no longer match
+            // the currently selected employee.
+            Object.keys(removedOptions).forEach(function (val) {
+                if (val !== selectedEmpId) {
+                    const cached = removedOptions[val];
+                    if (cached && !managerSelect.querySelector(
+                            'option[value="' + window.CSS.escape(val) + '"]')) {
+                        // Re-insert at original index when possible.
+                        const refNode = managerSelect.options[cached.index] || null;
+                        managerSelect.insertBefore(cached.node, refNode);
+                    }
+                    delete removedOptions[val];
+                }
+            });
+
+            // Remove the option matching the selected employee, if present.
+            if (selectedEmpId) {
+                const match = Array.prototype.find.call(
+                    managerSelect.options,
+                    function (opt) { return String(opt.value) === selectedEmpId; }
+                );
+                if (match) {
+                    removedOptions[selectedEmpId] = {
+                        node: match,
+                        index: match.index,
+                    };
+                    if (match.selected) {
+                        managerSelect.value = "";
+                    }
+                    match.parentNode.removeChild(match);
+                }
+            }
+
+            if (window.jQuery) {
+                try { window.jQuery(managerSelect).trigger("change.select2"); } catch (e) { }
+            }
+        }
+
+        employeeSelect.addEventListener("change", syncCoveringPersonOptions);
+        // Run once on initial load so a pre-filled employee is already excluded.
+        syncCoveringPersonOptions();
+    })();
+</script>
+
+<script>
     // Constrain the attachment input's click target to the native control.
     // The shared horilla_form.html applies form-control/w-100 to every field,
     // which stretches the file input across the row — browsers then treat the

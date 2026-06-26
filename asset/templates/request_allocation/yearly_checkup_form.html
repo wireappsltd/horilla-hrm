@@ -1,0 +1,122 @@
+{% load i18n %}
+{% if messages %}
+    <script>
+        setTimeout(function () {
+            $(".oh-modal__close").click();
+            reloadMessage();
+        }, 1000);
+    </script>
+{% endif %}
+<div class="oh-modal__dialog-header">
+    <button type="button" class="oh-modal__close" data-dismiss="oh-modal" aria-label="Close">
+        <ion-icon name="close-outline"></ion-icon>
+    </button>
+    <span class="oh-modal__dialog-title ml-5">
+        <h5>{% trans "Submit Yearly Check-up" %}</h5>
+    </span>
+</div>
+<div class="oh-modal__dialog-body">
+    <p class="text-muted mb-3">
+        {% trans "Asset:" %} <strong>{{ asset_allocation.asset_id }}</strong>
+        {% if asset_allocation.assigned_to_employee_id %}
+            <br />
+            {% trans "Allocated to:" %} {{ asset_allocation.assigned_to_employee_id.get_full_name }}
+        {% endif %}
+    </p>
+    <form id="yearlyCheckupForm"
+        hx-post="{% url 'asset-yearly-checkup-submit' asset_allocation.id %}"
+        hx-target="#objectCreateModalTarget"
+        hx-encoding="multipart/form-data">
+        {% csrf_token %}
+        {% if yearly_checkup_form.non_field_errors %}
+            <div class="oh-alert oh-alert--danger mb-2">
+                {{ yearly_checkup_form.non_field_errors }}
+            </div>
+        {% endif %}
+        <div class="oh-profile-section pt-0">
+            <div class="oh-input__group">
+                <label class="oh-input__label" for="{{ yearly_checkup_form.yearly_checkup_date.id_for_label }}">
+                    {{ yearly_checkup_form.yearly_checkup_date.label }} *
+                </label>
+                {{ yearly_checkup_form.yearly_checkup_date }}
+                {{ yearly_checkup_form.yearly_checkup_date.errors }}
+            </div>
+            <div class="oh-input__group">
+                <label class="oh-input__label" for="{{ yearly_checkup_form.checkup_description.id_for_label }}">
+                    {{ yearly_checkup_form.checkup_description.label }} *
+                </label>
+                {{ yearly_checkup_form.checkup_description }}
+                {{ yearly_checkup_form.checkup_description.errors }}
+            </div>
+            <div class="oh-input__group">
+                <label class="oh-input__label" for="{{ yearly_checkup_form.checkup_images.id_for_label }}">
+                    {{ yearly_checkup_form.checkup_images.label }}
+                </label>
+                {{ yearly_checkup_form.checkup_images }}
+                <span class="oh-input__help text-muted">
+                    {% trans "You can select multiple images. Maximum size per image: 5 MB." %}
+                </span>
+                <span id="checkupImageInlineError" class="oh-input__error link-danger" style="display:none;">
+                    {% trans "One or more image files exceed the 5 MB limit. Please upload smaller images." %}
+                </span>
+                {{ yearly_checkup_form.checkup_images.errors }}
+            </div>
+            <div class="oh-modal__dialog-footer p-0">
+                <button id="yearlyCheckupConfirmBtn" type="submit"
+                    class="oh-btn oh-btn--secondary oh-btn--shadow" disabled>
+                    {% trans "Confirm" %}
+                </button>
+            </div>
+        </div>
+    </form>
+</div>
+<script>
+    (function () {
+        var form = document.getElementById("yearlyCheckupForm");
+        if (!form) return;
+
+        var dateInput = form.querySelector("[name='yearly_checkup_date']");
+        var descInput = form.querySelector("[name='checkup_description']");
+        var imageInput = form.querySelector("[name='checkup_images']");
+        var confirmBtn = document.getElementById("yearlyCheckupConfirmBtn");
+        var inlineError = document.getElementById("checkupImageInlineError");
+        var maxBytes = 5 * 1024 * 1024;
+
+        if (imageInput) {
+            imageInput.setAttribute("multiple", "multiple");
+        }
+
+        function imagesWithinLimit() {
+            if (!imageInput || !imageInput.files) return true;
+            for (var i = 0; i < imageInput.files.length; i++) {
+                if (imageInput.files[i].size > maxBytes) return false;
+            }
+            return true;
+        }
+
+        function updateConfirmState() {
+            var hasDate = dateInput && dateInput.value.trim() !== "";
+            var hasDesc = descInput && descInput.value.trim() !== "";
+            confirmBtn.disabled = !(hasDate && hasDesc && imagesWithinLimit());
+        }
+
+        if (dateInput) dateInput.addEventListener("input", updateConfirmState);
+        if (descInput) {
+            descInput.addEventListener("input", updateConfirmState);
+            descInput.addEventListener("keyup", updateConfirmState);
+        }
+        if (imageInput) {
+            imageInput.addEventListener("change", function () {
+                if (!imagesWithinLimit()) {
+                    inlineError.style.display = "block";
+                    this.value = "";
+                } else {
+                    inlineError.style.display = "none";
+                }
+                updateConfirmState();
+            });
+        }
+
+        updateConfirmState();
+    })();
+</script>

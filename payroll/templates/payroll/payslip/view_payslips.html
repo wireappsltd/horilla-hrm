@@ -579,10 +579,38 @@
     var endInput = document.getElementById("reportEndDate");
     var errorEl = document.getElementById("reportDateError");
 
+    // Restrict the end date picker to at most 3 days from today,
+    // consistent with the attendance marking restriction.
+    var today = new Date();
+    today.setHours(0, 0, 0, 0);
+    var maxEndDate = new Date(today);
+    maxEndDate.setDate(maxEndDate.getDate() + 3);
+    function toISO(d) {
+      var m = String(d.getMonth() + 1).padStart(2, "0");
+      var day = String(d.getDate()).padStart(2, "0");
+      return d.getFullYear() + "-" + m + "-" + day;
+    }
+    // Parse a YYYY-MM-DD value from <input type="date"> as a local-time
+    // Date. `new Date("YYYY-MM-DD")` parses as UTC midnight in most
+    // browsers, which silently shifts comparisons against `maxEndDate`
+    // (built in local time) by the user's timezone offset and breaks the
+    // 3-day rule at timezone boundaries.
+    function parseLocalDate(str) {
+      if (!str) return new Date(NaN);
+      var parts = str.split("-");
+      if (parts.length !== 3) return new Date(NaN);
+      var y = parseInt(parts[0], 10);
+      var m = parseInt(parts[1], 10);
+      var d = parseInt(parts[2], 10);
+      if (isNaN(y) || isNaN(m) || isNaN(d)) return new Date(NaN);
+      return new Date(y, m - 1, d);
+    }
+    endInput.setAttribute("max", toISO(maxEndDate));
+
     form.addEventListener("submit", function (e) {
       errorEl.style.display = "none";
-      var start = new Date(startInput.value);
-      var end = new Date(endInput.value);
+      var start = parseLocalDate(startInput.value);
+      var end = parseLocalDate(endInput.value);
 
       if (isNaN(start) || isNaN(end)) {
         e.preventDefault();
@@ -593,6 +621,12 @@
       if (end < start) {
         e.preventDefault();
         errorEl.textContent = "{% trans 'End date must be after start date.' %}";
+        errorEl.style.display = "block";
+        return;
+      }
+      if (end > maxEndDate) {
+        e.preventDefault();
+        errorEl.textContent = "{% trans 'The end date cannot be more than 3 days from the current date.' %}";
         errorEl.style.display = "block";
         return;
       }

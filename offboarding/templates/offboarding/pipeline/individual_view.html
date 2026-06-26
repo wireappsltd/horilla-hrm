@@ -97,25 +97,16 @@
         </div>
         <div class="w-100 mt-3">
 
+            {% with current_tasks=employee|current_stage_tasks %}
             <div class="d-flex justify-content-between align-items-center mb-3">
                 <h5 class="fw-semibold m-0">{% trans "Tasks" %}</h5>
-                <div class="d-flex align-items-center gap-2">
-                    {% if perms.offboarding.add_offboardingtask or request.user.employee_get|is_any_stage_manager %}
-                    <a hx-get="{% url 'offboarding-add-task' %}?stage_id={{ employee.stage_id.id }}"
-                       hx-target="#objectDetailsModalTarget"
-                       class="oh-btn oh-btn--secondary oh-btn--sm d-flex align-items-center gap-1">
-                        <ion-icon name="add-outline"></ion-icon>
-                        {% trans "Add Task" %}
-                    </a>
-                    {% endif %}
-                    <span class="text-muted small">{{ employee.employeetask_set.all.count }} tasks</span>
-                </div>
+                <span class="text-muted small">{{ current_tasks.count }} tasks</span>
             </div>
 
-            {% if employee.employeetask_set.all %}
+            {% if current_tasks %}
             <div class="d-flex flex-column gap-3">
 
-                {% for task in employee.employeetask_set.all %}
+                {% for task in current_tasks %}
                 <div class="p-3 rounded-3 border bg-white shadow-sm d-flex flex-column gap-2"
                     style="border-color:#e5e7eb !important;">
 
@@ -150,6 +141,7 @@
 
             </div>
             {% endif %}
+            {% endwith %}
 
         </div>
 

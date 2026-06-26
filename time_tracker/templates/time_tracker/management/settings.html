@@ -1,0 +1,100 @@
+{% extends "settings.html" %}
+{% load i18n %}
+{% load widget_tweaks %}
+
+{% block settings %}
+{% include "time_tracker/management/_tt_settings_style.html" %}
+
+<div class="tt-set">
+  <div class="tt-header">
+    <div>
+      <h1 class="tt-header__title">{% trans "Time Tracker" %}</h1>
+      <p class="tt-header__sub">{% trans "Configure how time entries are captured." %}</p>
+    </div>
+  </div>
+
+  {% include "time_tracker/management/_tt_settings_tabs.html" with active="settings" %}
+
+  <div class="tt-card tt-card--narrow">
+    <div class="tt-card__head">
+      <h2 class="tt-card__title">{% trans "Required Fields &amp; Approval" %}</h2>
+      <p class="tt-card__sub">{% trans "Configure time entry requirements and the timesheet approval workflow." %}</p>
+    </div>
+
+    <form method="post"
+          hx-post="{% url 'time_tracker:tracker-settings' %}"
+          hx-target="this"
+          hx-swap="outerHTML">
+      {% csrf_token %}
+
+      <div class="tt-setting">
+        <div>
+          <p class="tt-setting__label">{% trans "Require Approval" %}</p>
+          <p class="tt-setting__desc">{% trans "When on, employees submit timesheets for manager review. When off, submissions are automatically approved." %}</p>
+        </div>
+        <div class="oh-switch">{% render_field form.approval_required %}<span class="oh-switch__slider"></span></div>
+      </div>
+
+      <hr style="border:none;border-top:1px solid #eceef2;margin:.25rem 1.35rem;">
+
+      <div class="tt-setting">
+        <div>
+          <p class="tt-setting__label">{% trans "Require Project" %}</p>
+          <p class="tt-setting__desc">{% trans "Employee must select a project for every entry." %}</p>
+        </div>
+        <div class="oh-switch">{% render_field form.require_project %}<span class="oh-switch__slider"></span></div>
+      </div>
+
+      <div class="tt-setting">
+        <div>
+          <p class="tt-setting__label">{% trans "Require Task" %}</p>
+          <p class="tt-setting__desc">{% trans "Employee must select a task for every entry." %}</p>
+        </div>
+        <div class="oh-switch">{% render_field form.require_task %}<span class="oh-switch__slider"></span></div>
+      </div>
+
+      <div class="tt-setting">
+        <div>
+          <p class="tt-setting__label">{% trans "Require Client" %}</p>
+          <p class="tt-setting__desc">{% trans "Employee must select a client for every entry." %}</p>
+        </div>
+        <div class="oh-switch">{% render_field form.require_client %}<span class="oh-switch__slider"></span></div>
+      </div>
+
+      <div class="tt-setting">
+        <div>
+          <p class="tt-setting__label">{% trans "Require Description" %}</p>
+          <p class="tt-setting__desc">{% trans "Employee must enter a description for every entry." %}</p>
+        </div>
+        <div class="oh-switch">{% render_field form.require_description %}<span class="oh-switch__slider"></span></div>
+      </div>
+
+      <div class="tt-setting">
+        <div>
+          <p class="tt-setting__label">{% trans "Require Tags" %}</p>
+          <p class="tt-setting__desc">{% trans "Employee must add at least one tag to every entry." %}</p>
+        </div>
+        <div class="oh-switch">{% render_field form.require_tags %}<span class="oh-switch__slider"></span></div>
+      </div>
+
+      <div class="tt-setting">
+        <div>
+          <p class="tt-setting__label">{% trans "Force Timer Only" %}</p>
+          <p class="tt-setting__desc">{% trans "Disable manual time entry — employees can only use the timer." %}</p>
+        </div>
+        <div class="oh-switch">{% render_field form.force_timer_only %}<span class="oh-switch__slider"></span></div>
+      </div>
+
+      {% for error in form.non_field_errors %}
+      <div class="oh-alert oh-alert--danger" style="margin:1rem 1.35rem 0;">{{ error }}</div>
+      {% endfor %}
+
+      <div class="tt-card__foot">
+        <button type="submit" class="tt-btn tt-btn--primary">
+          <ion-icon name="save-outline"></ion-icon> {% trans "Save Settings" %}
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock settings %}

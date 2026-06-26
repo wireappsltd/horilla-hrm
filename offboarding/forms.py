@@ -203,20 +203,40 @@ class NoteForm(ModelForm):
 
 class TaskForm(ModelForm):
     """
-    TaskForm model form — only creates task, no employee assignment.
+    Common (cross-flow) offboarding task form.
+
+    Picking a stage title here stores it in `stage_title` and leaves
+    `stage_id` NULL — one row applies to every flow that has a stage with
+    that title (see `assign_task_to_stage_employees` and `add_employee`
+    for the matching logic).
     """
 
     verbose_name = "Offboarding Task"
 
+    stage_title = forms.ChoiceField(required=False, label="Stage")
+
     class Meta:
         model = OffboardingTask
         fields = "__all__"
-        exclude = ["status", "is_active" , "is_fine"]
+        exclude = ["status", "is_active", "is_fine", "stage_id"]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["stage_id"].empty_label = "All Stages in Offboarding"
+        distinct_titles = list(
+            OffboardingStage.objects.order_by("title")
+            .values_list("title", flat=True)
+            .distinct()
+        )
+        self.fields["stage_title"].choices = [
+            ("", "All Stages in Offboarding")
+        ] + [(t, t) for t in distinct_titles]
         self.fields["managers"].required = False
+
+        if self.instance.pk:
+            current = self.instance.stage_title or (
+                self.instance.stage_id.title if self.instance.stage_id_id else ""
+            )
+            self.initial["stage_title"] = current
 
     def as_p(self):
         """
@@ -224,6 +244,15 @@ class TaskForm(ModelForm):
         """
         context = {"form": self}
         return render_to_string("common_form.html", context)
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        instance.stage_id = None
+        instance.stage_title = self.cleaned_data.get("stage_title") or None
+        if commit:
+            instance.save()
+            self.save_m2m()
+        return instance
 
 class EmployeeTaskForm(ModelForm):
     """
@@ -245,15 +274,25 @@ class EmployeeTaskForm(ModelForm):
         super().__init__(*args, **kwargs)
         self.fields["stage_id"].empty_label = "All Stages in Offboarding"
         self.fields["managers"].empty_label = None
-        if not self.instance.pk:
-            queryset = OffboardingEmployee.objects.filter(
-                stage_id__offboarding_id=OffboardingStage.objects.filter(
-                    id=self.initial.get("stage_id")
-                )
-                .first()
-                .offboarding_id
+
+        offboarding = None
+        if self.instance.pk and self.instance.stage_id_id:
+            offboarding = self.instance.stage_id.offboarding_id
+        else:
+            initial_stage = OffboardingStage.objects.filter(
+                id=self.initial.get("stage_id")
+            ).first()
+            if initial_stage:
+                offboarding = initial_stage.offboarding_id
+
+        if offboarding is not None:
+            self.fields["stage_id"].queryset = OffboardingStage.objects.filter(
+                offboarding_id=offboarding
             )
-            self.fields["tasks_to"].queryset = queryset
+            if not self.instance.pk:
+                self.fields["tasks_to"].queryset = OffboardingEmployee.objects.filter(
+                    stage_id__offboarding_id=offboarding
+                )
 
     def as_p(self):
         """

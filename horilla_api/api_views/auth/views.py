@@ -5,6 +5,15 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 
+from base.views import (
+    LOGIN_LOCKOUT_SECONDS,
+    LOGIN_MAX_ATTEMPTS,
+    get_login_lockout_remaining,
+    increment_login_attempts,
+    reset_login_attempts,
+    set_login_lockout,
+)
+
 from ...api_serializers.auth.serializers import GetEmployeeSerializer
 
 logger = logging.getLogger(__name__)
@@ -15,6 +24,17 @@ class LoginAPIView(APIView):
         if "username" and "password" in request.data.keys():
             username = request.data.get("username")
             password = request.data.get("password")
+
+            lockout_remaining = get_login_lockout_remaining(username)
+            if lockout_remaining > 0:
+                return Response(
+                    {
+                        "error": "Too many failed login attempts. Please try again later.",
+                        "retry_after": lockout_remaining,
+                    },
+                    status=429,
+                )
+
             user = authenticate(username=username, password=password)
             if user:
                 employee = user.employee_get
@@ -35,6 +55,7 @@ class LoginAPIView(APIView):
                         return Response(
                             {"error": "Invalid credentials"}, status=401
                         )
+                reset_login_attempts(username)
                 refresh = RefreshToken.for_user(user)
                 face_detection = False
                 face_detection_image = None
@@ -65,6 +86,19 @@ class LoginAPIView(APIView):
                 }
                 return Response(result, status=200)
             else:
+                attempts = increment_login_attempts(username)
+                if attempts >= LOGIN_MAX_ATTEMPTS:
+                    set_login_lockout(username)
+                    return Response(
+                        {
+                            "error": (
+                                "Too many failed login attempts. This account "
+                                "has been temporarily locked."
+                            ),
+                            "retry_after": LOGIN_LOCKOUT_SECONDS,
+                        },
+                        status=429,
+                    )
                 return Response({"error": "Invalid credentials"}, status=401)
         else:
             return Response({"error": "Please provide Username and Password"})

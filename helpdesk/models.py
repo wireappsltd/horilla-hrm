@@ -56,9 +56,13 @@ PASSWORD_RESET_PLATFORMS = [
     ("Other", "Other"),
 ]
 
+# ISO Review lifecycle (single source of truth for the password-reset workflow).
+
 ISO_STATUS_CHOICES = [
     ("PENDING", "Pending"),
-    ("APPROVED", "Approved"),
+    ("IN_ACTION", "In Action"),
+    ("AWAITING_ACKNOWLEDGEMENT", "Awaiting Acknowledgement"),
+    ("CLOSED", "Closed"),
     ("REJECTED", "Rejected"),
 ]
 
@@ -268,12 +272,14 @@ class PasswordResetRequest(HorillaModel):
     )
 
     iso_status = models.CharField(
-        max_length=20,
+        # max_length=30 to accommodate the longest code "AWAITING_ACKNOWLEDGEMENT".
+        max_length=30,
         choices=ISO_STATUS_CHOICES,
         default="PENDING",
         verbose_name=_("ISO Status"),
     )
     iso_feedback = models.TextField(blank=True, null=True, verbose_name=_("ISO Feedback"))
+
     reviewed_by = models.ForeignKey(
         User,
         null=True,
@@ -282,6 +288,36 @@ class PasswordResetRequest(HorillaModel):
         related_name="reviewed_password_resets",
     )
     reviewed_at = models.DateTimeField(null=True, blank=True)
+
+    approved_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="approved_password_resets",
+        verbose_name=_("Approved By"),
+        help_text=_("Set when a Pending request is approved (→ In Action)."),
+    )
+    actioned_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="actioned_password_resets",
+        verbose_name=_("Actioned By"),
+        help_text=_(
+            "Set when the request moves In Action → Awaiting Acknowledgement."
+        ),
+    )
+    closed_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="closed_password_resets",
+        verbose_name=_("Closed By"),
+        help_text=_("Set when the requestor closes the request (→ Closed)."),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True, verbose_name=_("Updated At"))
     history = HorillaAuditLog(
@@ -295,6 +331,9 @@ class PasswordResetRequest(HorillaModel):
             "request_type",
             "reviewed_by",
             "reviewed_at",
+            "approved_by",
+            "actioned_by",
+            "closed_by",
             "created_at",
             "updated_at",
             "is_active",

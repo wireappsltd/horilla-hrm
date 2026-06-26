@@ -1,0 +1,27 @@
+{% load i18n %}
+{% with extension=doc.image.name|lower|slice:"-4:" filename=doc.image.name|cut:"asset/checkup_images/"|cut:"asset/return_images/"|cut:"asset/assign_images/" %}
+    <div class="yc-doc-tile" title="{{ filename|default:_('Document') }}">
+        <a href="{{ doc.image.url }}" rel="noopener noreferrer" target="_blank">
+            <div class="oh-helpdesk__icon">
+                {% if extension == '.jpg' or extension == 'jpeg' or extension == '.png' or extension == '.gif' or extension == '.svg' or extension == 'webp' %}
+                    <img src="{{ doc.image.url }}"
+                         alt="{{ filename|default:_('Image') }}"
+                         style="width:100%;height:100%;object-fit:cover;border-radius:4px;">
+                {% else %}
+                    <span class="oh-file-icon
+                        {% if extension == '.pdf' %} oh-file-icon--pdf
+                        {% elif extension in '.mp3 .wav .ogg .m4a' %} oh-file-icon--audio
+                        {% elif extension in '.doc .docx' %} oh-file-icon--word
+                        {% elif extension in '.xls .xlsx' %} oh-file-icon--excel
+                        {% elif extension in '.ppt .pptx' %} oh-file-icon--powerpoint
+                        {% elif extension == '.html' %} oh-file-icon--html
+                        {% else %} oh-file-icon--default
+                        {% endif %}"></span>
+                {% endif %}
+            </div>
+            <div class="yc-doc-tile__name">
+                {{ filename|default:_("Document") }}
+            </div>
+        </a>
+    </div>
+{% endwith %}

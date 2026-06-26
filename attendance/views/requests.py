@@ -49,6 +49,7 @@ from base.methods import (
 )
 from base.models import EmployeeShift, EmployeeShiftDay
 from employee.models import Employee
+from horilla_audit.methods import log_activity
 from horilla.decorators import (
     hx_request_required,
     login_required,
@@ -349,7 +350,16 @@ def attendance_request_changes(request, attendance_id):
     if request.GET.get("previous_url"):
         form = AttendanceRequestForm(initial=request.GET.dict())
     else:
-        form = AttendanceRequestForm(instance=attendance)
+        initial = {}
+        if attendance.request_type != "create_request" and attendance.requested_data:
+            try:
+                initial = json.loads(attendance.requested_data)
+            except (TypeError, ValueError):
+                initial = {}
+        initial.setdefault(
+            "is_get_compensation_leave", attendance.is_get_compensation_leave
+        )
+        form = AttendanceRequestForm(instance=attendance, initial=initial)
         # form.fields["work_type_id"].widget.attrs.update(
         #     {
         #         "class": "w-100",
@@ -424,10 +434,24 @@ def attendance_request_changes(request, attendance_id):
                 ).content.decode("utf-8")
                 + "<script>location.reload();</script>"
             )
+    show_compensation = attendance.is_mercantile_holiday
+    if request.method == "POST":
+        attendance_date_str = request.POST.get("attendance_date")
+        if attendance_date_str:
+            try:
+                parsed_date = datetime.strptime(attendance_date_str, "%Y-%m-%d").date()
+                result = is_mercantile_or_poya_holiday(parsed_date)
+                show_compensation = result.get("is_mercantile_holiday", False)
+            except (ValueError, TypeError):
+                pass
     return render(
         request,
         "requests/attendance/form.html",
-        {"form": form, "attendance_id": attendance_id},
+        {
+            "form": form,
+            "attendance_id": attendance_id,
+            "show_compensation": show_compensation,
+        },
     )
 
 
@@ -481,6 +505,25 @@ def validate_attendance_request(request, attendance_id):
     )
 
 
+def _log_attendance_decision(request, attendance, decision):
+    """Record who approved/rejected/cancelled an attendance request.
+
+    Captures the actor (and timestamp via ActivityLog) plus the affected
+    employee and attendance date. Call before the row is deleted so the target
+    pk is still valid.
+    """
+    log_activity(
+        request.user,
+        module="attendance",
+        action=f"Attendance request {decision}",
+        target=attendance,
+        changes={
+            "Employee": str(attendance.employee_id),
+            "Attendance date": str(attendance.attendance_date),
+        },
+    )
+
+
 @login_required
 @manager_can_enter("attendance.change_attendance")
 def approve_validate_attendance_request(request, attendance_id):
@@ -488,6 +531,14 @@ def approve_validate_attendance_request(request, attendance_id):
     This method is used to validate the attendance requests
     """
     attendance = Attendance.objects.get(id=attendance_id)
+    # Prevent managers from approving their own attendance requests.
+    # Approval must be performed by a higher authority or another authorized manager.
+    if attendance.employee_id.employee_user_id_id == request.user.id:
+        messages.error(
+            request,
+            _("You cannot approve your own attendance request."),
+        )
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
     prev_attendance_date = attendance.attendance_date
     prev_attendance_clock_in_date = attendance.attendance_clock_in_date
     prev_attendance_clock_in = attendance.attendance_clock_in
@@ -600,6 +651,7 @@ def approve_validate_attendance_request(request, attendance_id):
             redirect=reverse("request-attendance-view") + f"?id={attendance.id}",
             icon="checkmark-circle-outline",
         )
+    _log_attendance_decision(request, attendance, "approved")
     return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
 
 
@@ -623,6 +675,14 @@ def cancel_attendance_request(request, attendance_id):
             attendance.request_type = None
 
             attendance.save()
+            is_self_cancel = (
+                attendance.employee_id.employee_user_id_id == request.user.id
+            )
+            _log_attendance_decision(
+                request,
+                attendance,
+                "cancelled" if is_self_cancel else "rejected",
+            )
             if is_create_request:
                 attendance.delete()
                 messages.success(request, _("The requested attendance is removed."))
@@ -688,8 +748,13 @@ def bulk_approve_attendance_request(request):
     """
     ids = request.POST["ids"]
     ids = json.loads(ids)
+    skipped_self = 0
     for attendance_id in ids:
         attendance = Attendance.objects.get(id=attendance_id)
+        # Skip approval of own attendance requests; users cannot self-approve.
+        if attendance.employee_id.employee_user_id_id == request.user.id:
+            skipped_self += 1
+            continue
         prev_attendance_date = attendance.attendance_date
         prev_attendance_clock_in_date = attendance.attendance_clock_in_date
         prev_attendance_clock_in = attendance.attendance_clock_in
@@ -768,6 +833,7 @@ def bulk_approve_attendance_request(request):
             )
 
         messages.success(request, _("Attendance request has been approved"))
+        _log_attendance_decision(request, attendance, "approved")
         employee = attendance.employee_id
         notify.send(
             request.user,
@@ -806,6 +872,11 @@ def bulk_approve_attendance_request(request):
                 redirect=reverse("request-attendance-view") + f"?id={attendance.id}",
                 icon="checkmark-circle-outline",
             )
+    if skipped_self:
+        messages.warning(
+            request,
+            _("You cannot approve your own attendance request(s); they were skipped."),
+        )
     return HttpResponse("success")
 
 
@@ -832,6 +903,14 @@ def bulk_reject_attendance_request(request):
                 attendance.requested_data = None
                 attendance.request_type = None
                 attendance.save()
+                is_self_cancel = (
+                    attendance.employee_id.employee_user_id_id == request.user.id
+                )
+                _log_attendance_decision(
+                    request,
+                    attendance,
+                    "cancelled" if is_self_cancel else "rejected",
+                )
                 if is_create_request:
                     attendance.delete()
                     messages.success(request, _("The requested attendance is removed."))

@@ -109,6 +109,9 @@
                                 hx-target="#tab_contents">
                                 {% trans "Overtime" %}
                             </div>
+                            <div data-cell-index="14" data-cell-title='{% trans "Compensation" %}' class="oh-sticky-table__th">
+                                {% trans "Compensation" %}
+                            </div>
                             <div class="oh-sticky-table__th oh-sticky-table__right">{% trans "Actions" %}</div>
                         </div>
                     </div>
@@ -160,6 +163,17 @@
 {#                                <div data-cell-index="12" class="oh-sticky-table__td">{{ attendance.hours_pending }}</div>#}
                                 <div data-cell-index="13" class="oh-sticky-table__td">
                                     {{attendance.attendance_overtime}}
+                                </div>
+                                <div data-cell-index="14" class="oh-sticky-table__td">
+                                    {% if attendance.is_mercantile_holiday %}
+                                        {% if attendance.is_get_compensation_leave %}
+                                            <span class="oh-badge oh-badge--info">{% trans "Leave" %}</span>
+                                        {% else %}
+                                            <span class="oh-badge oh-badge--info">{% trans "Amount" %}</span>
+                                        {% endif %}
+                                    {% else %}
+                                        <span class="text-muted">—</span>
+                                    {% endif %}
                                 </div>
                                 <div class="oh-sticky-table__td oh-sticky-table__right">
                                     <div class="oh-btn-group">
@@ -336,6 +350,9 @@
                                     hx-target="#tab_contents">
                                     {% trans "Overtime" %}
                                 </div>
+                                <div data-cell-index="34" data-cell-title='{% trans "Compensation" %}' class="oh-sticky-table__th">
+                                    {% trans "Compensation" %}
+                                </div>
                                 <div class="oh-sticky-table__th">{% trans "Actions" %}</div>
                                 <div class="oh-sticky-table__th oh-sticky-table__right">{% trans "Confirmation" %}</div>
                             </div>
@@ -388,6 +405,17 @@
                                     <div data-cell-index="32" class="oh-sticky-table__td">{{attendance.hours_pending}}</div>
                                     <div data-cell-index="33" class="oh-sticky-table__td">
                                         {{attendance.attendance_overtime}}
+                                    </div>
+                                    <div data-cell-index="34" class="oh-sticky-table__td">
+                                        {% if attendance.is_mercantile_holiday %}
+                                            {% if attendance.is_get_compensation_leave %}
+                                                <span class="oh-badge oh-badge--info">{% trans "Leave" %}</span>
+                                            {% else %}
+                                                <span class="oh-badge oh-badge--info">{% trans "Amount" %}</span>
+                                            {% endif %}
+                                        {% else %}
+                                            <span class="text-muted">—</span>
+                                        {% endif %}
                                     </div>
                                     <div class="oh-sticky-table__td">
                                         <div class="oh-btn-group">
@@ -572,6 +600,9 @@
                                 hx-target="#tab_contents">
                                 {% trans "Overtime" %}
                             </div>
+                            <div data-cell-index="54" data-cell-title='{% trans "Compensation" %}' class="oh-sticky-table__th">
+                                {% trans "Compensation" %}
+                            </div>
                             <div class="oh-sticky-table__th">{% trans "Actions" %}</div>
                             <div class="oh-sticky-table__th oh-sticky-table__right">{% trans "Confirmation" %}</div>
                         </div>
@@ -624,6 +655,17 @@
 {#                            <div data-cell-index="52" class="oh-sticky-table__td">{{attendance.hours_pending}}</div>#}
                             <div data-cell-index="53" class="oh-sticky-table__td">
                                 {{attendance.attendance_overtime}}
+                            </div>
+                            <div data-cell-index="54" class="oh-sticky-table__td">
+                                {% if attendance.is_mercantile_holiday %}
+                                    {% if attendance.is_get_compensation_leave %}
+                                        <span class="oh-badge oh-badge--info">{% trans "Leave" %}</span>
+                                    {% else %}
+                                        <span class="oh-badge oh-badge--info">{% trans "Amount" %}</span>
+                                    {% endif %}
+                                {% else %}
+                                    <span class="text-muted">—</span>
+                                {% endif %}
                             </div>
                             <div class="oh-sticky-table__td">
                                 <div class="oh-btn-group">
@@ -807,6 +849,26 @@
     }
     // Tab activation is handled by the parent template (attendance_view.html)
     // via htmx:afterSettle event listener
+    // Inject "Comp. Leave" column into any existing saved column preferences
+    // so it appears for users who already have a stored column selection.
+    ;(function() {
+        var migrations = [
+            { key: "validated_attendances_tab",  index: "14", container: "fieldContainerTable" },
+            { key: "validate_attendances_tab",   index: "34", container: "fieldContainerTableValidate" },
+            { key: "ot_attendances_tab",         index: "54", container: "fieldContainerTableOverTime" }
+        ];
+        migrations.forEach(function(m) {
+            var raw = localStorage.getItem(m.key);
+            if (raw && raw !== "[]") {
+                var ids = JSON.parse(raw);
+                if (ids.indexOf(m.index) === -1) {
+                    ids.push(m.index);
+                    localStorage.setItem(m.key, JSON.stringify(ids));
+                }
+            }
+        });
+    })();
+
     toggleColumns("validate-attendance-table", "fieldContainerTableValidate")
     toggleColumns("ot-attendance-table", "fieldContainerTableOverTime")
     toggleColumns("validated-attendance-table", "fieldContainerTable")

@@ -245,7 +245,12 @@ class ResignationLetter(HorillaModel):
 
 class OffboardingTask(HorillaModel):
     """
-    OffboardingTask model
+    OffboardingTask model.
+
+    Stage targeting:
+    - stage_id set    -> applies only to that one stage (in-flow tasks).
+    - stage_title set -> applies to any stage whose title matches, in any flow.
+    - both null       -> applies to every stage.
     """
 
     title = models.CharField(max_length=100)
@@ -256,6 +261,12 @@ class OffboardingTask(HorillaModel):
         verbose_name="Stage",
         null=True,
         blank=True,
+    )
+    stage_title = models.CharField(
+        max_length=20,
+        null=True,
+        blank=True,
+        verbose_name="Stage Title",
     )
     is_fine = models.BooleanField(default=False)
 
@@ -272,6 +283,44 @@ def auto_assign_task_to_stage_employees(sender, instance, created, **kwargs):
     """
     from offboarding.methods import assign_task_to_stage_employees
     assign_task_to_stage_employees(sender, instance, created, **kwargs)
+
+
+from django.db.models.signals import pre_save
+
+
+@receiver(pre_save, sender=OffboardingEmployee)
+def _track_offboarding_employee_stage(sender, instance, **kwargs):
+    """Snapshot the previous stage_id so the post_save hook can decide whether
+    a stage transition actually happened."""
+    if instance.pk:
+        try:
+            instance._previous_stage_id = (
+                sender.objects.entire()
+                .filter(pk=instance.pk)
+                .values_list("stage_id", flat=True)
+                .first()
+            )
+        except Exception:
+            instance._previous_stage_id = None
+    else:
+        instance._previous_stage_id = None
+
+
+@receiver(post_save, sender=OffboardingEmployee)
+def auto_assign_tasks_to_offboarding_employee(sender, instance, created, **kwargs):
+    """
+    Hook into OffboardingEmployee save to backfill EmployeeTask rows for every
+    OffboardingTask defined on the employee's current stage (and global tasks).
+    Runs only on creation or when stage_id changes, so unrelated save() calls
+    (notes updates, last_working_date edits, etc.) do not trigger redundant
+    backfill queries.
+    """
+    if not created:
+        previous_stage_id = getattr(instance, "_previous_stage_id", None)
+        if previous_stage_id == instance.stage_id_id:
+            return
+    from offboarding.methods import assign_stage_tasks_to_employee
+    assign_stage_tasks_to_employee(instance)
 
 class EmployeeTask(HorillaModel):
     """

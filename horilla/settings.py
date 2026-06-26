@@ -36,6 +36,13 @@ env = environ.Env(
         list,
         ["https://pmo-alpha.vercel.app"],
     ),
+    # Validity period (in seconds) of password reset links/tokens.
+    # Defaults to 10 minutes. Tokens are also invalidated automatically
+    # once the password has been successfully changed.
+    PASSWORD_RESET_TIMEOUT=(int, 600),
+    # Number of seconds of user inactivity after which the session is
+    # automatically logged out. Defaults to 10 minutes.
+    SESSION_IDLE_TIMEOUT=(int, 600),
 )
 
 env.read_env(os.path.join(BASE_DIR, ".env"), overwrite=True)
@@ -72,6 +79,7 @@ INSTALLED_APPS = [
     "asset",
     "attendance",
     "payroll",
+    "time_tracker",
     "widget_tweaks",
     "django_apscheduler",
 ]
@@ -91,8 +99,14 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "horilla.horilla_middlewares.ActiveUserMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
+    "base.middleware.InactivityTimeoutMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
+
+# Automatic logout after a period of user inactivity (in seconds).
+# Enforced by ``base.middleware.InactivityTimeoutMiddleware``
+SESSION_IDLE_TIMEOUT = env.int("SESSION_IDLE_TIMEOUT", default=600)
+
 
 ROOT_URLCONF = "horilla.urls"
 
@@ -232,6 +246,9 @@ CORS_URLS_REGEX = r"^/api/pmo/.*$"
 
 LOGIN_URL = "/login"
 
+
+PASSWORD_RESET_TIMEOUT = env("PASSWORD_RESET_TIMEOUT")
+
 SIMPLE_HISTORY_REVERT_DISABLED = True
 
 DJANGO_NOTIFICATIONS_CONFIG = {
@@ -266,6 +283,30 @@ LANGUAGE_CODE = "en-us"
 TIME_ZONE = env("TIME_ZONE", default="Asia/Kolkata")
 
 NOTIFICATION_BOT_USERNAME = env("NOTIFICATION_BOT_USERNAME", default="Horilla Bot")
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "asset_step": {
+            "format": "[%(asctime)s] %(levelname)s %(name)s: %(message)s",
+            "datefmt": "%H:%M:%S",
+        },
+    },
+    "handlers": {
+        "asset_console": {
+            "class": "logging.StreamHandler",
+            "formatter": "asset_step",
+        },
+    },
+    "loggers": {
+        "asset": {
+            "handlers": ["asset_console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+    },
+}
 
 USE_I18N = True
 

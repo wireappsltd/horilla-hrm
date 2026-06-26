@@ -37,6 +37,7 @@
     <link rel="stylesheet" href="{% static 'build/css/pivottable.min.css' %}" />
     <script src="{% static '/jquery/ajax.js' %}"></script>
     <script src="{% static '/jquery/jquery.min.js' %}"></script>
+    <script src="{% static '/index/sessionExpiry.js' %}"></script>
     <script src="{% static '/jquery/jqueryui.js' %}"></script>
     <script src="{% static '/base/toggleColumn.js' %}"></script>
     <script src="{% static '/build/js/orgChart.js' %}"></script>
@@ -321,6 +322,55 @@
             }
         </script>
     {% endif %}
+    <script src="{% static 'time_tracker/js/timer_widget.js' %}?v=4"></script>
+    <script>
+
+        (function () {
+            if (window.__leaveStatsRefreshHookBound) return;
+            window.__leaveStatsRefreshHookBound = true;
+
+            function isLeaveMutation(detail) {
+                if (!detail) return false;
+                var verb = (
+                    (detail.requestConfig && (detail.requestConfig.verb || detail.requestConfig.method))
+                    || ""
+                ).toString().toUpperCase();
+                if (verb && (verb === "GET" || verb === "HEAD")) return false;
+                var path = (detail.pathInfo && detail.pathInfo.requestPath)
+                    || (detail.requestConfig && detail.requestConfig.path)
+                    || (detail.elt && detail.elt.getAttribute && (
+                        detail.elt.getAttribute("hx-post")
+                        || detail.elt.getAttribute("hx-put")
+                        || detail.elt.getAttribute("hx-patch")
+                        || detail.elt.getAttribute("hx-delete")
+                        || detail.elt.getAttribute("action")
+                        || detail.elt.getAttribute("hx-get")
+                    ))
+                    || "";
+                return /\/leave\//i.test(path);
+            }
+
+            function fireLeaveStatsRefresh(evt) {
+                try {
+                    var detail = evt && evt.detail;
+                    var xhr = detail && detail.xhr;
+                    if (xhr && (xhr.status < 200 || xhr.status >= 400)) return;
+                    if (!isLeaveMutation(detail)) return;
+                    if (window.htmx && typeof htmx.trigger === "function") {
+                        htmx.trigger(document.body, "leaveStatsRefresh");
+                    } else {
+                        document.body.dispatchEvent(new CustomEvent(
+                            "leaveStatsRefresh",
+                            { bubbles: true, cancelable: true }
+                        ));
+                    }
+                } catch (e) { /* no-op */ }
+            }
+
+            document.body.addEventListener("htmx:afterRequest", fireLeaveStatsRefresh);
+            document.body.addEventListener("htmx:afterOnLoad", fireLeaveStatsRefresh);
+        })();
+    </script>
 </body>
 
 </html>

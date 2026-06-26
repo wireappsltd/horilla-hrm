@@ -1,0 +1,669 @@
+/* Data Retention — UI tweaks layered on top of Horilla's oh-* baseline.
+   Pills, page intros, and category icons used across the retention pages. */
+
+.retention-page-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem 0 1.25rem;
+    border-bottom: 1px solid #e5e7eb;
+    margin-bottom: 1.25rem;
+}
+
+.retention-page-header h2 {
+    margin: 0 0 .25rem;
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: #111827;
+}
+
+.retention-page-header p {
+    margin: 0;
+    color: #6b7280;
+    font-size: .875rem;
+}
+
+.retention-stat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.retention-stat {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    padding: 1rem 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: .5rem;
+    position: relative;
+    overflow: hidden;
+}
+
+.retention-stat__icon {
+    position: absolute;
+    top: .75rem;
+    right: .85rem;
+    font-size: 1.5rem;
+    opacity: .35;
+}
+
+.retention-stat__title {
+    font-size: .8rem;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: #6b7280;
+    font-weight: 600;
+}
+
+.retention-stat__count {
+    font-size: 2rem;
+    font-weight: 700;
+    line-height: 1;
+    color: #111827;
+}
+
+.retention-stat__sub {
+    font-size: .8rem;
+    color: #6b7280;
+}
+
+.retention-stat--success { border-left: 4px solid #16a34a; }
+.retention-stat--warning { border-left: 4px solid #f59e0b; }
+.retention-stat--danger  { border-left: 4px solid #dc2626; }
+.retention-stat--info    { border-left: 4px solid #2563eb; }
+
+.retention-stat--success .retention-stat__icon { color: #16a34a; }
+.retention-stat--warning .retention-stat__icon { color: #f59e0b; }
+.retention-stat--danger  .retention-stat__icon { color: #dc2626; }
+.retention-stat--info    .retention-stat__icon { color: #2563eb; }
+
+/* Status pills — used in action list and audit log */
+.retention-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    padding: .25rem .65rem;
+    border-radius: 999px;
+    font-size: .75rem;
+    font-weight: 600;
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.retention-pill--pending    { background: #fef3c7; color: #92400e; }
+.retention-pill--deferred   { background: #dbeafe; color: #1e40af; }
+.retention-pill--anonymized { background: #dcfce7; color: #14532d; }
+.retention-pill--failed     { background: #fee2e2; color: #991b1b; }
+.retention-pill--cancelled  { background: #f3f4f6; color: #4b5563; }
+
+.retention-pill--success { background: #dcfce7; color: #14532d; }
+.retention-pill--partial { background: #fef3c7; color: #92400e; }
+
+.retention-pill--cat {
+    background: #f3f4f6;
+    color: #374151;
+}
+
+.retention-pill--cat ion-icon {
+    font-size: .9rem;
+}
+
+/* Category pill in tables should never blow out a column. */
+.retention-table .retention-pill--cat {
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Filter tabs */
+.retention-filter-tabs {
+    display: inline-flex;
+    background: #f3f4f6;
+    border-radius: 8px;
+    padding: 4px;
+    gap: 2px;
+    margin-bottom: 1rem;
+}
+.retention-filter-tabs a {
+    padding: .4rem .85rem;
+    border-radius: 6px;
+    text-decoration: none;
+    color: #4b5563;
+    font-size: .875rem;
+    font-weight: 500;
+    transition: background .15s;
+}
+.retention-filter-tabs a:hover { background: #e5e7eb; color: #111827; }
+.retention-filter-tabs a.active {
+    background: #fff;
+    color: #111827;
+    box-shadow: 0 1px 2px rgba(0,0,0,.06);
+}
+
+/* Empty state */
+.retention-empty {
+    text-align: center;
+    padding: 3rem 1rem;
+    color: #6b7280;
+}
+.retention-empty ion-icon {
+    font-size: 3rem;
+    color: #d1d5db;
+    margin-bottom: .75rem;
+}
+.retention-empty h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #374151;
+    margin: 0 0 .5rem;
+}
+.retention-empty p {
+    font-size: .875rem;
+    max-width: 28rem;
+    margin: 0 auto 1rem;
+}
+
+/* ---------------------------------------------------------------------------
+   Onboarding-style hero fallbacks — used on every retention page when there
+   is no data yet. Replaces the flat "small icon + text" empty look so QA on
+   a fresh environment sees a guided first-run view instead of zero-filled
+   widgets.
+   --------------------------------------------------------------------------- */
+.retention-hero {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 3rem 2rem;
+    text-align: center;
+    margin: 1rem 0 1.5rem;
+    box-shadow: 0 1px 2px rgba(0,0,0,.03);
+}
+.retention-hero__badge {
+    width: 88px;
+    height: 88px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #fff7ed 0%, #fed7aa 100%);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 1.25rem;
+    box-shadow: inset 0 -2px 6px rgba(234, 88, 12, .12);
+}
+.retention-hero__badge ion-icon {
+    font-size: 2.75rem;
+    color: #ea580c;
+}
+.retention-hero__badge--info {
+    background: linear-gradient(135deg, #eff6ff 0%, #bfdbfe 100%);
+    box-shadow: inset 0 -2px 6px rgba(37, 99, 235, .12);
+}
+.retention-hero__badge--info ion-icon { color: #2563eb; }
+.retention-hero__badge--neutral {
+    background: linear-gradient(135deg, #f9fafb 0%, #e5e7eb 100%);
+    box-shadow: inset 0 -2px 6px rgba(75, 85, 99, .10);
+}
+.retention-hero__badge--neutral ion-icon { color: #4b5563; }
+.retention-hero__badge--success {
+    background: linear-gradient(135deg, #f0fdf4 0%, #bbf7d0 100%);
+    box-shadow: inset 0 -2px 6px rgba(22, 163, 74, .12);
+}
+.retention-hero__badge--success ion-icon { color: #16a34a; }
+
+.retention-hero h3 {
+    font-size: 1.35rem;
+    font-weight: 600;
+    color: #111827;
+    margin: 0 0 .5rem;
+}
+.retention-hero__lead {
+    font-size: .925rem;
+    color: #4b5563;
+    max-width: 44rem;
+    margin: 0 auto 1.5rem;
+    line-height: 1.6;
+}
+.retention-hero__actions {
+    display: flex;
+    justify-content: center;
+    gap: .75rem;
+    flex-wrap: wrap;
+    margin-bottom: .5rem;
+}
+.retention-hero__hint {
+    font-size: .825rem;
+    color: #6b7280;
+    margin-top: .75rem;
+}
+.retention-hero__hint ion-icon { vertical-align: -2px; margin-right: .15rem; }
+
+/* Three-step onboarding cards under the hero (dashboard only) */
+.retention-hero__steps {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 1rem;
+    max-width: 880px;
+    margin: 2rem auto 0;
+    text-align: left;
+}
+.retention-hero__step {
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    padding: 1rem 1.1rem;
+    display: flex;
+    gap: .85rem;
+    align-items: flex-start;
+}
+.retention-hero__step-num {
+    flex-shrink: 0;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: #fff7ed;
+    color: #ea580c;
+    font-weight: 700;
+    font-size: .9rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid #fed7aa;
+}
+.retention-hero__step-body {
+    line-height: 1.4;
+}
+.retention-hero__step-body strong {
+    font-size: .9rem;
+    color: #111827;
+    display: block;
+    margin-bottom: .2rem;
+}
+.retention-hero__step-body span {
+    font-size: .82rem;
+    color: #6b7280;
+}
+
+/* Employee cell in tables */
+.retention-emp {
+    display: flex;
+    flex-direction: column;
+    gap: .15rem;
+    line-height: 1.2;
+}
+.retention-emp__badge {
+    font-size: .75rem;
+    color: #6b7280;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.retention-emp__name { font-weight: 500; color: #111827; }
+
+.retention-overdue {
+    color: #dc2626;
+    font-weight: 600;
+}
+
+/* Detail card */
+.retention-detail-card {
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    padding: 1.25rem;
+    margin-bottom: 1.25rem;
+}
+.retention-detail-card dl {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: .5rem 1.25rem;
+    margin: 0;
+}
+.retention-detail-card dt {
+    color: #6b7280;
+    font-size: .8rem;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+}
+.retention-detail-card dd {
+    margin: 0;
+    color: #111827;
+    font-weight: 500;
+}
+
+/* Standalone select styling — matches Horilla's .oh-select look but uses a
+   unique class name so it doesn't get auto-upgraded to Select2 by
+   web.frontend.min.js / hxSelect2.js. */
+.retention-select,
+select.retention-select {
+    display: block;
+    width: 100%;
+    border: 1px solid hsl(213, 22%, 84%);
+    border-radius: 4px;
+    padding: .5rem .75rem;
+    font-size: .9rem;
+    line-height: 1.4;
+    color: #111827;
+    background-color: #fff;
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='%236b7280' d='M8 11L3 6h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right .65rem center;
+    background-size: 14px;
+    padding-right: 2rem;
+    cursor: pointer;
+    transition: border-color .15s, box-shadow .15s;
+}
+.retention-select:focus,
+select.retention-select:focus {
+    outline: none;
+    border-color: #f97316;
+    box-shadow: 0 0 0 3px rgba(249, 115, 22, .15);
+}
+.retention-select:hover {
+    border-color: hsl(213, 22%, 70%);
+}
+
+/* Match input border for the textarea / number inputs in the same form so
+   everything looks consistent. */
+.retention-form-grid input[type="number"].oh-input,
+.retention-form-grid input[type="date"].oh-input,
+.retention-form-grid input[type="text"].oh-input,
+.retention-form-grid textarea.oh-input {
+    width: 100%;
+    border: 1px solid hsl(213, 22%, 84%);
+    border-radius: 4px;
+    padding: .5rem .75rem;
+    font-size: .9rem;
+    line-height: 1.4;
+    color: #111827;
+    background-color: #fff;
+    transition: border-color .15s, box-shadow .15s;
+}
+.retention-form-grid input[type="number"].oh-input:focus,
+.retention-form-grid input[type="date"].oh-input:focus,
+.retention-form-grid input[type="text"].oh-input:focus,
+.retention-form-grid textarea.oh-input:focus {
+    outline: none;
+    border-color: #f97316;
+    box-shadow: 0 0 0 3px rgba(249, 115, 22, .15);
+}
+
+/* Form */
+.retention-form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 1rem 1.5rem;
+}
+.retention-form-grid .full { grid-column: 1 / -1; }
+.retention-form-grid label {
+    display: block;
+    font-size: .85rem;
+    font-weight: 600;
+    color: #374151;
+    margin-bottom: .35rem;
+}
+.retention-form-grid .help-text {
+    font-size: .8rem;
+    color: #6b7280;
+    margin-top: .25rem;
+}
+.retention-form-grid .errorlist {
+    color: #dc2626;
+    font-size: .8rem;
+    margin: .25rem 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.retention-actions-row {
+    display: flex;
+    gap: .5rem;
+    justify-content: flex-end;
+    margin-top: 1.5rem;
+    padding-top: 1rem;
+    border-top: 1px solid #e5e7eb;
+}
+
+/* Inline action button group inside tables */
+.retention-row-actions {
+    display: inline-flex;
+    gap: .35rem;
+}
+.retention-row-actions form { display: inline; margin: 0; }
+.retention-row-actions .oh-btn { padding: .35rem .55rem; font-size: .8rem; }
+
+/* Monospace timestamps in audit log */
+.retention-mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: .8rem;
+    color: #4b5563;
+    white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------------------
+   Retention-specific overrides for Horilla's .oh-sticky-table.
+   The base class uses table-layout: fixed with a hard-coded width: 160px on
+   every cell, which causes content to overflow horizontally on narrower
+   columns (or wrap into the next row visually). The rules below switch to
+   auto layout, remove the rigid width, and prevent action cells from wrapping.
+   --------------------------------------------------------------------------- */
+.retention-table.oh-sticky-table {
+    max-height: none;
+    overflow-x: auto;
+    overflow-y: visible;
+    border-radius: 8px;
+    margin-top: .5rem;
+}
+.retention-table .oh-sticky-table__table {
+    table-layout: auto;
+}
+.retention-table .oh-sticky-table__th,
+.retention-table .oh-sticky-table__td,
+.retention-table .oh-sticky-table__sd {
+    width: auto;
+    min-width: 0;
+    max-width: 380px;
+    padding: .75rem 1rem;
+    vertical-align: middle;
+    word-break: normal;
+    overflow-wrap: anywhere;
+}
+.retention-table .oh-sticky-table__th {
+    font-size: .75rem;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: #6b7280;
+    font-weight: 600;
+    background: #f9fafb;
+    border-bottom: 1px solid #e5e7eb;
+}
+.retention-table .oh-sticky-table__tr {
+    cursor: default;
+}
+.retention-table .oh-sticky-table__tr:hover {
+    background-color: #f9fafb;
+}
+.retention-table .oh-sticky-table__tbody {
+    height: auto;
+}
+
+/* Action column should never wrap and sits flush right */
+.retention-table .retention-row-actions {
+    white-space: nowrap;
+}
+.retention-table .oh-sticky-table__td.retention-cell-actions,
+.retention-table .oh-sticky-table__th.retention-cell-actions {
+    width: 1%;
+    white-space: nowrap;
+    text-align: right;
+}
+
+/* Narrow numeric cells (years, days, counts) */
+.retention-cell-num {
+    width: 1%;
+    white-space: nowrap;
+    text-align: center;
+}
+
+/* Wide notes cell — let it grow but cap the max */
+.retention-cell-wide {
+    min-width: 180px;
+}
+
+/* Employee cell — fixed minimum so badge + name don't crush */
+.retention-cell-emp { min-width: 180px; }
+
+/* Timeline cell — stacked label/value rows used in action list */
+.retention-cell-timeline { min-width: 220px; }
+.retention-timeline {
+    display: flex;
+    flex-direction: column;
+    gap: .15rem;
+    font-size: .8rem;
+}
+.retention-timeline__row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: .75rem;
+}
+.retention-timeline__label {
+    color: #6b7280;
+    font-size: .7rem;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    font-weight: 600;
+    flex-shrink: 0;
+}
+.retention-timeline .retention-mono {
+    white-space: nowrap;
+}
+
+/* Inline error snippet under status pill */
+.retention-error-snippet {
+    display: flex;
+    align-items: flex-start;
+    gap: .25rem;
+    margin-top: .4rem;
+    padding: .35rem .5rem;
+    background: #fef2f2;
+    border-left: 2px solid #dc2626;
+    border-radius: 0 4px 4px 0;
+    font-size: .72rem;
+    color: #991b1b;
+    line-height: 1.3;
+    max-width: 260px;
+}
+.retention-error-snippet ion-icon {
+    font-size: .85rem;
+    flex-shrink: 0;
+    margin-top: 1px;
+}
+.retention-error-snippet span {
+    word-break: break-word;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+/* Compact 2x2 count grid used in run log */
+.retention-cell-counts { min-width: 180px; }
+.retention-counts {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: .25rem .75rem;
+}
+.retention-counts__item {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.1;
+}
+.retention-counts__label {
+    font-size: .65rem;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+    color: #9ca3af;
+    font-weight: 600;
+}
+.retention-counts__value {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #374151;
+    font-variant-numeric: tabular-nums;
+}
+.retention-counts__value--good { color: #16a34a; }
+.retention-counts__value--bad  { color: #dc2626; }
+
+/* Expandable error details inside cells */
+.retention-error-snippet-details {
+    font-size: .75rem;
+}
+.retention-error-snippet-details summary {
+    cursor: pointer;
+    color: #dc2626;
+    font-weight: 500;
+    user-select: none;
+    list-style: none;
+    display: inline-flex;
+    align-items: center;
+    gap: .25rem;
+}
+.retention-error-snippet-details summary::before {
+    content: "▸";
+    font-size: .7rem;
+}
+.retention-error-snippet-details[open] summary::before { content: "▾"; }
+.retention-error-snippet-details pre {
+    white-space: pre-wrap;
+    background: #fef2f2;
+    border-left: 2px solid #dc2626;
+    padding: .5rem .65rem;
+    border-radius: 0 4px 4px 0;
+    font-size: .72rem;
+    color: #991b1b;
+    margin: .4rem 0 0;
+    max-width: 28rem;
+    max-height: 8rem;
+    overflow: auto;
+}
+
+/* Make row heights consistent regardless of cell content so mixed statuses
+   on the "All" filter don't produce a jagged or overlapping table. For
+   display:table-cell elements, `height` behaves as a min-height. */
+.retention-table .oh-sticky-table__td {
+    height: 64px;
+}
+
+/* Run-now bar — used on dashboard and run log */
+.retention-runbar {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: .85rem 1.1rem;
+    background: linear-gradient(90deg, #fff7ed 0%, #fff 100%);
+    border: 1px solid #fed7aa;
+    border-radius: 10px;
+    margin-bottom: 1.25rem;
+}
+.retention-runbar__icon {
+    font-size: 1.5rem;
+    color: #ea580c;
+    flex-shrink: 0;
+}
+.retention-runbar__text {
+    flex: 1;
+    font-size: .875rem;
+    color: #7c2d12;
+}
+.retention-runbar__text strong { color: #431407; }
+.retention-runbar form { margin: 0; }
+.retention-runbar label {
+    margin-right: .85rem;
+    font-size: .85rem;
+    color: #7c2d12;
+    user-select: none;
+}

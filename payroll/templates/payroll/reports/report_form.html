@@ -1,0 +1,59 @@
+{% load i18n %}
+<div class="oh-modal__dialog-header">
+    <h2 class="oh-modal__dialog-title" id="createTitle">{% trans "Create Report" %}</h2>
+    <button type="button" class="oh-modal__close--custom"
+        onclick="$(this).closest('.oh-modal--show').removeClass('oh-modal--show')" aria-label="Close">
+        <ion-icon name="close-outline" role="img" class="md hydrated" aria-label="close outline"></ion-icon>
+    </button>
+</div>
+<div class="oh-modal__dialog-body oh-modal__dialog-relative">
+    <form hx-post="{% url 'create-payroll-report' %}" hx-target="#genericModalBody" hx-swap="innerHTML">
+        {% csrf_token %}
+        <div class="row" style="padding-right: 0;">
+            <div class="col-12" style="padding-right: 0;">{{ form.non_field_errors }}</div>
+            {% for field in form.visible_fields %}
+                <div class="col-12 mb-3" id="id_{{ field.name }}_parent_div" style="padding-right: 0;">
+                    <div class="oh-label__info" for="id_{{ field.name }}">
+                        <label class="oh-label {% if field.field.required %} required-star{% endif %}"
+                            for="id_{{ field.name }}">{% trans field.label %}</label>
+                    </div>
+                    <div id="dynamic_field_{{ field.name }}">
+                        {{ field }}
+                        {% if field.help_text %}
+                            <small class="text-muted">{{ field.help_text }}</small>
+                        {% endif %}
+                        {{ field.errors }}
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+        <div class="d-flex flex-row-reverse">
+            <button type="submit" class="oh-btn oh-btn--secondary mt-2 mr-0 pl-4 pr-5 oh-btn--w-100-resp">
+                {% trans 'Generate' %}
+            </button>
+        </div>
+    </form>
+</div>
+
+<script>
+    (function () {
+        function etfToggleReportFields() {
+            var rt = document.getElementById("id_report_type");
+            if (!rt) return;
+            var isBiAnnual = rt.value === "etf_bi_annual";
+            var monthDiv = document.getElementById("id_month_parent_div");
+            var halfDiv = document.getElementById("id_half_year_parent_div");
+            var yearDiv = document.getElementById("id_year_parent_div");
+            if (monthDiv) monthDiv.style.display = isBiAnnual ? "none" : "";
+            if (halfDiv) halfDiv.style.display = isBiAnnual ? "" : "none";
+            if (yearDiv) yearDiv.style.display = isBiAnnual ? "" : "none";
+        }
+        var rt = document.getElementById("id_report_type");
+        if (rt) {
+            rt.addEventListener("change", etfToggleReportFields);
+            etfToggleReportFields();
+        }
+    })();
+</script>
+
+

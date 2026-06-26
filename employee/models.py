@@ -50,6 +50,41 @@ def reporting_manager_validator(value):
     return value
 
 
+def validate_initials_format(value):
+    """
+    Validate dot-separated initials format (e.g. ``A.B.C.``).
+    """
+    if value in (None, ""):
+        return
+    if not re.match(r"^(?:[A-Za-z]\.)+$", value):
+        raise ValidationError(
+            _("Initials must be dot-separated letters ending with a dot, e.g. A.B.C.")
+        )
+
+
+def validate_tin_format(value):
+    """
+    Validate TIN (Tax Identification Number) - exactly 9 digits.
+    """
+    if value in (None, ""):
+        return
+    if not re.match(r"^\d{9}$", value):
+        raise ValidationError(_("TIN must be exactly 9 digits."))
+
+
+def validate_etf_epf_format(value):
+    """
+    Validate ETF/EPF Number - allow alphanumeric characters along with
+    common statutory separators such as ``/`` and ``-`` (e.g. ``B/51115/32``).
+    """
+    if value in (None, ""):
+        return
+    if not re.match(r"^[A-Za-z0-9/\-]+$", value):
+        raise ValidationError(
+            _("ETF/EPF Number may contain only letters, numbers, '/' and '-'.")
+        )
+
+
 class Employee(models.Model):
     """
     Employee model
@@ -75,10 +110,40 @@ class Employee(models.Model):
         verbose_name=_("User"),
     )
     employee_first_name = models.CharField(
-        max_length=200, null=False,blank=False , verbose_name=_("First Name")
+        max_length=200, null=False,blank=False , verbose_name=_("Preferred Name")
     )
     employee_last_name = models.CharField(
         max_length=200, null=True, blank=False, verbose_name=_("Last Name")
+    )
+    initials = models.CharField(
+        max_length=50,
+        null=True,
+        blank=True,
+        verbose_name=_("Initials"),
+        help_text=_("Dot-separated initials, e.g. K.P.S."),
+        validators=[validate_initials_format],
+    )
+    names_denoted_by_initials = models.CharField(
+        max_length=200,
+        null=True,
+        blank=True,
+        verbose_name=_("Names Denoted by Initials"),
+        help_text=_("Full names that the initials stand for, e.g. Kamal Perera Silva"),
+    )
+    etf_epf_number = models.CharField(
+        max_length=50,
+        null=True,
+        blank=True,
+        verbose_name=_("ETF/EPF Member Number"),
+        help_text=_("Alphanumeric ETF/EPF number (HR Admin only)"),
+        validators=[validate_etf_epf_format],
+    )
+    tin = models.CharField(
+        max_length=9,
+        null=True,
+        blank=True,
+        verbose_name=_("TIN"),
+        validators=[validate_tin_format],
     )
     employee_profile = models.ImageField(
         upload_to="employee/profile", null=True, blank=True
@@ -125,8 +190,8 @@ class Employee(models.Model):
     )
     children = models.IntegerField(blank=True, null=True)
     emergency_contact = models.CharField(max_length=15, null=True, blank=True)
-    emergency_contact_name = models.CharField(max_length=20, null=True, blank=True)
-    emergency_contact_relation = models.CharField(max_length=20, null=True, blank=True ,  verbose_name="Relationship to Emergency Contact")
+    emergency_contact_name = models.CharField(max_length=255, null=True, blank=True)
+    emergency_contact_relation = models.CharField(max_length=255, null=True, blank=True ,  verbose_name="Relationship to Emergency Contact")
     is_active = models.BooleanField(default=True)
     additional_info = models.JSONField(null=True, blank=True)
     is_from_onboarding = models.BooleanField(
@@ -144,6 +209,24 @@ class Employee(models.Model):
         import re
         if self.nic and not re.match(r'^(?:\d{9}[vVxX]|\d{12})$', self.nic):
             raise ValidationError({'nic': "Invalid NIC format."})
+        errors = {}
+        if self.initials:
+            try:
+                validate_initials_format(self.initials)
+            except ValidationError as exc:
+                errors["initials"] = exc.messages
+        if self.tin:
+            try:
+                validate_tin_format(self.tin)
+            except ValidationError as exc:
+                errors["tin"] = exc.messages
+        if self.etf_epf_number:
+            try:
+                validate_etf_epf_format(self.etf_epf_number)
+            except ValidationError as exc:
+                errors["etf_epf_number"] = exc.messages
+        if errors:
+            raise ValidationError(errors)
 
     def clean_fields(self, exclude=None):
         errors = {}
@@ -511,6 +594,29 @@ class Employee(models.Model):
 
         return cache.get(f"online_user_{user.id}") is not None
 
+    @property
+    def total_experience_display(self):
+        prior_months = int(float(self.experience or 0) * 12)
+        company_months = 0
+        work_info = getattr(self, "employee_work_info", None)
+        if work_info and work_info.date_joining:
+            today = datetime.now().date()
+            joining = work_info.date_joining
+            m = (today.year - joining.year) * 12 + (today.month - joining.month)
+            if today.day < joining.day:
+                m -= 1
+            company_months = max(0, m)
+        total_months = prior_months + company_months
+        if total_months == 0 and self.experience is None and company_months == 0:
+            return None
+        years, months = divmod(total_months, 12)
+        parts = []
+        if years:
+            parts.append(f"{years} yr{'s' if years != 1 else ''}")
+        if months:
+            parts.append(f"{months} mo{'s' if months != 1 else ''}")
+        return " ".join(parts) if parts else "< 1 month"
+
     class Meta:
         """
         Recruitment model
@@ -732,6 +838,11 @@ class EmployeeWorkInformation(models.Model):
         null=True,
         verbose_name=_("Probation End Date"),
     )
+    intern_period_end_date = models.DateField(
+        blank=True,
+        null=True,
+        verbose_name=_("Intern Period End Date"),
+    )
     basic_salary = models.IntegerField(
         null=True, blank=True, default=0, verbose_name=_("Basic Salary")
     )
@@ -789,6 +900,23 @@ class EmployeeWorkInformation(models.Model):
         self.experience = experience
         self.save()
         return self
+
+    @property
+    def company_experience_display(self):
+        if not self.date_joining:
+            return None
+        today = datetime.now().date()
+        months = (today.year - self.date_joining.year) * 12 + (today.month - self.date_joining.month)
+        if today.day < self.date_joining.day:
+            months -= 1
+        months = max(0, months)
+        years, rem_months = divmod(months, 12)
+        parts = []
+        if years:
+            parts.append(f"{years} yr{'s' if years != 1 else ''}")
+        if rem_months:
+            parts.append(f"{rem_months} mo{'s' if rem_months != 1 else ''}")
+        return " ".join(parts) if parts else "< 1 month"
 
 
 class EmployeeBankDetails(HorillaModel):

@@ -154,9 +154,19 @@ urlpatterns = [
     path("overall-leave", views.overall_leave, name="overall-leave"),
     path("leave-dashboard", views.dashboard, name="leave-dashboard"),
     path(
+        "leave-dashboard-stats",
+        views.dashboard_stats,
+        name="leave-dashboard-stats",
+    ),
+    path(
         "leave-employee-dashboard",
         views.employee_dashboard,
         name="leave-employee-dashboard",
+    ),
+    path(
+        "leave-employee-dashboard-stats",
+        views.employee_dashboard_stats,
+        name="leave-employee-dashboard-stats",
     ),
     path("available-leaves", views.available_leave_chart, name="available-leaves"),
     path(

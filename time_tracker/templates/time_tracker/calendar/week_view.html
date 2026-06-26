@@ -1,0 +1,99 @@
+{% extends "index.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Calendar – Week View" %}{% endblock %}
+
+{% block content %}
+<style>
+.tt-cal-week   { background:#fff; border-radius:12px; overflow:hidden; }
+.tt-cal-nav    { display:flex; align-items:center; gap:1rem; padding:1.25rem 1.5rem; border-bottom:1px solid #e2e8f0; flex-wrap:wrap; }
+.tt-cal-nav h2 { margin:0; font-size:1.1rem; font-weight:600; color:#1e293b; }
+.tt-nav-btn    { padding:.4rem .9rem; border:1px solid #e2e8f0; border-radius:8px; background:#fff; color:#475569; cursor:pointer; font-size:.875rem; text-decoration:none; }
+.tt-nav-btn:hover { background:#f8fafc; color:#1e293b; }
+.tt-today-btn  { background:#6366f1; color:#fff !important; border-color:#6366f1; }
+
+.tt-week-grid  { display:flex; overflow-y:auto; max-height:72vh; }
+.tt-week-time  { width:56px; flex-shrink:0; border-right:1px solid #f1f5f9; padding-top:48px; }
+.tt-week-hour-label { height:60px; display:flex; align-items:flex-start; justify-content:flex-end; padding:.25rem .5rem 0 0; font-size:.68rem; color:#94a3b8; }
+.tt-week-cols  { flex:1; display:flex; min-height:900px; }
+.tt-week-col   { flex:1; border-right:1px solid #f1f5f9; position:relative; }
+.tt-week-col:last-child { border-right:none; }
+.tt-col-header { height:48px; display:flex; flex-direction:column; align-items:center; justify-content:center; border-bottom:1px solid #e2e8f0; font-size:.8rem; font-weight:600; color:#475569; position:sticky; top:0; background:#fff; z-index:10; }
+.tt-col-header.is-today .tt-col-date { background:#6366f1; color:#fff; border-radius:50%; width:28px; height:28px; display:flex; align-items:center; justify-content:center; }
+.tt-col-header.is-leave { background:#fef3c7; }
+.tt-col-header.is-weekend { background:#f8fafc; }
+.tt-col-body   { position:relative; }
+.tt-col-gridline { position:absolute; left:0; right:0; height:1px; background:#f8fafc; }
+.tt-col-gridline-hour { background:#f1f5f9; }
+.tt-week-event { position:absolute; left:2px; right:2px; border-radius:5px; padding:.2rem .35rem; overflow:hidden; cursor:pointer; transition:opacity .15s; }
+.tt-week-event:hover { opacity:.85; }
+.tt-week-event-title { font-size:.68rem; font-weight:600; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.tt-week-event-sub   { font-size:.63rem; color:rgba(255,255,255,.82); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+</style>
+
+<div class="tt-cal-week oh-card">
+  <div class="tt-cal-nav">
+    <a href="?week={{ prev_week }}" class="tt-nav-btn">&#8249;</a>
+    <h2>{{ week_start|date:"N j" }} – {{ week_end|date:"N j, Y" }}</h2>
+    <a href="?week={{ next_week }}" class="tt-nav-btn">&#8250;</a>
+    <a href="?week={{ current_week }}" class="tt-nav-btn tt-today-btn">{% trans "This week" %}</a>
+    <div style="flex:1"></div>
+    <a href="{% url 'time_tracker:calendar-day' %}?date={{ week_start|date:'Y-m-d' }}"
+       class="tt-nav-btn">{% trans "Day view" %}</a>
+  </div>
+
+  <div class="tt-week-grid">
+    <!-- Hour labels -->
+    <div class="tt-week-time">
+      {% for h in hours %}
+      <div class="tt-week-hour-label">{{ h.label }}</div>
+      {% endfor %}
+    </div>
+
+    <!-- Day columns -->
+    <div class="tt-week-cols">
+      {% for day in days %}
+      <div class="tt-week-col">
+        <div class="tt-col-header {% if day.is_today %}is-today{% endif %} {% if day.is_leave %}is-leave{% endif %} {% if day.is_weekend %}is-weekend{% endif %}">
+          <span style="font-size:.7rem;color:#94a3b8;">{{ day.date|date:"D" }}</span>
+          <span class="tt-col-date" style="font-size:.9rem;">{{ day.date|date:"j" }}</span>
+        </div>
+        <div class="tt-col-body" style="height:{{ hours|length|add:'0' }}px;"
+             data-col-height="{{ hours|length }}">
+          <!-- Hour grid lines -->
+          {% for h in hours %}
+          <div class="tt-col-gridline tt-col-gridline-hour" style="top:{{ forloop.counter0|add:'0' }}px" data-h="{{ h.value }}"></div>
+          {% endfor %}
+          <!-- Events -->
+          {% for ev in day.events %}
+          <a href="{% url 'time_tracker:calendar-day' %}?date={{ day.date|date:'Y-m-d' }}"
+             class="tt-week-event"
+             style="background:{{ ev.color }};
+                    top:{{ ev.start_minutes|add:'0' }}px;
+                    height:{{ ev.duration_minutes }}px;"
+             title="{{ ev.description|default:ev.project_name }}">
+            <div class="tt-week-event-title">
+              {% if ev.project_name %}{{ ev.project_name }}{% else %}{% trans "No Project" %}{% endif %}
+            </div>
+            <div class="tt-week-event-sub">{{ ev.duration_display }}</div>
+          </a>
+          {% endfor %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<script>
+document.querySelectorAll(".tt-col-gridline[data-h]").forEach(el => {
+  const hourOffset = parseInt(el.dataset.h || 0);
+  // hours array starts at 7, so offset from first hour in list
+  const firstHour = {{ hours.0.value|default:0 }};
+  el.style.top = ((hourOffset - firstHour) * 60) + "px";
+});
+// Scroll to 8am
+const grid = document.querySelector(".tt-week-grid");
+if (grid) grid.scrollTo({ top: 60, behavior: "instant" });
+</script>
+{% endblock %}

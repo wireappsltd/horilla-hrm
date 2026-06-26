@@ -103,46 +103,133 @@
     <div class="oh-timeoff-modal__stats-container mt-3 ">
     	<div class="oh-timeoff-modal__stat">
     		<span class="oh-timeoff-modal__stat-title">{% trans "Assign Condition Images" %}</span>
-    		<span class="oh-timeoff-modal__stat-count"
-    			>
-                <div class="d-flex mt-2 mb-2">
+    		<div class="oh-timeoff-modal__stat-description">
+                <div class="d-flex flex-wrap mt-2 mb-2">
                     {% for doc in asset_assignment.assign_images.all %}
-                        <a
-                            href="{{doc.image.url}}"
-                            rel="noopener noreferrer"
-                            target="_blank"
-                            ><span
-                                class="oh-file-icon oh-file-icon--pdf"
-                                onmouseover="enlargeImage('{{doc.image.url}}')"
-                                style="width:40px;height:40px"
-                            ></span
-                        ></a>
+                        <a href="{{ doc.image.url }}"
+                           rel="noopener noreferrer"
+                           target="_blank"
+                           class="me-2 mb-2"
+                           title="{{ doc.image.name|cut:'asset/return_images/' }}">
+                            <img src="{{ doc.image.url }}"
+                                 alt="{% trans 'Assign image' %}"
+                                 onmouseover="enlargeImage('{{ doc.image.url }}')"
+                                 style="width:60px;height:60px;object-fit:cover;border-radius:4px;border:1px solid #dee2e6;">
+                        </a>
+                    {% empty %}
+                        <span class="text-muted small">{% trans "No images" %}</span>
                     {% endfor %}
                 </div>
-            </span>
+            </div>
     	</div>
         <div class="oh-timeoff-modal__stat">
-    		<span class="oh-timeoff-modal__stat-title"
-    			>{% trans "Return Condition Images" %}</span
-    		>
+    		<span class="oh-timeoff-modal__stat-title">{% trans "Return Condition Images" %}</span>
     		<div class="oh-timeoff-modal__stat-description">
-    			<div class="d-flex ">
+    			<div class="d-flex flex-wrap mt-2 mb-2">
                     {% for doc in asset_assignment.return_images.all %}
-                        <a
-                            href="{{doc.image.url}}"
-                            rel="noopener noreferrer"
-                            target="_blank"
-                            ><span
-                                class="oh-file-icon oh-file-icon--pdf"
-                                onmouseover="enlargeImage('{{doc.image.url}}')"
-                                style="width:40px;height:40px"
-                            ></span
-                        ></a>
+                        <a href="{{ doc.image.url }}"
+                           rel="noopener noreferrer"
+                           target="_blank"
+                           class="me-2 mb-2"
+                           title="{{ doc.image.name|cut:'asset/return_images/' }}">
+                            <img src="{{ doc.image.url }}"
+                                 alt="{% trans 'Return image' %}"
+                                 onmouseover="enlargeImage('{{ doc.image.url }}')"
+                                 style="width:60px;height:60px;object-fit:cover;border-radius:4px;border:1px solid #dee2e6;">
+                        </a>
+                    {% empty %}
+                        <span class="text-muted small">{% trans "No images" %}</span>
                     {% endfor %}
                 </div>
-
     		</div>
     	</div>
+    </div>
+
+    <div class="oh-timeoff-modal__stats-container mt-3">
+        <div class="oh-timeoff-modal__stat">
+            <span class="oh-timeoff-modal__stat-title">{% trans "Yearly Check-up Date" %}</span>
+            <span class="oh-timeoff-modal__stat-count dateformat_changer">{{ asset_assignment.yearly_checkup_date|default:"-" }}</span>
+        </div>
+        <div class="oh-timeoff-modal__stat">
+            <span class="oh-timeoff-modal__stat-title">{% trans "Yearly Check-up Status" %}</span>
+            <span class="oh-timeoff-modal__stat-count">
+                {% if asset_assignment.yearly_checkup_status == "Complete" %}
+                    <span class="link-success">{% trans "Complete" %}</span>
+                {% elif asset_assignment.yearly_checkup_status == "Overdue" %}
+                    <span class="link-danger">{% trans "Overdue" %}</span>
+                {% else %}
+                    <span class="link-warning">{% trans "Pending" %}</span>
+                {% endif %}
+            </span>
+        </div>
+    </div>
+
+    <div class="oh-timeoff-modal__stats-container mt-3">
+        <div class="oh-timeoff-modal__stat" style="width:100%">
+            <span class="oh-timeoff-modal__stat-title">{% trans "Yearly Check-up Timeline" %}</span>
+            <div class="oh-helpdesk__chat-container mt-2"
+                 style="max-height:340px;overflow-y:auto;background:#fafafa;border-radius:6px;padding:12px;">
+                {% for log in asset_assignment.checkup_logs.all %}
+                    <div class="oh-helpdesk__bubble oh-helpdesk__bubble--reply mb-3" style="width:95%">
+                        <div class="oh-helpdesk__bubble-header">
+                            <div class="oh-helpdesk__bubble-user">
+                                <div class="oh-profile oh-profile--md">
+                                    <div class="oh-profile__avatar mr-1">
+                                        {% if log.submitted_by %}
+                                            <img src="{{ log.submitted_by.get_avatar }}"
+                                                 class="oh-profile__image"
+                                                 alt="{{ log.submitted_by }}" />
+                                        {% endif %}
+                                    </div>
+                                </div>
+                                <span class="oh-helpdesk__bubble-username">
+                                    {% if log.submitted_by %}
+                                        {{ log.submitted_by.get_full_name|default:log.submitted_by }}
+                                    {% else %}
+                                        {% trans "System" %}
+                                    {% endif %}
+                                </span>
+                            </div>
+                            <span class="oh-helpdesk__bubble-timestamp">
+                                {% trans "Check-up on" %} {{ log.checkup_date|date:"M d, Y" }}
+                                {% if forloop.first %}
+                                    &nbsp;<span class="oh-badge oh-badge--success">{% trans "Latest" %}</span>
+                                {% endif %}
+                            </span>
+                        </div>
+                        <div class="oh-helpdesk__bubble-body">
+                            <div class="oh-helpdesk__comment">
+                                {{ log.description|default:"-"|linebreaksbr }}
+                            </div>
+                            {% if log.images.all %}
+                                <div class="d-flex flex-wrap mt-2">
+                                    {% for doc in log.images.all %}
+                                        <a href="{{ doc.image.url }}"
+                                           rel="noopener noreferrer"
+                                           target="_blank"
+                                           class="me-2 mb-2"
+                                           title="{{ doc.image.name|cut:'asset/checkup_images/' }}">
+                                            <img src="{{ doc.image.url }}"
+                                                 alt="{% trans 'Check-up image' %}"
+                                                 onmouseover="enlargeImage('{{ doc.image.url }}')"
+                                                 style="width:60px;height:60px;object-fit:cover;border-radius:4px;border:1px solid #dee2e6;">
+                                        </a>
+                                    {% endfor %}
+                                </div>
+                            {% endif %}
+                            <small class="text-muted d-block mt-1">
+                                {% trans "Logged" %} {{ log.created_at|date:"M d, Y H:i" }}
+                            </small>
+                        </div>
+                    </div>
+                {% empty %}
+                    <div class="oh-helpdesk__chat-update text-center text-muted py-3">
+                        <ion-icon name="time-outline" style="font-size:24px;"></ion-icon>
+                        <div class="mt-1">{% trans "No yearly check-ups have been recorded yet." %}</div>
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
     </div>
     </div>
     <div class="m-3 " id="enlargeImageContainer"></div>

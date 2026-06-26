@@ -8,6 +8,7 @@ from django.urls import include, path
 
 from payroll.models.models import Contract, Payslip
 from payroll.views import views
+from payroll.views import apit_t10_views, report_views
 
 urlpatterns = [
     path("", include("payroll.urls.component_urls")),
@@ -196,5 +197,47 @@ urlpatterns = [
         "activate-auto-payslip-generate",
         views.activate_auto_payslip_generate,
         name="activate-auto-payslip-generate",
+    ),
+    # ===========================Payroll Reports================================
+    path(
+        "payroll-reports/",
+        report_views.view_payroll_reports,
+        name="view-payroll-reports",
+    ),
+    path(
+        "filter-payroll-reports/",
+        report_views.filter_payroll_reports,
+        name="filter-payroll-reports",
+    ),
+    path(
+        "create-payroll-report",
+        report_views.create_payroll_report,
+        name="create-payroll-report",
+    ),
+    path(
+        "delete-payroll-report/<int:report_id>",
+        report_views.delete_payroll_report,
+        name="delete-payroll-report",
+    ),
+    path(
+        "download-payroll-report/<int:report_id>",
+        report_views.download_payroll_report,
+        name="download-payroll-report",
+    ),
+    # ===========================APIT T10================================
+    path(
+        "apit-t10/",
+        apit_t10_views.view_apit_t10,
+        name="view-apit-t10",
+    ),
+    path(
+        "filter-apit-t10/",
+        apit_t10_views.filter_apit_t10,
+        name="filter-apit-t10",
+    ),
+    path(
+        "download-apit-t10/<int:employee_id>",
+        apit_t10_views.download_apit_t10,
+        name="download-apit-t10",
     ),
 ]

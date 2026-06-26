@@ -187,6 +187,7 @@ from horilla.horilla_settings import (
 )
 from horilla.methods import get_horilla_model_class, remove_dynamic_url
 from horilla_audit.forms import HistoryTrackingFieldsForm
+from horilla_audit.methods import log_activity, log_login
 from horilla_audit.models import AccountBlockUnblock, AuditTag, HistoryTrackingFields
 from notifications.models import Notification
 from notifications.signals import notify
@@ -566,6 +567,60 @@ def initialize_job_position_delete(request, obj_id):
     )
 
 
+TURNSTILE_VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
+
+
+def _client_ip(request):
+    """Return the best-effort client IP for Turnstile remoteip."""
+    forwarded = request.META.get("HTTP_X_FORWARDED_FOR")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.META.get("REMOTE_ADDR", "")
+
+
+def verify_turnstile_token(request):
+    """
+    Verify the Cloudflare Turnstile token submitted with the login form.
+
+    Returns True when the challenge passes (or when no secret key is
+    configured — in which case the feature is effectively disabled).
+    Returns False when Cloudflare positively says the token is invalid.
+    A network/transport failure is treated as a pass with a logged warning
+    so an outage at Cloudflare cannot lock every user out of the system.
+    """
+    import logging
+
+    import requests
+
+    secret = getattr(settings, "TURNSTILE_SECRETKEY", "")
+    if not secret:
+        return True
+
+    token = request.POST.get("cf-turnstile-response", "")
+    if not token:
+        return False
+
+    try:
+        resp = requests.post(
+            TURNSTILE_VERIFY_URL,
+            data={
+                "secret": secret,
+                "response": token,
+                "remoteip": _client_ip(request),
+            },
+            timeout=5,
+        )
+        data = resp.json()
+    except Exception as exc:
+        logging.getLogger(__name__).warning(
+            "Turnstile verification request failed; allowing login through: %s",
+            exc,
+        )
+        return True
+
+    return bool(data.get("success"))
+
+
 @never_cache
 def login_user(request):
     """
@@ -594,6 +649,26 @@ def login_user(request):
         query_params.pop("next", None)
         params = urlencode(query_params)
 
+        # Block automated and rapid-fire login attempts via Cloudflare
+        # Turnstile. Verified before any password work so failed challenges
+        # also count toward the login lockout counter (defence in depth).
+        if not verify_turnstile_token(request):
+            increment_login_attempts(username)
+            log_login(
+                username=username,
+                ip_address=_client_ip(request),
+                status="failed",
+                failure_reason="captcha_failed",
+            )
+            messages.error(
+                request,
+                _(
+                    "Verification failed. Please complete the security check "
+                    "and try again."
+                ),
+            )
+            return redirect("login")
+
         user = authenticate(request, username=username, password=password)
 
         if not user:
@@ -602,21 +677,76 @@ def login_user(request):
                 user = authenticate(request, username=existing_user.username, password=password)
 
         if not user:
+            attempts = increment_login_attempts(username)
+            if attempts >= LOGIN_MAX_ATTEMPTS:
+                set_login_lockout(username)
+                request.session["login_lockout_username"] = username
+                log_login(
+                    username=username,
+                    ip_address=_client_ip(request),
+                    status="failed",
+                    failure_reason="too_many_attempts",
+                )
+                messages.error(
+                    request,
+                    _(
+                        "Too many failed login attempts. This account has been "
+                        "temporarily locked. Please try again after "
+                        "%(minutes)s minute(s)."
+                    )
+                    % {"minutes": LOGIN_LOCKOUT_SECONDS // 60},
+                )
+                return redirect("login")
+
             user_object = User.objects.filter(username=username).first()
             if user_object and not user_object.is_active:
+                log_login(
+                    username=username,
+                    ip_address=_client_ip(request),
+                    status="failed",
+                    failure_reason="account_blocked",
+                    user=user_object,
+                )
                 messages.warning(request, _("Access Denied: Your account is blocked."))
             else:
+                log_login(
+                    username=username,
+                    ip_address=_client_ip(request),
+                    status="failed",
+                    failure_reason="invalid_credentials",
+                    user=user_object,
+                )
                 messages.error(request, _("Invalid username or password."))
             return redirect("login")
 
+        # Credentials verified — clear the failed-login counter so the next
+        # downstream policy failure (no employee, archived, no contract, OTP
+        # lockout) does not leave a stale counter behind.
+        reset_login_attempts(username)
+        request.session.pop("login_lockout_username", None)
+
         employee = getattr(user, "employee_get", None)
         if employee is None:
+            log_login(
+                username=username,
+                ip_address=_client_ip(request),
+                status="failed",
+                failure_reason="no_employee",
+                user=user,
+            )
             messages.error(
                 request,
                 _("An employee related to this user's credentials does not exist."),
             )
             return redirect("login")
         if not employee.is_active:
+            log_login(
+                username=username,
+                ip_address=_client_ip(request),
+                status="failed",
+                failure_reason="employee_archived",
+                user=user,
+            )
             messages.warning(
                 request,
                 _(
@@ -632,6 +762,13 @@ def login_user(request):
                 employee_id=employee, contract_status="active", is_active=True
             ).exists()
             if not has_active_contract:
+                log_login(
+                    username=username,
+                    ip_address=_client_ip(request),
+                    status="failed",
+                    failure_reason="no_active_contract",
+                    user=user,
+                )
                 messages.warning(
                     request,
                     _(
@@ -645,6 +782,13 @@ def login_user(request):
         lockout_remaining = get_otp_lockout_remaining(user)
         if lockout_remaining > 0:
             minutes = int((lockout_remaining + 59) // 60)
+            log_login(
+                username=username,
+                ip_address=_client_ip(request),
+                status="failed",
+                failure_reason="otp_lockout",
+                user=user,
+            )
             messages.error(
                 request,
                 _(
@@ -656,6 +800,12 @@ def login_user(request):
             return redirect("login")
 
         login(request, user)
+        log_login(
+            username=username,
+            ip_address=_client_ip(request),
+            status="success",
+            user=user,
+        )
 
         messages.success(request, _("Login successful."))
 
@@ -670,7 +820,12 @@ def login_user(request):
         return redirect(next_url)
 
     return render(
-        request, "login.html", {"initialize_database": initialize_database_condition()}
+        request,
+        "login.html",
+        {
+            "initialize_database": initialize_database_condition(),
+            "turnstile_sitekey": getattr(settings, "TURNSTILE_SITEKEY", ""),
+        },
     )
 
 
@@ -727,6 +882,17 @@ class HorillaPasswordResetView(PasswordResetView):
                 "extra_email_context": self.extra_email_context,
             }
             form.save(**opts)
+            log_activity(
+                self.request.user,
+                module="password_reset",
+                action="Password reset requested",
+                target=user,
+                changes={
+                    "target_user": username,
+                    "request_type": "self",
+                    "status": "Requested",
+                },
+            )
             if self.request.user.is_authenticated:
                 messages.success(
                     self.request, _("Password reset link sent successfully")
@@ -735,6 +901,17 @@ class HorillaPasswordResetView(PasswordResetView):
 
             return redirect(reverse_lazy("reset-send-success"))
 
+        log_activity(
+            self.request.user,
+            module="password_reset",
+            action="Password reset failed",
+            changes={
+                "target_user": username,
+                "request_type": "self",
+                "status": "Failed",
+                "reason": "User not found",
+            },
+        )
         messages.info(self.request, _("No user found with the username"))
         return redirect("forgot-password")
 
@@ -773,14 +950,47 @@ class EmployeePasswordResetView(PasswordResetView):
                     "extra_email_context": self.extra_email_context,
                 }
                 form.save(**opts)
+                log_activity(
+                    self.request.user,
+                    module="password_reset",
+                    action="Password reset requested",
+                    target=user,
+                    changes={
+                        "target_user": username,
+                        "request_type": "admin",
+                        "status": "Requested",
+                    },
+                )
                 messages.success(
                     self.request, _("Password reset link sent successfully to {}").format(user.email)
                 )
             else:
+                log_activity(
+                    self.request.user,
+                    module="password_reset",
+                    action="Password reset failed",
+                    changes={
+                        "target_user": username,
+                        "request_type": "admin",
+                        "status": "Failed",
+                        "reason": "User not found",
+                    },
+                )
                 messages.error(self.request, _("No user with the given username"))
             return HttpResponseRedirect(self.request.META.get("HTTP_REFERER", "/"))
 
         except Exception as e:
+            log_activity(
+                self.request.user,
+                module="password_reset",
+                action="Password reset failed",
+                changes={
+                    "target_user": form.cleaned_data.get("email") if form.is_valid() else None,
+                    "request_type": "admin",
+                    "status": "Failed",
+                    "reason": str(e)[:200],
+                },
+            )
             messages.error(self.request, f"Something went wrong.....")
             return HttpResponseRedirect(self.request.META.get("HTTP_REFERER", "/"))
 
@@ -788,6 +998,45 @@ class EmployeePasswordResetView(PasswordResetView):
 setattr(PasswordResetConfirmView, "template_name", "reset_password.html")
 setattr(PasswordResetConfirmView, "form_class", ResetPasswordForm)
 setattr(PasswordResetConfirmView, "success_url", "/")
+
+
+# Audit-log password reset completion + expired/invalid token attempts.
+_original_form_valid = PasswordResetConfirmView.form_valid
+_original_dispatch = PasswordResetConfirmView.dispatch
+
+
+def _audit_form_valid(self, form):
+    response = _original_form_valid(self, form)
+    log_activity(
+        self.request.user,
+        module="password_reset",
+        action="Password reset completed",
+        target=self.user,
+        changes={
+            "target_user": self.user.username if self.user else None,
+            "status": "Completed",
+        },
+    )
+    return response
+
+
+def _audit_dispatch(self, *args, **kwargs):
+    response = _original_dispatch(self, *args, **kwargs)
+    if getattr(self, "validlink", True) is False and self.request.method == "GET":
+        log_activity(
+            self.request.user,
+            module="password_reset",
+            action="Password reset expired",
+            changes={
+                "status": "Expired",
+                "reason": "Invalid or expired token",
+            },
+        )
+    return response
+
+
+setattr(PasswordResetConfirmView, "form_valid", _audit_form_valid)
+setattr(PasswordResetConfirmView, "dispatch", _audit_dispatch)
 
 
 @login_required
@@ -863,6 +1112,97 @@ OTP_LOCKOUT_SECONDS = 5 * 60  # 5 minutes cooldown
 # seconds after it is issued. After this window the OTP is rejected and the
 # user must request a new one.
 OTP_VALIDITY_SECONDS = 5 * 60  # 5 minutes
+
+# Login attempt limiting configuration. Overridable via Django settings so
+# operators can tune the policy without touching the codebase.
+LOGIN_MAX_ATTEMPTS = getattr(settings, "LOGIN_MAX_ATTEMPTS", 5)
+LOGIN_LOCKOUT_SECONDS = getattr(settings, "LOGIN_LOCKOUT_SECONDS", 15 * 60)
+
+
+def _normalize_login_identifier(username):
+    """
+    Normalize a submitted username for use as a cache key. We track failed
+    attempts even for non-existent users so the lockout does not leak which
+    accounts exist, and matching against a lower-cased/stripped form prevents
+    case-flip attempts from sidestepping the counter.
+    """
+    if username is None:
+        return ""
+    return str(username).strip().lower()
+
+
+def _login_attempts_cache_key(username):
+    """Return the cache key used to store the failed-login counter."""
+    return f"login_attempts:{_normalize_login_identifier(username)}"
+
+
+def _login_lockout_cache_key(username):
+    """Return the cache key used to store the login lockout expiry."""
+    return f"login_lockout:{_normalize_login_identifier(username)}"
+
+
+def get_login_lockout_remaining(username):
+    """
+    Return the seconds remaining on the login lockout for the given username,
+    or 0 if the identifier is not currently locked out.
+    """
+    from django.core.cache import cache
+
+    identifier = _normalize_login_identifier(username)
+    if not identifier:
+        return 0
+    expires_at = cache.get(_login_lockout_cache_key(identifier))
+    if not expires_at:
+        return 0
+    remaining = int(expires_at - timezone.now().timestamp())
+    return max(remaining, 0)
+
+
+def increment_login_attempts(username):
+    """
+    Increment and return the failed-login counter for the given username.
+    The counter is held at least as long as the lockout window so the lockout
+    cannot be reset by switching sessions or clearing cookies.
+    """
+    from django.core.cache import cache
+
+    identifier = _normalize_login_identifier(username)
+    if not identifier:
+        return 0
+    key = _login_attempts_cache_key(identifier)
+    attempts = int(cache.get(key) or 0) + 1
+    cache.set(key, attempts, timeout=LOGIN_LOCKOUT_SECONDS)
+    return attempts
+
+
+def reset_login_attempts(username):
+    """Clear the failed-login counter for the given username."""
+    from django.core.cache import cache
+
+    identifier = _normalize_login_identifier(username)
+    if not identifier:
+        return
+    cache.delete(_login_attempts_cache_key(identifier))
+
+
+def set_login_lockout(username):
+    """
+    Lock the given username out of login for the configured cooldown period
+    and clear the per-username attempt counter so it starts fresh after the
+    lockout expires.
+    """
+    from django.core.cache import cache
+
+    identifier = _normalize_login_identifier(username)
+    if not identifier:
+        return
+    expires_at = timezone.now().timestamp() + LOGIN_LOCKOUT_SECONDS
+    cache.set(
+        _login_lockout_cache_key(identifier),
+        expires_at,
+        timeout=LOGIN_LOCKOUT_SECONDS,
+    )
+    reset_login_attempts(identifier)
 
 
 def _otp_lockout_cache_key(user):
@@ -1107,17 +1447,29 @@ def get_otp(request):
 
 def logout_user(request):
     """
-    This method used to logout the user
+    This method used to logout the user.
+
+    Sends explicit anti-cache headers on the logout response itself so the
+    browser cannot serve the post-logout page (or any prior authenticated
+    page) from its back-forward cache. The session is flushed by
+    django.contrib.auth.logout, and the body clears any client-side state
+    before redirecting to the login screen.
     """
     if request.user:
         logout(request)
-    response = HttpResponse()
-    response.content = """
+    response = HttpResponse(
+        """
         <script>
-            localStorage.clear();
+            try { localStorage.clear(); sessionStorage.clear(); } catch (e) {}
         </script>
         <meta http-equiv="refresh" content="0;url=/login">
-    """
+        """
+    )
+    response["Cache-Control"] = (
+        "no-store, no-cache, must-revalidate, max-age=0, private"
+    )
+    response["Pragma"] = "no-cache"
+    response["Expires"] = "0"
 
     return response
 

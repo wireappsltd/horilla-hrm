@@ -166,7 +166,7 @@
                 				{% endif %}
               				{% endif %}
 
-							{% if "payroll"|app_installed %}
+							{% if "payroll"|app_installed and perms.payroll.view_payslip %}
 								<li data-cell-index="16" data-cell-title="{% trans 'Payroll' %}" class="oh-general__tab">
 									<a
 									href="#"
@@ -299,7 +299,7 @@
 							</div>
 						{% endif %}
 
-						{% if "payroll"|app_installed %}
+						{% if "payroll"|app_installed and perms.payroll.view_payslip %}
 							<div class="oh-general__tab-target oh-profile__info-tab mb-4 d-none" id="payroll">
 								{% include 'tabs/payroll-tab.html' %}
 							</div>

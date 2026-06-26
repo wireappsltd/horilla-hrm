@@ -1,0 +1,16 @@
+{% extends 'index.html' %}
+{% block content %}
+{% load i18n %}
+{% load static %}
+
+<section class="oh-wrapper oh-main__topbar">
+    <div class="oh-main__titlebar oh-main__titlebar--left">
+        <h1 class="oh-main__titlebar-title fw-bold">{% trans "APIT T10 Certificates" %}</h1>
+    </div>
+</section>
+
+<div class="oh-wrapper">
+    {% include 'payroll/apit_t10/apit_t10_tab.html' %}
+</div>
+{% endblock content %}
+

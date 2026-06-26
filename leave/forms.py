@@ -41,6 +41,49 @@ CHOICES = [("yes", _("Yes")), ("no", _("No"))]
 LEAVE_MAX_LIMIT = 1e5
 
 
+def _validate_covering_person_not_self(cleaned_data):
+
+    if not cleaned_data:
+        return cleaned_data
+    employee = cleaned_data.get("employee_id")
+    manager = cleaned_data.get("manager")
+    if employee and manager:
+        emp_pk = getattr(employee, "pk", employee)
+        mgr_pk = getattr(manager, "pk", manager)
+        if emp_pk and mgr_pk and str(emp_pk) == str(mgr_pk):
+            raise ValidationError(
+                {
+                    "manager": _(
+                        "You cannot select yourself as the covering person."
+                    )
+                }
+            )
+    return cleaned_data
+
+
+def _exclude_self_from_manager_queryset(form, employee_pk):
+    """
+    Remove the requesting employee from the ``manager`` (covering person)
+    field's queryset so they cannot pick themselves from the dropdown.
+
+    Only applied to unbound forms (initial render). On bound submissions we
+    leave the queryset untouched so the cross-field ``clean()`` validator can
+    raise the friendly "You cannot select yourself as the covering person"
+    message instead of the generic ModelChoiceField "Select a valid choice"
+    error that would otherwise be triggered by the exclusion.
+    """
+    if not employee_pk:
+        return
+    if "manager" not in form.fields:
+        return
+    if getattr(form, "is_bound", False):
+        return
+    qs = form.fields["manager"].queryset
+    if qs is None:
+        return
+    form.fields["manager"].queryset = qs.exclude(pk=employee_pk)
+
+
 class ConditionForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -225,6 +268,20 @@ class LeaveRequestCreationForm(BaseModelForm):
                 "hx-get": "/leave/get-employee-leave-types?form=LeaveRequestCreationForm",
             }
         )
+        # Exclude the selected employee (if any) from covering person choices
+        employee_id_val = None
+        if self.is_bound:
+            employee_id_val = self.data.get("employee_id")
+        elif getattr(self.instance, "pk", None):
+            employee_id_val = getattr(self.instance, "employee_id_id", None)
+        else:
+            # Unbound form rendered with initial={'employee_id': ...}
+            # (e.g. the create view pre-fills the current employee).
+            # Accept either a Model instance or a raw pk.
+            initial_emp = self.initial.get("employee_id")
+            if initial_emp:
+                employee_id_val = getattr(initial_emp, "pk", initial_emp)
+        _exclude_self_from_manager_queryset(self, employee_id_val)
         self.fields["start_date"].widget.attrs.update(
             {
                 "hx-include": "#leaveRequestCreateForm",
@@ -242,6 +299,10 @@ class LeaveRequestCreationForm(BaseModelForm):
         context = {"form": self}
         table_html = render_to_string("horilla_form.html", context)
         return table_html
+
+    def clean(self):
+        cleaned_data = super().clean()
+        return _validate_covering_person_not_self(cleaned_data)
 
     class Meta:
         model = LeaveRequest
@@ -300,6 +361,16 @@ class LeaveRequestUpdationForm(BaseModelForm):
         )
         self.fields["attachment"].widget.attrs["accept"] = ".jpg, .jpeg, .png, .pdf"
 
+        # Exclude the requesting employee from covering person choices
+        employee_id_val = None
+        if self.is_bound:
+            employee_id_val = self.data.get("employee_id")
+        if not employee_id_val and employee is not None:
+            employee_id_val = getattr(employee, "id", None)
+        if not employee_id_val and getattr(self.instance, "pk", None):
+            employee_id_val = getattr(self.instance, "employee_id_id", None)
+        _exclude_self_from_manager_queryset(self, employee_id_val)
+
         self.fields["start_date"].widget.attrs.update(
             {
                 "hx-include": "#leaveRequestUpdateForm",
@@ -317,6 +388,10 @@ class LeaveRequestUpdationForm(BaseModelForm):
         context = {"form": self}
         table_html = render_to_string("horilla_form.html", context)
         return table_html
+
+    def clean(self):
+        cleaned_data = super().clean()
+        return _validate_covering_person_not_self(cleaned_data)
 
     class Meta:
         model = LeaveRequest
@@ -429,6 +504,10 @@ class UserLeaveRequestForm(BaseModelForm):
         employee = kwargs.pop("employee", None)
         super(UserLeaveRequestForm, self).__init__(*args, **kwargs)
         self.fields["attachment"].widget.attrs["accept"] = ".jpg, .jpeg, .png, .pdf"
+        # Disable selection of past dates in the calendar/date picker
+        today_str = date.today().strftime("%Y-%m-%d")
+        self.fields["start_date"].widget.attrs["min"] = today_str
+        self.fields["end_date"].widget.attrs["min"] = today_str
         if employee:
             available_leaves = employee.available_leave.all()
             assigned_leave_types = LeaveType.objects.filter(
@@ -472,6 +551,27 @@ class UserLeaveRequestForm(BaseModelForm):
 
         self.fields["attachment"].required = is_required
 
+        # Exclude the requesting employee from covering person choices
+        emp_id_val = None
+        if self.is_bound:
+            emp_id_val = self.data.get("employee_id")
+        if not emp_id_val and employee is not None:
+            emp_id_val = getattr(employee, "id", None)
+        if not emp_id_val and getattr(self.instance, "pk", None):
+            emp_id_val = getattr(self.instance, "employee_id_id", None)
+        if not emp_id_val and isinstance(leave_type, dict):
+            # The view may pass the requesting employee via the popped
+            # `initial` kwarg (e.g. initial={'employee_id': employee, ...})
+            # without supplying an `employee=` kwarg. Read it from there
+            # so the dropdown filters self out at render time.
+            initial_emp = leave_type.get("employee_id")
+            if initial_emp:
+                emp_id_val = getattr(initial_emp, "pk", initial_emp)
+        if emp_id_val and "manager" in self.fields:
+            self.fields["manager"].queryset = self.fields["manager"].queryset.exclude(
+                id=emp_id_val
+            )
+
         if getattr(self.instance, "pk", None):
             self.fields["leave_type_id"].widget.attrs.update({
                 "hx-include": "#userLeaveForm",
@@ -488,6 +588,10 @@ class UserLeaveRequestForm(BaseModelForm):
         context = {"form": self}
         table_html = render_to_string("horilla_form.html", context)
         return table_html
+
+    def clean(self):
+        cleaned_data = super().clean()
+        return _validate_covering_person_not_self(cleaned_data)
 
     class Meta:
         """
@@ -600,6 +704,10 @@ class UserLeaveRequestCreationForm(BaseModelForm):
         employee = kwargs.pop("employee", None)
         super().__init__(*args, **kwargs)
         self.fields["attachment"].widget.attrs["accept"] = ".jpg, .jpeg, .png, .pdf"
+        # Disable selection of past dates in the calendar/date picker
+        today_str = date.today().strftime("%Y-%m-%d")
+        self.fields["start_date"].widget.attrs["min"] = today_str
+        self.fields["end_date"].widget.attrs["min"] = today_str
         if employee:
             available_leaves = employee.available_leave.all()
             assigned_leave_types = LeaveType.objects.filter(
@@ -631,6 +739,16 @@ class UserLeaveRequestCreationForm(BaseModelForm):
                      self.fields["leave_type_id"].queryset = self.fields["leave_type_id"].queryset.filter(name__icontains="Annual Leave")
         except Exception:
             pass
+
+
+        if not employee and self.is_bound:
+            _exclude_self_from_manager_queryset(
+                self, self.data.get("employee_id")
+            )
+
+    def clean(self):
+        cleaned_data = super().clean()
+        return _validate_covering_person_not_self(cleaned_data)
 
     class Meta:
         """
@@ -757,7 +875,7 @@ class AssignLeaveForm(HorillaForm):
     """
 
     leave_type_id = forms.ModelChoiceField(
-        queryset=LeaveType.objects.all(),
+        queryset=LeaveType.objects.exclude(is_compensatory_leave=True),
         widget=forms.SelectMultiple(
             attrs={"class": "oh-select oh-select-2 mb-2", "required": True}
         ),

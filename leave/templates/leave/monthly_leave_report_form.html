@@ -54,7 +54,12 @@
          style="display:none;"
          role="alert">
         <strong>{% trans "Invalid date range" %}</strong><br>
-        {% trans "Start date cannot be later than end date." %}
+        <span id="dateErrorMessage">{% trans "Start date cannot be later than end date." %}</span>
+    </div>
+
+    <div id="dateErrorMessages" style="display:none;"
+         data-msg-order="{% trans 'Start date cannot be later than end date.' %}"
+         data-msg-range="{% trans 'Report generation is limited to a maximum of 12 months. Please select a shorter date range.' %}">
     </div>
 
     <iframe name="monthly_leave_download_iframe" style="display:none;"></iframe>
@@ -93,11 +98,28 @@
         const start = document.getElementById("start_date").value;
         const end = document.getElementById("end_date").value;
         const errorBox = document.getElementById("dateError");
+        const errorMessage = document.getElementById("dateErrorMessage");
+        const messages = document.getElementById("dateErrorMessages");
         errorBox.style.display = "none";
+
         if (start && end && start > end) {
+            errorMessage.textContent = messages.dataset.msgOrder;
             errorBox.style.display = "block";
             return false;
         }
+
+        if (start && end) {
+            const startDate = new Date(start);
+            const endDate = new Date(end);
+            const maxEnd = new Date(startDate);
+            maxEnd.setFullYear(maxEnd.getFullYear() + 1);
+            if (endDate > maxEnd) {
+                errorMessage.textContent = messages.dataset.msgRange;
+                errorBox.style.display = "block";
+                return false;
+            }
+        }
+
         afterReportSubmit();
         return true;
     }

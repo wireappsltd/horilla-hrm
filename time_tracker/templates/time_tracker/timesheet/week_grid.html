@@ -1,0 +1,274 @@
+{% extends "index.html" %}
+{% load i18n %}
+{% load static %}
+
+{% block content %}
+<style>
+  /* ===================== Shared tokens (match tracker view) ===================== */
+  .tt-page { padding-bottom: 2rem; }
+  .tt-header { display: flex; align-items: flex-start; justify-content: space-between;
+    margin-bottom: 1.1rem; flex-wrap: wrap; gap: .75rem; }
+  .tt-header__title { font-size: 1.55rem; font-weight: 700; color: #111827; margin: 0; }
+  .tt-header__sub { color: #6b7280; font-size: .88rem; margin: .15rem 0 0; }
+
+  /* Stat tiles */
+  .tt-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1.1rem; }
+  .tt-stat { display: flex; align-items: center; gap: .85rem; background: #fff;
+    border: 1px solid #e8ebf0; border-radius: 14px; padding: 1rem 1.15rem;
+    box-shadow: 0 1px 2px rgba(16,24,40,.04); }
+  .tt-stat__icon { width: 44px; height: 44px; border-radius: 11px; flex: none;
+    display: flex; align-items: center; justify-content: center; font-size: 1.4rem; }
+  .tt-stat__icon--indigo { background: #eef2ff; color: #4f46e5; }
+  .tt-stat__icon--emerald { background: #ecfdf5; color: #10b981; }
+  .tt-stat__icon--amber { background: #fffbeb; color: #f59e0b; }
+  .tt-stat__icon--sky { background: #eff6ff; color: #0ea5e9; }
+  .tt-stat__body { display: flex; flex-direction: column; line-height: 1.2; }
+  .tt-stat__label { font-size: .76rem; color: #8a93a3; text-transform: uppercase;
+    letter-spacing: .04em; font-weight: 600; }
+  .tt-stat__value { font-family: 'SFMono-Regular', Consolas, monospace; font-size: 1.35rem;
+    font-weight: 700; color: #111827; margin-top: .15rem; }
+
+  /* Week navigation toolbar */
+  .ts-toolbar { display: flex; align-items: center; gap: .6rem; background: #fff;
+    border: 1px solid #e8ebf0; border-radius: 14px; padding: .65rem .85rem;
+    box-shadow: 0 1px 2px rgba(16,24,40,.04); margin-bottom: 1.1rem; flex-wrap: wrap; }
+  .ts-nav { width: 38px; height: 38px; border-radius: 10px; border: 1px solid #e8ebf0;
+    background: #fff; cursor: pointer; display: inline-flex; align-items: center;
+    justify-content: center; color: #4b5563; font-size: 1.15rem; text-decoration: none;
+    transition: all .12s; }
+  .ts-nav:hover { background: #f5f6f8; border-color: #d8dce3; color: #111827; }
+  .ts-range { font-weight: 600; color: #111827; font-size: .98rem; padding: 0 .4rem; }
+  .ts-range small { color: #8a93a3; font-weight: 500; }
+  .ts-spacer { flex: 1 1 auto; }
+  .ts-btn { display: inline-flex; align-items: center; gap: .35rem; border-radius: 10px;
+    padding: .55rem 1rem; font-size: .85rem; font-weight: 600; cursor: pointer;
+    text-decoration: none; border: 1px solid transparent; }
+  .ts-btn--ghost { background: #fff; border-color: #e8ebf0; color: #4b5563; }
+  .ts-btn--ghost:hover { background: #f5f6f8; color: #111827; }
+  .ts-btn--primary { background: #4f46e5; color: #fff; }
+  .ts-btn--primary:hover { background: #4338ca; }
+
+  /* Grid card + table */
+  .tt-card { background: #fff; border: 1px solid #e8ebf0; border-radius: 14px;
+    box-shadow: 0 1px 2px rgba(16,24,40,.04); overflow: hidden; }
+  .ts-scroll { overflow-x: auto; }
+  .ts-table { width: 100%; border-collapse: collapse; min-width: 860px; }
+  .ts-table th, .ts-table td { border-bottom: 1px solid #f1f2f5; }
+  .ts-table thead th { background: #fafbfc; padding: .7rem .6rem; font-size: .74rem;
+    font-weight: 700; color: #9aa1ad; text-transform: uppercase; letter-spacing: .04em;
+    text-align: center; }
+  /* sticky first column */
+  .ts-col-proj { position: sticky; left: 0; z-index: 2; background: #fafbfc;
+    text-align: left !important; min-width: 220px; padding-left: 1.25rem !important; }
+  tbody .ts-col-proj, tfoot .ts-col-proj { background: #fff; }
+  tbody tr:hover .ts-col-proj { background: #fbfbfd; }
+
+  .ts-day { min-width: 92px; }
+  .ts-day__name { display: block; font-size: .76rem; }
+  .ts-day__date { display: block; font-size: .82rem; color: #6b7280; font-weight: 600; }
+  .ts-day.is-today { color: #4f46e5; }
+  .ts-day.is-today .ts-day__date { color: #4f46e5; }
+  .ts-day__badge { display: inline-block; margin-top: .15rem; font-size: .6rem;
+    background: #fef3c7; color: #b45309; border-radius: 5px; padding: 1px 5px; font-weight: 700; }
+
+  .ts-table tbody td { padding: .55rem .6rem; text-align: center; vertical-align: middle; }
+  .ts-table tbody tr:hover { background: #fbfbfd; }
+  .ts-proj { display: flex; align-items: center; gap: .6rem; }
+  .ts-proj__name { font-weight: 600; color: #1f2937; font-size: .9rem; }
+  .ts-proj__task { font-size: .78rem; color: #9aa1ad; margin-top: 1px; }
+  .ts-proj__name--muted { color: #9aa1ad; font-weight: 500; }
+
+  .tt-dur { font-family: 'SFMono-Regular', Consolas, monospace; font-weight: 700;
+    font-size: .85rem; color: #1f2937; background: #f3f4f6; border-radius: 7px;
+    padding: .28rem .55rem; display: inline-block; min-width: 62px; }
+  .ts-dash { color: #d1d5db; }
+  .ts-cell.is-today { background: #f5f4ff; }
+  .ts-cell.is-weekend { background: #fafafa; }
+  .ts-cell.is-leave { background: #fffbeb; }
+  .ts-cell.is-today .tt-dur { background: #e0e7ff; color: #4338ca; }
+
+  /* totals */
+  .ts-row-total { font-family: 'SFMono-Regular', Consolas, monospace; font-weight: 700;
+    color: #111827; background: #f8f9fc; }
+  .ts-foot td { background: #fafbfc; padding: .8rem .6rem; border-top: 2px solid #eceef2;
+    text-align: center; }
+  .ts-foot__label { font-weight: 700; color: #6b7280; font-size: .82rem;
+    text-transform: uppercase; letter-spacing: .04em; text-align: left !important; }
+  .ts-foot .ts-day-total { font-family: 'SFMono-Regular', Consolas, monospace;
+    font-weight: 700; color: #374151; font-size: .88rem; }
+  .ts-week-total { font-family: 'SFMono-Regular', Consolas, monospace; font-weight: 800;
+    font-size: 1rem; color: #4f46e5; }
+  .ts-foot td.is-today { background: #f5f4ff; }
+
+  .ts-submit-badge { display: inline-flex; align-items: center; gap: .4rem;
+    font-size: .82rem; font-weight: 600; border-radius: 20px; padding: .35rem .85rem; }
+  .ts-submit-badge--pending { background: #fef3c7; color: #92400e; border: 1px solid #fbbf24; }
+  .ts-submit-badge--approved { background: #d1fae5; color: #065f46; border: 1px solid #6ee7b7; }
+
+  .tt-empty { padding: 3.5rem 1rem; text-align: center; }
+  .tt-empty__icon { font-size: 3rem; color: #d1d5db; }
+  .tt-empty__text { color: #9ca3af; margin: .6rem 0 1rem; font-size: .92rem; }
+
+  @media (max-width: 992px) { .tt-stats { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 576px) { .tt-stats { grid-template-columns: 1fr; } }
+</style>
+
+<div class="oh-wrapper tt-page">
+  <!-- Header -->
+  <div class="tt-header">
+    <div>
+      <h1 class="tt-header__title">{% trans "Timesheet" %}</h1>
+      <p class="tt-header__sub">{{ week_start|date:"d M Y" }} &ndash; {{ week_end|date:"d M Y" }}</p>
+    </div>
+  </div>
+
+  <!-- Summary stats -->
+  <div class="tt-stats">
+    <div class="tt-stat">
+      <div class="tt-stat__icon tt-stat__icon--indigo"><ion-icon name="time-outline"></ion-icon></div>
+      <div class="tt-stat__body">
+        <span class="tt-stat__label">{% trans "Week Total" %}</span>
+        <span class="tt-stat__value">{{ week_total_display }}</span>
+      </div>
+    </div>
+    <div class="tt-stat">
+      <div class="tt-stat__icon tt-stat__icon--emerald"><ion-icon name="trending-up-outline"></ion-icon></div>
+      <div class="tt-stat__body">
+        <span class="tt-stat__label">{% trans "Daily Average" %}</span>
+        <span class="tt-stat__value">{{ daily_avg_display }}</span>
+      </div>
+    </div>
+    <div class="tt-stat">
+      <div class="tt-stat__icon tt-stat__icon--sky"><ion-icon name="checkmark-done-outline"></ion-icon></div>
+      <div class="tt-stat__body">
+        <span class="tt-stat__label">{% trans "Days Worked" %}</span>
+        <span class="tt-stat__value">{{ days_worked }}</span>
+      </div>
+    </div>
+    <div class="tt-stat">
+      <div class="tt-stat__icon tt-stat__icon--amber"><ion-icon name="folder-outline"></ion-icon></div>
+      <div class="tt-stat__body">
+        <span class="tt-stat__label">{% trans "Projects" %}</span>
+        <span class="tt-stat__value">{{ project_count }}</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Week navigation toolbar -->
+  <div class="ts-toolbar">
+    <a href="?week={{ prev_week }}" class="ts-nav" title="{% trans 'Previous week' %}">
+      <ion-icon name="chevron-back-outline"></ion-icon>
+    </a>
+    <a href="?week={{ next_week }}" class="ts-nav" title="{% trans 'Next week' %}">
+      <ion-icon name="chevron-forward-outline"></ion-icon>
+    </a>
+    <span class="ts-range">
+      {{ week_start|date:"d M" }} &ndash; {{ week_end|date:"d M Y" }}
+      <small>&middot; {% trans "Week" %} {{ week_num }}</small>
+    </span>
+    {% if not is_current_week %}
+    <a href="?week={{ current_week }}" class="ts-btn ts-btn--ghost">
+      <ion-icon name="today-outline"></ion-icon> {% trans "This Week" %}
+    </a>
+    {% endif %}
+    <span class="ts-spacer"></span>
+    <a href="{% url 'time_tracker:timesheet-month' %}?month={{ week_start|date:'Y-m' }}"
+       class="ts-btn ts-btn--ghost">
+      <ion-icon name="calendar-outline"></ion-icon> {% trans "Month" %}
+    </a>
+    <!-- Submit this week -->
+    {% if rows %}
+      {% if submission %}
+        <span class="ts-submit-badge ts-submit-badge--{{ submission.status }}">
+          <ion-icon name="{% if submission.status == 'approved' %}checkmark-circle-outline{% else %}hourglass-outline{% endif %}"></ion-icon>
+          {{ submission.get_status_display }}
+        </span>
+      {% else %}
+        <form method="post" action="{% url 'time_tracker:timesheet-submit' %}" style="display:inline;">
+          {% csrf_token %}
+          <input type="hidden" name="week" value="{{ week_label }}">
+          {% if approval_required %}
+          <button type="submit" class="ts-btn ts-btn--ghost">
+            <ion-icon name="send-outline"></ion-icon> {% trans "Submit for Approval" %}
+          </button>
+          {% else %}
+          <button type="submit" class="ts-btn ts-btn--ghost">
+            <ion-icon name="checkmark-done-outline"></ion-icon> {% trans "Mark Complete" %}
+          </button>
+          {% endif %}
+        </form>
+      {% endif %}
+    {% endif %}
+    <a href="{% url 'time_tracker:tracker-page' %}" class="ts-btn ts-btn--primary">
+      <ion-icon name="play-outline"></ion-icon> {% trans "Track Time" %}
+    </a>
+  </div>
+
+  <!-- Grid -->
+  <div class="tt-card">
+    {% if rows %}
+    <div class="ts-scroll">
+      <table class="ts-table">
+        <thead>
+          <tr>
+            <th class="ts-col-proj">{% trans "Project / Task" %}</th>
+            {% for dm in day_meta %}
+            <th class="ts-day{% if dm.is_today %} is-today{% endif %}">
+              <span class="ts-day__name">{{ dm.date|date:"D" }}</span>
+              <span class="ts-day__date">{{ dm.date|date:"d M" }}</span>
+              {% if dm.is_leave %}<span class="ts-day__badge">{% trans "Leave" %}</span>{% endif %}
+            </th>
+            {% endfor %}
+            <th>{% trans "Total" %}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+          <tr>
+            <td class="ts-col-proj">
+              <div class="ts-proj">
+                <span class="tt-dot" style="width:11px;height:11px;border-radius:50%;background:{{ row.color }};flex:none;"></span>
+                <div>
+                  {% if row.project_id %}
+                  <div class="ts-proj__name">{{ row.project_name }}</div>
+                  {% else %}
+                  <div class="ts-proj__name ts-proj__name--muted">{% trans "No Project" %}</div>
+                  {% endif %}
+                  {% if row.task_name %}<div class="ts-proj__task">{{ row.task_name }}</div>{% endif %}
+                </div>
+              </div>
+            </td>
+            {% for cell in row.cells %}
+            <td class="ts-cell{% if cell.is_today %} is-today{% elif cell.is_leave %} is-leave{% elif cell.is_weekend %} is-weekend{% endif %}">
+              {% if cell.has_value %}<span class="tt-dur">{{ cell.display }}</span>{% else %}<span class="ts-dash">&ndash;</span>{% endif %}
+            </td>
+            {% endfor %}
+            <td class="ts-row-total">{{ row.total_display }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr class="ts-foot">
+            <td class="ts-col-proj ts-foot__label">{% trans "Daily Total" %}</td>
+            {% for dm in day_meta %}
+            <td class="ta-c{% if dm.is_today %} is-today{% endif %}">
+              {% if dm.total_display %}<span class="ts-day-total">{{ dm.total_display }}</span>{% else %}<span class="ts-dash">&ndash;</span>{% endif %}
+            </td>
+            {% endfor %}
+            <td class="ta-c"><span class="ts-week-total">{{ week_total_display }}</span></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+    {% else %}
+    <div class="tt-empty">
+      <ion-icon name="time-outline" class="tt-empty__icon"></ion-icon>
+      <p class="tt-empty__text">{% trans "No time logged for this week yet." %}</p>
+      <a href="{% url 'time_tracker:tracker-page' %}" class="ts-btn ts-btn--primary">
+        <ion-icon name="play-outline"></ion-icon> {% trans "Track Time" %}
+      </a>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -41,6 +41,7 @@ from horilla.decorators import (
 )
 from horilla.group_by import group_by_queryset
 from horilla.horilla_settings import HORILLA_DATE_FORMATS
+from horilla_audit.methods import log_activity
 from notifications.signals import notify
 from payroll.context_processors import get_active_employees
 from payroll.filters import ContractFilter, ContractReGroup, PayslipFilter
@@ -73,6 +74,21 @@ status_choices = {
     "confirmed": _("Confirmed"),
     "paid": _("Paid"),
 }
+
+PAYSLIP_STATUS_LABELS = {
+    "draft": "Draft",
+    "review_ongoing": "Review Ongoing",
+    "confirmed": "Approved",
+    "paid": "Published",
+}
+
+
+def _payslip_status_action(new_status):
+    if new_status == "confirmed":
+        return "Payslip approved"
+    if new_status == "paid":
+        return "Payslip published"
+    return "Payslip status changed"
 
 
 def get_language_code(request):
@@ -465,8 +481,23 @@ def update_payslip_status(request, payslip_id):
     view = request.POST.get("view")
     payslip = Payslip.objects.filter(id=payslip_id).first()
     if payslip:
+        old_status = payslip.status
         payslip.status = status
         payslip.save()
+        if old_status != status:
+            log_activity(
+                request.user,
+                module="payroll",
+                action=_payslip_status_action(status),
+                target=payslip,
+                changes={
+                    "employee": str(payslip.employee_id),
+                    "status": {
+                        "from": PAYSLIP_STATUS_LABELS.get(old_status, old_status),
+                        "to": PAYSLIP_STATUS_LABELS.get(status, status),
+                    },
+                },
+            )
         messages.success(request, _("Payslip status updated"))
     else:
         messages.error(request, _("Payslip not found"))
@@ -496,7 +527,24 @@ def update_payslip_status_no_id(request):
         ids = json.loads(ids_json)
         status = request.POST["status"]
         slips = Payslip.objects.filter(id__in=ids)
+        old_statuses = {p.id: p.status for p in slips}
         slips.update(status=status)
+        for slip in Payslip.objects.filter(id__in=ids).select_related("employee_id"):
+            old_status = old_statuses.get(slip.id)
+            if old_status != status:
+                log_activity(
+                    request.user,
+                    module="payroll",
+                    action=_payslip_status_action(status),
+                    target=slip,
+                    changes={
+                        "employee": str(slip.employee_id),
+                        "status": {
+                            "from": PAYSLIP_STATUS_LABELS.get(old_status, old_status),
+                            "to": PAYSLIP_STATUS_LABELS.get(status, status),
+                        },
+                    },
+                )
         message = {
             "type": "success",
             "message": f"{slips.count()} Payslips status updated.",
@@ -526,6 +574,8 @@ def bulk_update_payslip_status(request):
             "end_date": data["end_date"],
         }
         filtered_instance = Payslip.objects.filter(**payslip_kwargs).first()
+        is_new = filtered_instance is None
+        old_status = filtered_instance.status if filtered_instance else None
         instance = filtered_instance if filtered_instance is not None else Payslip()
 
         instance.employee_id = employee
@@ -539,6 +589,33 @@ def bulk_update_payslip_status(request):
         instance.net_pay = data["net_pay"]
         instance.pay_head_data = data
         instance.save()
+
+        if is_new:
+            log_activity(
+                request.user,
+                module="payroll",
+                action="Payslip generated",
+                target=instance,
+                changes={
+                    "employee": str(employee),
+                    "period": f"{instance.start_date} to {instance.end_date}",
+                    "status": PAYSLIP_STATUS_LABELS.get(status, status),
+                },
+            )
+        elif old_status != status:
+            log_activity(
+                request.user,
+                module="payroll",
+                action=_payslip_status_action(status),
+                target=instance,
+                changes={
+                    "employee": str(employee),
+                    "status": {
+                        "from": PAYSLIP_STATUS_LABELS.get(old_status, old_status),
+                        "to": PAYSLIP_STATUS_LABELS.get(status, status),
+                    },
+                },
+            )
 
     return JsonResponse({"type": "success", "message": "Payslips status updated"})
 
@@ -587,14 +664,12 @@ def view_payslip_pdf(request, payslip_id):
             month_start_name = start_date.strftime("%d %B %Y")
             month_end_name = end_date.strftime("%d %B %Y")
 
-            # Formatted date for each format
-            for format_name, format_string in HORILLA_DATE_FORMATS.items():
-                if format_name == date_format:
-                    formatted_start_date = start_date.strftime(format_string)
-
-            for format_name, format_string in HORILLA_DATE_FORMATS.items():
-                if format_name == date_format:
-                    formatted_end_date = end_date.strftime(format_string)
+            # Resolve the strftime pattern for the configured date format.
+            # Fall back to a sensible default when the format is not recognised
+            # so these variables are always bound (prevents a 500 on download).
+            format_string = HORILLA_DATE_FORMATS.get(date_format, "%b. %d, %Y")
+            formatted_start_date = start_date.strftime(format_string)
+            formatted_end_date = end_date.strftime(format_string)
             data["month_start_name"] = month_start_name
             data["month_end_name"] = month_end_name
             data["formatted_start_date"] = formatted_start_date
@@ -625,9 +700,43 @@ def view_payslip_pdf(request, payslip_id):
             data["protocol"] = "https" if request.is_secure() else "http"
             data["company"] = company
 
-            return render(request, "payroll/payslip/payslip_pdf.html", context=data)
+            html_content = render_to_string(
+                "payroll/payslip/payslip_pdf.html", context=data
+            )
+
+            try:
+                from weasyprint import HTML
+
+                pdf_bytes = HTML(
+                    string=html_content,
+                    base_url=request.build_absolute_uri("/"),
+                ).write_pdf()
+            except Exception as error:
+                logger.error("Error generating payslip PDF: %s", error)
+                pdf_bytes = None
+
+            if not pdf_bytes:
+                return HttpResponse(
+                    _("Failed to generate the payslip PDF."), status=500
+                )
+
+            # Build a safe file name for the downloaded payslip
+            file_name = f"payslip_{payslip.get_payslip_title()}.pdf"
+            file_name = file_name.replace(" ", "_").replace("/", "-")
+
+            log_activity(
+                request.user,
+                module="payroll",
+                action="Payroll PDF download",
+                target=payslip,
+            )
+            response = HttpResponse(pdf_bytes, content_type="application/pdf")
+            response["Content-Disposition"] = f'attachment; filename="{file_name}"'
+            return response
         return redirect(filter_payslip)
-    return render(request, "405.html")
+    # Payslip id does not exist (e.g. stale link / deleted record): return a
+    # proper 404 instead of the misleading "405 Method Not Allowed" page.
+    return render(request, "404.html", status=404)
 
 
 @login_required
@@ -663,7 +772,21 @@ def delete_payslip(request, payslip_id):
     from .component_views import filter_payslip
 
     try:
-        Payslip.objects.get(id=payslip_id).delete()
+        payslip = Payslip.objects.get(id=payslip_id)
+        snapshot = {
+            "employee": str(payslip.employee_id),
+            "period": f"{payslip.start_date} to {payslip.end_date}",
+            "status": PAYSLIP_STATUS_LABELS.get(payslip.status, payslip.status),
+            "net_pay": payslip.net_pay,
+        }
+        payslip_pk = payslip.pk
+        payslip.delete()
+        log_activity(
+            request.user,
+            module="payroll",
+            action="Payslip deleted",
+            changes={**snapshot, "payslip_id": payslip_pk},
+        )
         messages.success(request, _("Payslip deleted"))
     except Payslip.DoesNotExist:
         messages.error(request, _("Payslip not found."))
@@ -1345,11 +1468,24 @@ def payslip_bulk_delete(request):
         try:
             payslip = Payslip.objects.get(id=id)
             period = f"{payslip.start_date} to {payslip.end_date}"
+            snapshot = {
+                "employee": str(payslip.employee_id),
+                "period": period,
+                "status": PAYSLIP_STATUS_LABELS.get(payslip.status, payslip.status),
+                "net_pay": payslip.net_pay,
+                "payslip_id": payslip.pk,
+            }
             payslip.delete()
+            log_activity(
+                request.user,
+                module="payroll",
+                action="Payslip deleted",
+                changes=snapshot,
+            )
             messages.success(
                 request,
                 _("{employee} {period} payslip deleted.").format(
-                    employee=payslip.employee_id, period=period
+                    employee=snapshot["employee"], period=period
                 ),
             )
         except Payslip.DoesNotExist:
@@ -1592,6 +1728,13 @@ def payslip_pdf(request, id):
             template_path = "payroll/payslip/payslip_pdf.html"
 
             pdf_bytes = generate_payslip_pdf(template_path, context=data)
+            if pdf_bytes:
+                log_activity(
+                    request.user,
+                    module="payroll",
+                    action="Payroll PDF download",
+                    target=payslip,
+                )
             return pdf_bytes
         return redirect(filter_payslip)
     return render(request, "405.html")

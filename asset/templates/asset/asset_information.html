@@ -153,5 +153,128 @@
                 </div>
             </div>
         {% endif %}
+
+        <div class="col-12 col-md-12 col-lg-12 mt-4">
+            <div class="oh-modal__group">
+                <label class="oh-timeoff-modal__stat-title d-flex align-items-center">
+                    <ion-icon name="time-outline" class="me-1" style="font-size:18px;"></ion-icon>
+                    {% trans "Audit Trail" %}
+                </label>
+                <div class="oh-helpdesk__chat-container mt-2"
+                     style="max-height:420px;overflow-y:auto;background:#fafafa;border-radius:6px;padding:12px;">
+                    {% for event in asset_timeline %}
+                        {% if event.kind == 'created' %}
+                            <div class="oh-helpdesk__chat-update mb-3">
+                                <span>
+                                    <ion-icon name="cube-outline" class="me-1"></ion-icon>
+                                    <strong>{{ event.actor|default:_("System") }}</strong>
+                                    {% trans "added the asset to inventory" %}
+                                    {% if event.extras.tracking_id %}
+                                        &middot; <span class="text-muted">{{ event.extras.tracking_id }}</span>
+                                    {% endif %}
+                                </span>
+                                <span class="text-muted">{{ event.timestamp|date:"M d, Y H:i" }}</span>
+                            </div>
+                        {% else %}
+                            <div class="oh-helpdesk__bubble oh-helpdesk__bubble--reply mb-3" style="width:95%">
+                                <div class="oh-helpdesk__bubble-header">
+                                    <div class="oh-helpdesk__bubble-user">
+                                        <div class="oh-profile oh-profile--md">
+                                            <div class="oh-profile__avatar mr-1">
+                                                {% if event.actor.get_avatar %}
+                                                    <img src="{{ event.actor.get_avatar }}"
+                                                         class="oh-profile__image"
+                                                         alt="{{ event.actor }}" />
+                                                {% endif %}
+                                            </div>
+                                        </div>
+                                        <span class="oh-helpdesk__bubble-username">
+                                            {% if event.actor %}
+                                                {% if event.actor.get_full_name %}{{ event.actor.get_full_name }}{% else %}{{ event.actor }}{% endif %}
+                                            {% else %}
+                                                {% trans "System" %}
+                                            {% endif %}
+                                        </span>
+                                        &nbsp;
+                                        {% if event.kind == 'allocated' %}
+                                            <span class="oh-badge oh-badge--info">{% trans "Allocated" %}</span>
+                                        {% elif event.kind == 'returned' %}
+                                            {% if event.extras.return_status == 'Healthy' %}
+                                                <span class="oh-badge oh-badge--success">{% trans "Returned" %}</span>
+                                            {% else %}
+                                                <span class="oh-badge oh-badge--warning">{% trans "Returned" %}</span>
+                                            {% endif %}
+                                        {% elif event.kind == 'checkup' %}
+                                            <span class="oh-badge oh-badge--light">{% trans "Check-up" %}</span>
+                                        {% elif event.kind == 'report' %}
+                                            <span class="oh-badge oh-badge--danger">{% trans "Report" %}</span>
+                                        {% endif %}
+                                    </div>
+                                    <span class="oh-helpdesk__bubble-timestamp">
+                                        {{ event.timestamp|date:"M d, Y" }}
+                                    </span>
+                                </div>
+                                <div class="oh-helpdesk__bubble-body">
+                                    <div class="fw-bold mb-1">{{ event.title }}</div>
+                                    {% if event.body %}
+                                        <div class="oh-helpdesk__comment">{{ event.body|linebreaksbr }}</div>
+                                    {% endif %}
+                                    {% if event.kind == 'returned' and event.extras.return_status %}
+                                        <div class="text-muted small mt-1">
+                                            {% trans "Status:" %} {{ event.extras.return_status }}
+                                        </div>
+                                    {% endif %}
+                                    {% if event.kind == 'checkup' and event.extras.checkup_date %}
+                                        <div class="text-muted small mt-1">
+                                            {% trans "Check-up date:" %} {{ event.extras.checkup_date|date:"M d, Y" }}
+                                            {% if event.extras.assigned_to %}
+                                                &middot; {% trans "Asset held by" %} {{ event.extras.assigned_to }}
+                                            {% endif %}
+                                        </div>
+                                    {% endif %}
+                                    {% if event.images %}
+                                        <div class="d-flex flex-wrap mt-2">
+                                            {% for doc in event.images %}
+                                                <a href="{{ doc.image.url }}"
+                                                   rel="noopener noreferrer"
+                                                   target="_blank"
+                                                   class="me-2 mb-2"
+                                                   title="{{ doc.image.name|cut:'asset/return_images/' }}">
+                                                    <img src="{{ doc.image.url }}"
+                                                         alt="{% trans 'Return image' %}"
+                                                         style="width:60px;height:60px;object-fit:cover;border-radius:4px;border:1px solid #dee2e6;">
+                                                </a>
+                                            {% endfor %}
+                                        </div>
+                                    {% endif %}
+                                    {% if event.documents %}
+                                        <div class="d-flex flex-wrap mt-2">
+                                            {% for doc in event.documents %}
+                                                <a href="{{ doc.file.url }}"
+                                                   rel="noopener noreferrer"
+                                                   target="_blank"
+                                                   class="me-2 mb-2">
+                                                    <span class="oh-file-icon oh-file-icon--pdf"
+                                                          style="width:40px;height:40px;display:inline-block"
+                                                          title="{{ doc }}"></span>
+                                                </a>
+                                            {% endfor %}
+                                        </div>
+                                    {% endif %}
+                                    <small class="text-muted d-block mt-1">
+                                        {{ event.timestamp|date:"M d, Y H:i" }}
+                                    </small>
+                                </div>
+                            </div>
+                        {% endif %}
+                    {% empty %}
+                        <div class="text-center text-muted py-3">
+                            <ion-icon name="hourglass-outline" style="font-size:24px;"></ion-icon>
+                            <div class="mt-1">{% trans "No history recorded yet for this asset." %}</div>
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
     </div>
 </div>

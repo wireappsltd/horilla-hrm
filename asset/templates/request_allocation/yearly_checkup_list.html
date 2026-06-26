@@ -1,0 +1,98 @@
+{% extends 'index.html' %}
+{% load i18n %}
+
+{% block content %}
+<style>
+    .row-status--grey {
+        border-left: 4px solid grey;
+        border-radius: 5px;
+    }
+    .row-status--red {
+        border-left: 4px solid red;
+        border-radius: 5px;
+    }
+    .row-status--yellowgreen {
+        border-left: 4px solid yellowgreen;
+        border-radius: 5px;
+    }
+    .row-status--orange {
+        border-left: 4px solid orange;
+        border-radius: 5px;
+    }
+    #yearly-checkup-table .oh-sticky-table__th,
+    #yearly-checkup-table .oh-sticky-table__td,
+    #yearly-checkup-table .oh-sticky-table__sd {
+        width: auto;
+    }
+    #yearly-checkup-table .yc-col--asset { width: 220px; min-width: 220px; }
+    #yearly-checkup-table .yc-col--user { width: 200px; min-width: 200px; }
+    #yearly-checkup-table .yc-col--date { width: 150px; min-width: 150px; }
+    #yearly-checkup-table .yc-col--status { width: 130px; min-width: 130px; }
+    #yearly-checkup-table .yc-col--actions { width: 110px; min-width: 110px; }
+    #yearly-checkup-table .yc-ellipsis {
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+</style>
+
+<section class="oh-wrapper oh-main__topbar">
+    <div class="oh-main__titlebar oh-main__titlebar--left">
+        <h1 class="oh-main__titlebar-title fw-bold">
+            {% trans "Yearly Check-up Submissions" %}
+        </h1>
+    </div>
+</section>
+
+<div id="ohMessages"></div>
+
+<div class="oh-wrapper">
+    <div class="oh-card mb-4">
+        <!-- Search & filter bar -->
+        <div class="d-flex align-items-center justify-content-end gap-3 flex-wrap mb-3 px-3 pt-3">
+            <div style="width:280px;">
+                <input
+                    type="search"
+                    id="yc-search"
+                    name="search"
+                    value="{{ search }}"
+                    placeholder="{% trans 'Search by asset or employee…' %}"
+                    class="oh-input w-100"
+                    hx-get="{% url 'asset-yearly-checkup-submissions' %}"
+                    hx-trigger="keyup changed delay:400ms, search, yc-filter"
+                    hx-target="#yc-results"
+                    hx-include="#yc-status-filter"
+                />
+            </div>
+            <div id="yc-status-filter" class="d-flex gap-2 flex-wrap">
+                <input type="hidden" name="status" id="yc-status-value" value="{{ status_filter }}">
+                <button type="button"
+                    class="oh-btn oh-btn--x-small {% if not status_filter %}oh-btn--secondary{% else %}oh-btn--light{% endif %}"
+                    onclick="setYcStatus('')">{% trans "All" %}</button>
+                <button type="button"
+                    class="oh-btn oh-btn--x-small {% if status_filter == 'pending' %}oh-btn--warning{% else %}oh-btn--light{% endif %}"
+                    onclick="setYcStatus('pending')">{% trans "Pending" %}</button>
+                <button type="button"
+                    class="oh-btn oh-btn--x-small {% if status_filter == 'overdue' %}oh-btn--danger{% else %}oh-btn--light{% endif %}"
+                    onclick="setYcStatus('overdue')">{% trans "Overdue" %}</button>
+                <button type="button"
+                    class="oh-btn oh-btn--x-small {% if status_filter == 'complete' %}oh-btn--success{% else %}oh-btn--light{% endif %}"
+                    onclick="setYcStatus('complete')">{% trans "Complete" %}</button>
+            </div>
+        </div>
+
+        <div id="yc-results">
+            {% include "request_allocation/_yearly_checkup_rows.html" %}
+        </div>
+    </div>
+</div>
+
+<script>
+    function setYcStatus(val) {
+        document.getElementById('yc-status-value').value = val;
+        htmx.trigger(document.getElementById('yc-search'), 'yc-filter');
+    }
+</script>
+
+{% endblock %}

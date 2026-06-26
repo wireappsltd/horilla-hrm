@@ -114,6 +114,10 @@ def assign_task_to_stage_employees(sender, instance, created, **kwargs):
         # The stage_id filter already scopes to the correct offboarding's employees.
         if instance.stage_id:
             employees = OffboardingEmployee.objects.entire().filter(stage_id=instance.stage_id)
+        elif instance.stage_title:
+            employees = OffboardingEmployee.objects.entire().filter(
+                stage_id__title=instance.stage_title
+            )
         else:
             employees = OffboardingEmployee.objects.entire().filter(employee_id__is_active=True)
 
@@ -133,3 +137,40 @@ def assign_task_to_stage_employees(sender, instance, created, **kwargs):
                 employee_tasks,
                 ignore_conflicts=True,
             )
+
+
+def assign_stage_tasks_to_employee(employee):
+    """
+    Ensure an OffboardingEmployee has EmployeeTask rows for every active
+    OffboardingTask in their current stage plus every active global
+    (stage_id=None) task. Skips fine tasks (those are managed separately by
+    compute_resignation_balance). Idempotent via bulk_create + ignore_conflicts.
+    """
+    from django.db.models import Q
+
+    if not employee.stage_id_id:
+        return
+
+    tasks = OffboardingTask.objects.filter(
+        Q(stage_id=employee.stage_id_id)
+        | (
+            Q(stage_id__isnull=True)
+            & (
+                Q(stage_title=employee.stage_id.title)
+                | Q(stage_title__isnull=True)
+            )
+        ),
+        is_fine=False,
+        is_active=True,
+    )
+
+    employee_tasks = [
+        EmployeeTask(employee_id=employee, task_id=task, status="todo")
+        for task in tasks
+    ]
+
+    if employee_tasks:
+        EmployeeTask.objects.bulk_create(
+            employee_tasks,
+            ignore_conflicts=True,
+        )

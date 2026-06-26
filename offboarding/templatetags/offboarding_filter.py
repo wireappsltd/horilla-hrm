@@ -71,11 +71,18 @@ def any_manager(employee: Employee):
     This method is used to check the employee is in managers
     employee: Employee model instance
     """
-    return (
+    if employee is None:
+        return False
+    cached = getattr(employee, "_any_manager_cached", None)
+    if cached is not None:
+        return cached
+    result = (
         Offboarding.objects.filter(managers=employee).exists()
         | OffboardingStage.objects.filter(managers=employee).exists()
         | OffboardingTask.objects.filter(managers=employee).exists()
     )
+    employee._any_manager_cached = result
+    return result
 
 
 @register.filter(name="is_offboarding_manager")
@@ -83,7 +90,14 @@ def is_offboarding_manager(employee: Employee):
     """
     This method is used to check the employee is manager of any offboarding
     """
-    return Offboarding.objects.filter(managers=employee).exists()
+    if employee is None:
+        return False
+    cached = getattr(employee, "_is_offboarding_manager_cached", None)
+    if cached is not None:
+        return cached
+    result = Offboarding.objects.filter(managers=employee).exists()
+    employee._is_offboarding_manager_cached = result
+    return result
 
 
 @register.filter(name="is_offboarding_employee")
@@ -99,14 +113,22 @@ def is_in_managers(employee: Employee, instance: object):
     """
     This method is used to check the employee in the managers or not
     """
-    is_in_managers = False
+    if employee is None or instance is None:
+        return False
+    cache_key = (type(instance).__name__, getattr(instance, "id", None))
+    cache = getattr(employee, "_is_in_managers_cached", None)
+    if cache is None:
+        cache = {}
+        employee._is_in_managers_cached = cache
+    if cache_key in cache:
+        return cache[cache_key]
+    is_in = False
     if isinstance(instance, (Offboarding, OffboardingStage)):
-        # checking in offboarding managers
-        is_in_managers = instance.managers.filter(employee_id=employee).exists()
+        is_in = instance.managers.filter(employee_id=employee).exists()
     if isinstance(instance, OffboardingEmployee):
-        # also checking in the offboarding employee
-        is_in_managers = is_in_managers | (employee == instance.employee_id)
-    return is_in_managers
+        is_in = is_in | (employee == instance.employee_id)
+    cache[cache_key] = is_in
+    return is_in
 
 
 @register.filter("is_in_offboarding")
@@ -114,7 +136,15 @@ def is_in_offboarding(employee: Employee, offboarding: Offboarding):
     """
     This method is used to check the employee in the offboarding or not
     """
-    return (
+    if employee is None or offboarding is None:
+        return False
+    cache = getattr(employee, "_is_in_offboarding_cached", None)
+    if cache is None:
+        cache = {}
+        employee._is_in_offboarding_cached = cache
+    if offboarding.id in cache:
+        return cache[offboarding.id]
+    result = (
         (employee in offboarding.managers.all())
         or OffboardingStage.objects.filter(
             offboarding_id=offboarding, managers=employee
@@ -123,6 +153,8 @@ def is_in_offboarding(employee: Employee, offboarding: Offboarding):
             stage_id__offboarding_id=offboarding, employee_id=employee
         ).exists()
     )
+    cache[offboarding.id] = result
+    return result
 
 
 @register.filter("is_any_stage_manager")
@@ -130,10 +162,17 @@ def is_any_stage_manager(employee):
     """
     This method is used to to check any stage manager
     """
-    return (
+    if employee is None:
+        return False
+    cached = getattr(employee, "_is_any_stage_manager_cached", None)
+    if cached is not None:
+        return cached
+    result = (
         OffboardingStage.objects.filter(managers=employee).exists()
         | Offboarding.objects.filter(managers=employee).exists()
     )
+    employee._is_any_stage_manager_cached = result
+    return result
 
 
 @register.filter("is_stage_manager")
@@ -166,19 +205,52 @@ def completed_tasks(tasks):
     return tasks.filter(status__in=["completed", "not_applicable"]).count()
 
 
+def _tasks_through_stage(employee: OffboardingEmployee, stage: OffboardingStage):
+    """
+    Tasks assigned to ``employee`` that target ``stage`` or any earlier stage
+    in the same offboarding flow (ordered by sequence, with id as tie-breaker
+    for the common case where every stage shares sequence=0). Cross-flow
+    common tasks (stage_id null with a stage_title) are included if their
+    title matches one of the reached stages; fully global tasks (both null)
+    are always included.
+    """
+    from django.db.models import Q
+
+    flow_stage_ids = list(
+        OffboardingStage.objects.filter(offboarding_id=stage.offboarding_id)
+        .order_by("sequence", "id")
+        .values_list("id", flat=True)
+    )
+    try:
+        idx = flow_stage_ids.index(stage.id)
+    except ValueError:
+        idx = 0
+    reached_ids = flow_stage_ids[: idx + 1]
+    reached_titles = list(
+        OffboardingStage.objects.filter(id__in=reached_ids).values_list(
+            "title", flat=True
+        )
+    )
+
+    return employee.employeetask_set.filter(
+        Q(task_id__stage_id__in=reached_ids)
+        | (
+            Q(task_id__stage_id__isnull=True)
+            & (
+                Q(task_id__stage_title__in=reached_titles)
+                | Q(task_id__stage_title__isnull=True)
+            )
+        )
+    )
+
+
 @register.filter("stage_completed_tasks")
 def stage_completed_tasks(employee: OffboardingEmployee, stage: OffboardingStage):
     """
-    Returns the count of completed/not_applicable tasks for all stages up to and
-    including the current stage, plus global tasks (stage_id=None).
+    Count of completed/not_applicable tasks the employee has accumulated up
+    to and including ``stage``.
     """
-    from django.db.models import Q
-    stages_up_to = OffboardingStage.objects.filter(
-        offboarding_id=stage.offboarding_id,
-        sequence__lte=stage.sequence,
-    )
-    return employee.employeetask_set.filter(
-        Q(task_id__stage_id__in=stages_up_to) | Q(task_id__stage_id__isnull=True),
+    return _tasks_through_stage(employee, stage).filter(
         status__in=["completed", "not_applicable"],
     ).count()
 
@@ -186,18 +258,20 @@ def stage_completed_tasks(employee: OffboardingEmployee, stage: OffboardingStage
 @register.filter("stage_total_tasks")
 def stage_total_tasks(employee: OffboardingEmployee, stage: OffboardingStage):
     """
-    Returns the total task count for all stages up to and including the current stage,
-    plus global tasks (stage_id=None). Fine tasks are included naturally since they
-    have stage_id=None and are only assigned to FNF employees with an active contract.
+    Total tasks the employee has accumulated up to and including ``stage``.
     """
-    from django.db.models import Q
-    stages_up_to = OffboardingStage.objects.filter(
-        offboarding_id=stage.offboarding_id,
-        sequence__lte=stage.sequence,
-    )
-    return employee.employeetask_set.filter(
-        Q(task_id__stage_id__in=stages_up_to) | Q(task_id__stage_id__isnull=True),
-    ).count()
+    return _tasks_through_stage(employee, stage).count()
+
+
+@register.filter("current_stage_tasks")
+def current_stage_tasks(employee: OffboardingEmployee):
+    """
+    Tasks the employee should see now: assignments for the current stage plus
+    every stage they have already passed through.
+    """
+    if not employee.stage_id_id:
+        return employee.employeetask_set.none()
+    return _tasks_through_stage(employee, employee.stage_id)
 
 @register.filter("is_employee_tasks")
 def is_employee_tasks(employee_tasks, task):

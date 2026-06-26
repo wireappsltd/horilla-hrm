@@ -1,0 +1,137 @@
+{% extends "index.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Detailed Time Report" %}{% endblock %}
+
+{% block content %}
+<style>
+.tt-detail { background:#fff; border-radius:12px; overflow:hidden; }
+.tt-detail-header { padding:1.25rem 1.5rem; border-bottom:1px solid #e2e8f0; display:flex; align-items:center; gap:1rem; flex-wrap:wrap; }
+.tt-detail-header h2 { margin:0; font-size:1.1rem; font-weight:700; color:#1e293b; flex:1; }
+.tt-filter-bar { padding:.75rem 1.5rem; background:#f8fafc; border-bottom:1px solid #e2e8f0; display:flex; gap:.75rem; flex-wrap:wrap; align-items:flex-end; }
+.tt-filter-bar label { font-size:.75rem; font-weight:600; color:#64748b; display:block; margin-bottom:.25rem; }
+.tt-filter-group { display:flex; flex-direction:column; }
+.tt-filter-apply { padding:.42rem 1rem; background:#6366f1; color:#fff; border:none; border-radius:7px; font-size:.825rem; font-weight:600; cursor:pointer; align-self:flex-end; }
+.tt-totals-bar { display:flex; gap:2rem; padding:.75rem 1.5rem; background:#f8fafc; border-bottom:1px solid #e2e8f0; font-size:.875rem; color:#64748b; flex-wrap:wrap; }
+.tt-totals-bar strong { color:#1e293b; }
+.tt-detail-table { width:100%; border-collapse:collapse; }
+.tt-detail-table th { padding:.65rem 1rem; text-align:left; font-size:.72rem; font-weight:600; color:#94a3b8; letter-spacing:.06em; text-transform:uppercase; border-bottom:2px solid #e2e8f0; white-space:nowrap; }
+.tt-detail-table td { padding:.65rem 1rem; border-bottom:1px solid #f1f5f9; font-size:.84rem; color:#374151; vertical-align:middle; }
+.tt-detail-table tr:hover td { background:#f8fafc; }
+.tt-proj-dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:.35rem; }
+.tt-status-badge { display:inline-block; padding:.15rem .55rem; border-radius:20px; font-size:.68rem; font-weight:600; }
+.tt-status-draft     { background:#f1f5f9; color:#64748b; }
+.tt-status-submitted { background:#dbeafe; color:#1d4ed8; }
+.tt-status-approved  { background:#dcfce7; color:#166534; }
+.tt-status-rejected  { background:#fee2e2; color:#991b1b; }
+.tt-status-locked    { background:#f0fdf4; color:#15803d; }
+.tt-pagination { display:flex; gap:.5rem; align-items:center; justify-content:center; padding:1rem; border-top:1px solid #e2e8f0; }
+.tt-page-btn { padding:.3rem .65rem; border:1px solid #e2e8f0; border-radius:6px; background:#fff; font-size:.8rem; color:#475569; text-decoration:none; }
+.tt-page-btn.active { background:#6366f1; color:#fff; border-color:#6366f1; }
+.tt-export-btn { padding:.42rem 1rem; background:#10b981; color:#fff; border:none; border-radius:7px; font-size:.825rem; font-weight:600; cursor:pointer; text-decoration:none; display:inline-block; }
+</style>
+
+<div class="tt-detail oh-card">
+  <div class="tt-detail-header">
+    <h2>{% trans "Detailed Report" %}</h2>
+    <a href="{% url 'time_tracker:reports-export' %}?{{ request.GET.urlencode }}"
+       class="tt-export-btn">
+      <i class="bi bi-download"></i> {% trans "Export" %}
+    </a>
+  </div>
+
+  <form method="get" class="tt-filter-bar">
+    <div class="tt-filter-group">
+      <label>{{ filter.form.date__gte.label }}</label>
+      {{ filter.form.date__gte }}
+    </div>
+    <div class="tt-filter-group">
+      <label>{{ filter.form.date__lte.label }}</label>
+      {{ filter.form.date__lte }}
+    </div>
+    <div class="tt-filter-group">
+      <label>{{ filter.form.employee_id.label }}</label>
+      {{ filter.form.employee_id }}
+    </div>
+    <div class="tt-filter-group">
+      <label>{{ filter.form.project_id.label }}</label>
+      {{ filter.form.project_id }}
+    </div>
+    <div class="tt-filter-group">
+      <label>{{ filter.form.status.label }}</label>
+      {{ filter.form.status }}
+    </div>
+    <button type="submit" class="tt-filter-apply">{% trans "Apply" %}</button>
+  </form>
+
+  <div class="tt-totals-bar">
+    <span>{% trans "Total entries" %}: <strong>{{ total_count }}</strong></span>
+    <span>{% trans "Total hours" %}: <strong>{{ total_hours }}</strong></span>
+    <span>{% trans "Billable hours" %}: <strong>{{ billable_hours }}</strong></span>
+  </div>
+
+  <table class="tt-detail-table">
+    <thead>
+      <tr>
+        <th>{% trans "Date" %}</th>
+        <th>{% trans "Employee" %}</th>
+        <th>{% trans "Project" %}</th>
+        <th>{% trans "Task" %}</th>
+        <th>{% trans "Description" %}</th>
+        <th>{% trans "Start" %}</th>
+        <th>{% trans "End" %}</th>
+        <th>{% trans "Duration" %}</th>
+        <th>{% trans "Billable" %}</th>
+        <th>{% trans "Status" %}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for entry in page_obj %}
+      <tr>
+        <td style="white-space:nowrap;">{{ entry.date|date:"N j, Y" }}</td>
+        <td>{{ entry.employee_id }}</td>
+        <td>
+          <span class="tt-proj-dot" style="background:{{ entry.color }};"></span>
+          {{ entry.project_id.title|default:"—" }}
+        </td>
+        <td style="color:#64748b;">{{ entry.task_id.title|default:"—" }}</td>
+        <td style="color:#64748b;max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+          {{ entry.description|default:"—" }}
+        </td>
+        <td style="color:#94a3b8;font-size:.8rem;white-space:nowrap;">{{ entry.start_time|time:"H:i"|default:"—" }}</td>
+        <td style="color:#94a3b8;font-size:.8rem;white-space:nowrap;">{{ entry.end_time|time:"H:i"|default:"—" }}</td>
+        <td><strong>{{ entry.duration_display }}</strong></td>
+        <td>
+          {% if entry.is_billable %}
+          <span style="color:#10b981;font-size:.8rem;font-weight:600;">{% trans "Yes" %}</span>
+          {% else %}
+          <span style="color:#94a3b8;font-size:.8rem;">{% trans "No" %}</span>
+          {% endif %}
+        </td>
+        <td>
+          <span class="tt-status-badge tt-status-{{ entry.status }}">
+            {{ entry.get_status_display }}
+          </span>
+        </td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="10" style="text-align:center;padding:2rem;color:#94a3b8;">{% trans "No entries match your filters." %}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {% if page_obj.has_other_pages %}
+  <div class="tt-pagination">
+    {% if page_obj.has_previous %}
+    <a href="?{{ request.GET.urlencode }}&page={{ page_obj.previous_page_number }}" class="tt-page-btn">&#8249;</a>
+    {% endif %}
+    <span style="font-size:.8rem;color:#64748b;">
+      {% trans "Page" %} {{ page_obj.number }} {% trans "of" %} {{ page_obj.paginator.num_pages }}
+    </span>
+    {% if page_obj.has_next %}
+    <a href="?{{ request.GET.urlencode }}&page={{ page_obj.next_page_number }}" class="tt-page-btn">&#8250;</a>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

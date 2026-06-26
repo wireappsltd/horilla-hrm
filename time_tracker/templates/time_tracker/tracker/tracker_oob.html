@@ -1,0 +1,12 @@
+{% comment %}
+Out-of-band sync fragment. Updates (without disturbing the editable inputs):
+  - the edited row's duration cell  (when `entry` is provided)
+  - the footer "Today's Total"
+  - the header stat tiles (today / week / count)
+Uses innerHTML:<selector> form so the target elements keep their CSS classes.
+{% endcomment %}
+{% if entry %}<span hx-swap-oob="innerHTML:#tt-dur-{{ entry.pk }}">{{ entry.duration_display }}</span>{% endif %}
+<span hx-swap-oob="innerHTML:#tt-today-total">{{ stats.today_total }}</span>
+<span hx-swap-oob="innerHTML:#tt-stat-today">{{ stats.today_total }}</span>
+<span hx-swap-oob="innerHTML:#tt-stat-week">{{ stats.week_total }}</span>
+<span hx-swap-oob="innerHTML:#tt-stat-count">{{ stats.entries_count }}</span>

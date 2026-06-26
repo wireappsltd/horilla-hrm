@@ -32,7 +32,7 @@ from horilla_audit.models import HorillaAuditInfo, HorillaAuditLog
 from leave.methods import (
     calculate_requested_days,
     company_leave_dates_list,
-    holiday_dates_list,  is_carryforward_valid,
+    holiday_dates_list,
 )
 
 logger = logging.getLogger(__name__)
@@ -272,10 +272,7 @@ class LeaveType(HorillaModel):
                 else int(day)
             )
 
-        # Reset config can legitimately be partially populated (e.g. reset=True
-        # toggled before reset_day/reset_month are filled in). Returning None
-        # for incomplete config matches the "no next reset" branch below — the
-        # caller in employee_available_leave_count guards on None already.
+
         try:
             if self.reset_based == "yearly":
                 if self.reset_month is None or self.reset_day is None:
@@ -471,10 +468,6 @@ class AvailableLeave(HorillaModel):
 
     def update_carryforward(self):
         if self.leave_type_id.carryforward_type != "no carryforward":
-            # Only the unused portion of the current period (available_days)
-            # rolls over. Previously-carried-forward days do NOT compound —
-            # otherwise carryforward_days grows by total_days every reset
-            # whenever carryforward_max is unset (defaults to math.inf).
             unused_current_period = max(self.available_days, 0)
             carryforward_max = self.leave_type_id.carryforward_max
             self.carryforward_days = min(carryforward_max, unused_current_period)
@@ -543,18 +536,20 @@ class AvailableLeave(HorillaModel):
         return reset_date
 
     def current_year(self):
-        # Stats are scoped strictly to the current calendar year. A leave
-        # whose start_date is in another year is excluded — that includes
-        # both prior-year requests and future-year requests (e.g. a leave
-        # filed in 2026 for January 2027 would not count toward 2026).
         return date.today().year
+
+    def _consumed_status_filter(self):
+        return Q(status="approved") | (
+            Q(status="cancelled")
+            & (Q(approved_available_days__gt=0) | Q(approved_carryforward_days__gt=0))
+        )
 
     def leave_taken(self):
         year = self.current_year()
         leave_taken = LeaveRequest.objects.filter(
+            self._consumed_status_filter(),
             leave_type_id=self.leave_type_id,
             employee_id=self.employee_id,
-            status="approved",
             start_date__year=year,
         ).aggregate(total_sum=Sum("requested_days"))
 
@@ -563,9 +558,9 @@ class AvailableLeave(HorillaModel):
     def used_carryforward_days(self):
         year = self.current_year()
         used = LeaveRequest.objects.filter(
+            self._consumed_status_filter(),
             leave_type_id=self.leave_type_id,
             employee_id=self.employee_id,
-            status="approved",
             start_date__year=year,
         ).aggregate(total=Sum("approved_carryforward_days"))
         return used["total"] if used["total"] else 0
@@ -581,11 +576,10 @@ class AvailableLeave(HorillaModel):
         return pending_leaves if pending_leaves else 0
 
     def balance_leaves(self):
-        # Anchor on the leave type's configured max so the balance does not
-        # drift with the cached available_days field (which can desync from
-        # request data when the scheduler/approval logic misbehaves).
-        # Period max = total_days + starting CF (rolled in at period start),
-        # reconstructed as live carryforward_days + already-used CF.
+        if getattr(self.leave_type_id, "is_compensatory_leave", False):
+            balance_leave_days = (self.available_days or 0) - self.pending_leaves()
+            return balance_leave_days if balance_leave_days else 0
+
         max_days = (
             (self.leave_type_id.total_days or 0)
             + self.carryforward_days
@@ -595,6 +589,10 @@ class AvailableLeave(HorillaModel):
         return balance_leave_days if balance_leave_days else 0
 
     def total_leaves(self):
+        if getattr(self.leave_type_id, "is_compensatory_leave", False):
+            personal_total = (self.available_days or 0) + self.leave_taken()
+            return personal_total if personal_total else 0
+
         # See balance_leaves: anchored on the configured max plus starting CF
         # rather than the live (drifty) available_days bucket.
         total_leave_days_assigned = (
@@ -614,18 +612,11 @@ class AvailableLeave(HorillaModel):
         else:
             expired_date = assigned_date + relativedelta(years=period)
 
-        # Capture the CF balance that is about to be wiped so it remains
-        # visible as a per-period stat. Without this, once carryforward_days
-        # is zeroed there is no record of how many CF days expired unused.
-        # Only the unused portion (live carryforward_days) is captured —
-        # used CF was already drawn down at approval time.
+
         available_leave.expired_carryforward_days = max(
             0, available_leave.carryforward_days
         )
         available_leave.carryforward_days = 0
-        # Do NOT reset available_days here. Expiry only retires unused CF;
-        # refilling available_days is the period reset's job and would
-        # erase mid-year consumption history if conflated with expiry.
         return expired_date
 
     def pre_save_processing(self):
@@ -796,6 +787,17 @@ class LeaveRequest(HorillaModel):
         verbose_name=_("Covering Person"),
         related_name="leave_approvals",
     )
+    reviewed_by = models.ForeignKey(
+        Employee,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        verbose_name=_("Actioned By"),
+        related_name="leave_requests_reviewed",
+    )
+    reviewed_at = models.DateTimeField(
+        null=True, blank=True, verbose_name=_("Actioned At")
+    )
 
     class Meta:
         ordering = ["-id"]
@@ -804,6 +806,7 @@ class LeaveRequest(HorillaModel):
 
     def tracking(self):
         return get_diff(self)
+
 
     def __str__(self):
         return f"{self.employee_id} | {self.leave_type_id} | {self.status}"
@@ -1009,6 +1012,14 @@ class LeaveRequest(HorillaModel):
 
     def clean(self):
         cleaned_data = super().clean()
+        # Prevent selecting self as covering person. Compare by FK ids so the
+        # check works even if related instances aren't fully loaded.
+        manager_pk = getattr(self, "manager_id", None)
+        employee_pk = getattr(self, "employee_id_id", None)
+        if manager_pk and employee_pk and str(manager_pk) == str(employee_pk):
+            raise ValidationError(
+                {"manager": _("You cannot select yourself as the covering person.")}
+            )
         leave_type = getattr(self, "leave_type_id", None)
         if not leave_type:  # 836
             return
@@ -1086,37 +1097,27 @@ class LeaveRequest(HorillaModel):
             leave_type_id=leave_type,
             requested_days=requested_days,
         )
-        leave_dates = leave_requested_dates(self.start_date, self.end_date)
-        month_year = [f"{date.year}-{date.strftime('%m')}" for date in leave_dates]
-        today = datetime.today()
-        unique_dates = list(set(month_year))
-        current_month = today.strftime("%Y-%m")
-        if current_month in unique_dates:
-            unique_dates.remove(current_month)
-
-        forcated_days = available_leave.forcasted_leaves(self.start_date)
         leave_type = available_leave.leave_type_id
 
-        total_leave_days = available_leave.available_days
+        # Validate strictly against the employee's real remaining balance so it
+        # can never go negative. We deliberately mirror the figure shown on the
+        # leave card -- AvailableLeave.balance_leaves() -- which is the maximum
+        # allotment (total_days + carryforward + used carryforward) minus leaves
+        # already taken (approved) minus leaves still pending. Forecasted future
+        # accruals are intentionally NOT counted here: letting employees borrow
+        # against days that have not accrued yet is what produced the negative
+        # balance in the first place.
+        #
+        # balance_leaves() already subtracts every other pending request; the
+        # request being validated here is not saved yet, so it is not part of
+        # that figure and must fit within it.
+        if getattr(leave_type, "limit_leave", True):
+            available_for_request = available_leave.balance_leaves()
 
-        if leave_type.carryforward_type == "carryforward":
-            total_leave_days += min(
-                available_leave.carryforward_days or 0,
-                leave_type.carryforward_max or available_leave.carryforward_days or 0,
-            )
-
-        elif leave_type.carryforward_type == "carryforward expire":
-            if is_carryforward_valid(leave_type, self.start_date):
-                total_leave_days += min(
-                    available_leave.carryforward_days or 0,
-                    leave_type.carryforward_max or available_leave.carryforward_days or 0,
+            if not effective_requested_days <= available_for_request:
+                raise ValidationError(
+                    _("Does not have sufficient leave balance for the requested dates.")
                 )
-
-        total_leave_days += forcated_days
-        if not effective_requested_days <= total_leave_days:
-            raise ValidationError(
-                _("Does not have sufficient leave balance for the requested dates.")
-            )
 
         # Get employee department and job if available
         work_info = EmployeeWorkInformation.objects.filter(

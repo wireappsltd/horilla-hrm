@@ -14,5 +14,15 @@
     data-url = "{% url 'attendance-change' attendance_id %}"
     >
         {% csrf_token %} {{form.as_p}}
+        <div id="compensation-field-container" class="mt-3">
+            {% if show_compensation %}
+                {% include "attendance/attendance/_compensation_field.html" with show_field=show_compensation form=form %}
+            {% endif %}
+        </div>
+        <div class="oh-modal__dialog-footer p-0 mt-3">
+            <button type="submit" class="oh-btn oh-btn--secondary oh-btn--shadow">
+                {% trans "Save" %}
+            </button>
+        </div>
     </form>
 </div>

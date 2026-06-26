@@ -1,0 +1,140 @@
+{% extends "settings.html" %}
+{% load static i18n retention_tags %}
+
+{% block settings %}
+<link rel="stylesheet" href="{% static 'horilla_retention/retention.css' %}?v=20260526">
+
+<div class="retention-page-header">
+    <div>
+        <h2>{% trans "Engine Run Log" %}</h2>
+        <p>{% trans "History of every retention engine run, scheduled or manual." %}</p>
+    </div>
+</div>
+
+{% if can_run and runs %}
+<div class="retention-runbar">
+    <div class="retention-runbar__text">
+        <strong>{% trans "Trigger a run" %}</strong> — {% trans "use dry run mode to preview what would change without writing." %}
+    </div>
+    <form method="post" action="{% url 'retention-trigger-run' %}" class="d-flex align-items-center gap-2">
+        {% csrf_token %}
+        <label class="mb-0"><input type="checkbox" name="dry_run"> {% trans "Dry run" %}</label>
+        <button type="submit" class="oh-btn oh-btn--primary">
+            <ion-icon name="play-outline" class="me-1"></ion-icon>{% trans "Run now" %}
+        </button>
+    </form>
+</div>
+{% endif %}
+
+{% if runs %}
+<div class="oh-sticky-table retention-table">
+    <div class="oh-sticky-table__table">
+        <div class="oh-sticky-table__thead">
+            <div class="oh-sticky-table__tr">
+                <div class="oh-sticky-table__th retention-cell-num">{% trans "Run" %}</div>
+                <div class="oh-sticky-table__th">{% trans "Started" %}</div>
+                <div class="oh-sticky-table__th">{% trans "Outcome" %}</div>
+                <div class="oh-sticky-table__th">{% trans "Trigger" %}</div>
+                <div class="oh-sticky-table__th retention-cell-counts">{% trans "Counts" %}</div>
+                <div class="oh-sticky-table__th retention-cell-wide">{% trans "Errors" %}</div>
+            </div>
+        </div>
+        <div class="oh-sticky-table__tbody">
+            {% for r in runs %}
+            <div class="oh-sticky-table__tr">
+                <div class="oh-sticky-table__td retention-cell-num"><strong>#{{ r.id }}</strong></div>
+                <div class="oh-sticky-table__td">
+                    <div class="retention-mono">{{ r.started_at|date:"Y-m-d H:i:s" }}</div>
+                    {% if r.finished_at %}
+                        <div class="text-muted" style="font-size:.72rem;">
+                            {% trans "took" %} {{ r.finished_at|timeuntil:r.started_at }}
+                        </div>
+                    {% endif %}
+                </div>
+                <div class="oh-sticky-table__td">
+                    {% outcome_pill r.outcome r.get_outcome_display %}
+                </div>
+                <div class="oh-sticky-table__td">
+                    {% if r.is_scheduled %}
+                        <span class="retention-pill retention-pill--cat">
+                            <ion-icon name="alarm-outline"></ion-icon>{% trans "Scheduled" %}
+                        </span>
+                    {% else %}
+                        <span class="retention-pill retention-pill--cat">
+                            <ion-icon name="person-outline"></ion-icon>{{ r.triggered_by|default:"manual" }}
+                        </span>
+                    {% endif %}
+                    {% if r.is_dry_run %}
+                        <div style="margin-top:.25rem;">
+                            <span class="retention-pill retention-pill--deferred">{% trans "dry" %}</span>
+                        </div>
+                    {% endif %}
+                </div>
+                <div class="oh-sticky-table__td retention-cell-counts">
+                    <div class="retention-counts">
+                        <div class="retention-counts__item">
+                            <span class="retention-counts__label">{% trans "Scanned" %}</span>
+                            <span class="retention-counts__value">{{ r.employees_scanned }}</span>
+                        </div>
+                        <div class="retention-counts__item">
+                            <span class="retention-counts__label">{% trans "Flagged" %}</span>
+                            <span class="retention-counts__value">{{ r.actions_flagged }}</span>
+                        </div>
+                        <div class="retention-counts__item">
+                            <span class="retention-counts__label">{% trans "Anonymized" %}</span>
+                            <span class="retention-counts__value {% if r.actions_anonymized %}retention-counts__value--good{% endif %}">{{ r.actions_anonymized }}</span>
+                        </div>
+                        <div class="retention-counts__item">
+                            <span class="retention-counts__label">{% trans "Failed" %}</span>
+                            <span class="retention-counts__value {% if r.actions_failed %}retention-counts__value--bad{% endif %}">{{ r.actions_failed }}</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="oh-sticky-table__td retention-cell-wide">
+                    {% if r.error_summary %}
+                        <details class="retention-error-snippet-details">
+                            <summary>{% trans "View errors" %}</summary>
+                            <pre>{{ r.error_summary }}</pre>
+                        </details>
+                    {% else %}
+                        <span class="text-muted">—</span>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="retention-hero">
+    <div class="retention-hero__badge">
+        <ion-icon name="time-outline"></ion-icon>
+    </div>
+    <h3>{% trans "No engine runs yet" %}</h3>
+    <p class="retention-hero__lead">
+        {% trans "The retention engine runs automatically every day at 02:00 server time. Each run scans all employees against your active policies, creates a log entry here, and flags eligible records for review. You can also trigger a run on demand — use dry-run mode to preview what would change without writing anything." %}
+    </p>
+    {% if can_run %}
+        <div class="retention-hero__actions">
+            <form method="post" action="{% url 'retention-trigger-run' %}" style="display:inline;">
+                {% csrf_token %}
+                <input type="hidden" name="dry_run" value="on">
+                <button type="submit" class="oh-btn oh-btn--light-bkg">
+                    <ion-icon name="eye-outline" class="me-1"></ion-icon>{% trans "Dry run" %}
+                </button>
+            </form>
+            <form method="post" action="{% url 'retention-trigger-run' %}" style="display:inline;">
+                {% csrf_token %}
+                <button type="submit" class="oh-btn oh-btn--primary">
+                    <ion-icon name="play-outline" class="me-1"></ion-icon>{% trans "Run engine now" %}
+                </button>
+            </form>
+        </div>
+    {% endif %}
+    <p class="retention-hero__hint">
+        <ion-icon name="information-circle-outline"></ion-icon>
+        {% trans "Runs are recorded permanently for audit evidence — they cannot be deleted." %}
+    </p>
+</div>
+{% endif %}
+{% endblock settings %}

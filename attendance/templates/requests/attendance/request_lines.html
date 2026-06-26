@@ -75,6 +75,7 @@
                                         hx-get="{% url 'search-attendance-requests' %}?{{pd}}&sortby=attendance_overtime">
                                         {% trans "Overtime" %}
                                     </div>
+                                    <div data-cell-index="13" data-cell-title='{% trans "Compensation" %}' class="oh-sticky-table__th">{% trans "Compensation" %}</div>
                                     <div class="oh-sticky-table__th oh-sticky-table__right" style="width:115px;">{% trans "Comment" %}</div>
                                     <div class="oh-sticky-table__th oh-sticky-table__right">{% trans "Actions" %}</div>
                                 </div>
@@ -149,6 +150,17 @@
                                         <div data-cell-index="12"
                                             class="oh-sticky-table__td {% if 'attendance_overtime' in attendance.requested_fields or attendance.request_type == 'create_request' %} diff-cell{% endif %}">
                                             {{attendance.attendance_overtime}}
+                                        </div>
+                                        <div data-cell-index="13" class="oh-sticky-table__td">
+                                            {% if attendance.is_mercantile_holiday %}
+                                                {% if attendance.is_get_compensation_leave %}
+                                                    <span class="oh-badge oh-badge--info">{% trans "Leave" %}</span>
+                                                {% else %}
+                                                    <span class="oh-badge oh-badge--info">{% trans "Amount" %}</span>
+                                                {% endif %}
+                                            {% else %}
+                                                <span class="text-muted">—</span>
+                                            {% endif %}
                                         </div>
 
                                         <div class="oh-sticky-table__td" onclick="event.stopPropagation();"
@@ -304,6 +316,7 @@
                                         hx-target='#view-container'
                                         hx-get="{% url 'search-attendance-requests' %}?{{pd}}&sortby=attendance_overtime">
                                         {% trans "Overtime" %}</div>
+                                    <div data-cell-index="33" data-cell-title='{% trans "Compensation" %}' class="oh-sticky-table__th">{% trans "Compensation" %}</div>
                                     {% if perms.attendance.change_attendance %}
                                         <div class="oh-sticky-table__th oh-sticky-table__right">{% trans "Actions" %}</div>
                                     {% endif %}
@@ -357,6 +370,17 @@
                                         </div>
                                         <div data-cell-index="32" class="oh-sticky-table__td">
                                             {{attendance.attendance_overtime}}
+                                        </div>
+                                        <div data-cell-index="33" class="oh-sticky-table__td">
+                                            {% if attendance.is_mercantile_holiday %}
+                                                {% if attendance.is_get_compensation_leave %}
+                                                    <span class="oh-badge oh-badge--info">{% trans "Leave" %}</span>
+                                                {% else %}
+                                                    <span class="oh-badge oh-badge--info">{% trans "Amount" %}</span>
+                                                {% endif %}
+                                            {% else %}
+                                                <span class="text-muted">—</span>
+                                            {% endif %}
                                         </div>
                                         {% if perms.attendance.change_attendance %}
                                         <div class="oh-sticky-table__td oh-sticky-table__right">
@@ -476,6 +500,22 @@
             {% endif %}
         });
         // start of toggle columns //
+        ;(function() {
+            var migrations = [
+                { key: "attendence_request_tab", index: "13" },
+                { key: "req_attendence_tab",     index: "33" }
+            ];
+            migrations.forEach(function(m) {
+                var raw = localStorage.getItem(m.key);
+                if (raw && raw !== "[]") {
+                    var ids = JSON.parse(raw);
+                    if (ids.indexOf(m.index) === -1) {
+                        ids.push(m.index);
+                        localStorage.setItem(m.key, JSON.stringify(ids));
+                    }
+                }
+            });
+        })();
         //attendance request column toggle//
         toggleColumns("attendence-request-table", "attendanceRequestCells")
         localStorageattendanceRequestCells = localStorage.getItem("attendence_request_tab")

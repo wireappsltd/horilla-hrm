@@ -1,0 +1,66 @@
+{% extends "settings.html" %}
+{% load static i18n retention_tags %}
+
+{% block settings %}
+<link rel="stylesheet" href="{% static 'horilla_retention/retention.css' %}">
+
+<div class="retention-page-header">
+    <div>
+        <h2>
+            <a href="{% url 'retention-actions' %}" class="text-muted me-2" style="text-decoration:none;">
+                <ion-icon name="chevron-back-outline"></ion-icon>
+            </a>
+            {% trans "Defer Retention Action" %}
+        </h2>
+        <p>{% trans "Push the auto-anonymize deadline forward. The reason is recorded in the audit trail." %}</p>
+    </div>
+</div>
+
+<div class="retention-detail-card">
+    <dl>
+        <dt>{% trans "Employee" %}</dt>
+        <dd>
+            <div class="retention-emp">
+                <span class="retention-emp__badge">{{ action.employee_id.badge_id }}</span>
+                <span class="retention-emp__name">{{ action.employee_id.get_full_name }}</span>
+            </div>
+        </dd>
+        <dt>{% trans "Category" %}</dt>
+        <dd>{% category_pill action.category action.get_category_display %}</dd>
+        <dt>{% trans "Current status" %}</dt>
+        <dd>{% status_pill action.status action.get_status_display %}</dd>
+        <dt>{% trans "Currently scheduled for" %}</dt>
+        <dd class="retention-mono">{{ action.auto_anonymize_after|date:"Y-m-d" }}</dd>
+        {% if action.deferred_until %}
+        <dt>{% trans "Previously deferred until" %}</dt>
+        <dd class="retention-mono">{{ action.deferred_until|date:"Y-m-d" }}</dd>
+        {% endif %}
+    </dl>
+</div>
+
+<form method="post">
+    {% csrf_token %}
+    <div class="oh-card-dashboard p-4">
+        <div class="retention-form-grid">
+            <div>
+                <label for="{{ form.deferred_until.id_for_label }}">{{ form.deferred_until.label }}</label>
+                {{ form.deferred_until }}
+                {% if form.deferred_until.errors %}{{ form.deferred_until.errors }}{% endif %}
+                <div class="help-text">{% trans "Engine will not act on this record until after this date." %}</div>
+            </div>
+            <div class="full">
+                <label for="{{ form.deferral_reason.id_for_label }}">{{ form.deferral_reason.label }}</label>
+                {{ form.deferral_reason }}
+                {% if form.deferral_reason.errors %}{{ form.deferral_reason.errors }}{% endif %}
+                <div class="help-text">{% trans "Explain why retention is being extended (e.g., 'pending legal review', 'EPF audit in progress'). This text appears in the audit log." %}</div>
+            </div>
+        </div>
+        <div class="retention-actions-row">
+            <a href="{% url 'retention-actions' %}" class="oh-btn oh-btn--light-bkg">{% trans "Cancel" %}</a>
+            <button type="submit" class="oh-btn oh-btn--primary">
+                <ion-icon name="time-outline" class="me-1"></ion-icon>{% trans "Defer action" %}
+            </button>
+        </div>
+    </div>
+</form>
+{% endblock settings %}

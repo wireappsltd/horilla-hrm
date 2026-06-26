@@ -122,6 +122,7 @@ from base.models import (
 )
 from employee.filters import EmployeeFilter
 from employee.models import Employee, EmployeeWorkInformation
+from horilla_audit.methods import log_activity
 from horilla.decorators import (
     hx_request_required,
     install_required,
@@ -473,6 +474,13 @@ def attendance_update(request, obj_id):
         form = AttendanceUpdateForm(request.POST, instance=attendance)
         form = choosesubordinates(request, form, "attendance.change_attendance")
         if form.is_valid():
+            # AttendanceUpdateForm excludes is_get_compensation_leave; set it on
+            # the unsaved instance so the single form.save() persists it along
+            # with the rest of the changes instead of writing twice.
+            if attendance.is_mercantile_holiday:
+                form.instance.is_get_compensation_leave = (
+                    request.POST.get("is_get_compensation_leave") == "on"
+                )
             form.save()
             messages.success(request, _("Attendance Updated."))
             urlencode = request.GET.urlencode()
@@ -494,7 +502,14 @@ def attendance_update(request, obj_id):
                     result = is_mercantile_or_poya_holiday(parsed_date)
                     show_compensation = result.get("is_mercantile_holiday", False)
                     if show_compensation:
-                        compensation_form = AttendanceForm()
+                        compensation_form = AttendanceForm(
+                            initial={
+                                "is_get_compensation_leave": request.POST.get(
+                                    "is_get_compensation_leave"
+                                )
+                                == "on"
+                            }
+                        )
                 except (ValueError, TypeError):
                     pass
             return render(
@@ -508,10 +523,18 @@ def attendance_update(request, obj_id):
                     "compensation_form": compensation_form,
                 },
             )
+    show_compensation = attendance.is_mercantile_holiday
+    compensation_form = AttendanceForm(instance=attendance) if show_compensation else None
     return render(
         request,
         "attendance/attendance/update_form.html",
-        {"form": form, "urlencode": request.GET.urlencode(), "obj_id": obj_id},
+        {
+            "form": form,
+            "urlencode": request.GET.urlencode(),
+            "obj_id": obj_id,
+            "show_compensation": show_compensation,
+            "compensation_form": compensation_form,
+        },
     )
 
 
@@ -1340,6 +1363,24 @@ def validation_condition_delete(request, obj_id):
     return redirect("/attendance/validation-condition-view")
 
 
+def _log_attendance_action(request, attendance, action):
+    """Record who validated/revalidated/approved an attendance and when.
+
+    Captures the actor (and timestamp via ActivityLog) plus the affected
+    employee and attendance date, surfaced in Audit Logs -> Attendance tab.
+    """
+    log_activity(
+        request.user,
+        module="attendance",
+        action=action,
+        target=attendance,
+        changes={
+            "Employee": str(attendance.employee_id),
+            "Attendance date": str(attendance.attendance_date),
+        },
+    )
+
+
 @login_required
 @require_http_methods(["POST"])
 @manager_can_enter("attendance.change_attendance")
@@ -1367,6 +1408,7 @@ def validate_bulk_attendance(request):
             attendance.attendance_validated = True
             attendance.save()
             validate_req_count += 1
+            _log_attendance_action(request, attendance, "Attendance validated")
 
             # Send notification
             notify.send(
@@ -1413,7 +1455,7 @@ def validate_this_attendance(request, obj_id):
         attendance.attendance_validated = True
         attendance.save()
         allocate_compensation_leave(request, attendance)
-        print("attendance validate ran")
+        _log_attendance_action(request, attendance, "Attendance validated")
         urlencode = request.GET.urlencode()
         modified_url = f"/attendance/attendance-view/?{urlencode}"
         messages.success(
@@ -1455,6 +1497,7 @@ def revalidate_this_attendance(request, obj_id):
     ):
         attendance.attendance_validated = False
         attendance.save()
+        _log_attendance_action(request, attendance, "Attendance revalidation requested")
         with contextlib.suppress(Exception):
             notify.send(
                 request.user.employee_get,
@@ -1490,6 +1533,7 @@ def approve_overtime(request, obj_id):
         attendance = Attendance.objects.get(id=obj_id)
         attendance.attendance_overtime_approve = True
         attendance.save()
+        _log_attendance_action(request, attendance, "Attendance overtime approved")
         urlencode = request.GET.urlencode()
         modified_url = f"/attendance/attendance-view/?{urlencode}"
         messages.success(
@@ -1531,6 +1575,7 @@ def approve_bulk_overtime(request):
             attendance = Attendance.objects.get(id=attendance_id)
             attendance.attendance_overtime_approve = True
             attendance.save()
+            _log_attendance_action(request, attendance, "Attendance overtime approved")
             messages.success(request, _("Overtime approved"))
             notify.send(
                 request.user.employee_get,
@@ -1801,6 +1846,19 @@ def user_request_one_view(request, id):
     instance_ids_json = request.GET["instances_ids"]
     instance_ids = json.loads(instance_ids_json) if instance_ids_json else []
     previous_instance, next_instance = closest_numbers(instance_ids, id)
+    requested_compensation_leave = attendance_request.is_get_compensation_leave
+    if (
+        attendance_request.request_type
+        and attendance_request.request_type != "create_request"
+        and attendance_request.requested_data
+    ):
+        try:
+            requested_data = json.loads(attendance_request.requested_data)
+            requested_compensation_leave = requested_data.get(
+                "is_get_compensation_leave", requested_compensation_leave
+            )
+        except (TypeError, ValueError):
+            pass
     return render(
         request,
         "attendance/attendance/attendance_request_one.html",
@@ -1812,6 +1870,7 @@ def user_request_one_view(request, id):
             "next_instance": next_instance,
             "instance_ids_json": instance_ids_json,
             "dashboard": request.GET.get("dashboard"),
+            "requested_compensation_leave": requested_compensation_leave,
         },
     )
 

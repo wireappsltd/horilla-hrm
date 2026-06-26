@@ -1,0 +1,419 @@
+{% extends 'index.html' %}
+{% load static %}
+{% load i18n %}
+
+{% block content %}
+<style>
+    .oh-helpdesk__bubble-username {
+        font-weight: 600;
+    }
+    .yearly-checkup__back {
+        text-decoration: none;
+    }
+    .yearly-checkup__back:hover {
+        text-decoration: underline;
+    }
+    .yc-doc-grid {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 8px;
+    }
+    .yc-doc-tile {
+        width: 80px;
+        text-align: center;
+        position: relative;
+    }
+    .yc-doc-tile a {
+        text-decoration: none;
+        color: inherit;
+        display: block;
+    }
+    .yc-doc-tile .oh-helpdesk__icon {
+        background: #f5f6f8;
+        border: 1px solid #e3e5ea;
+        border-radius: 6px;
+        padding: 10px 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 64px;
+    }
+    .yc-doc-tile .oh-file-icon {
+        width: 36px !important;
+        height: 36px !important;
+        display: inline-block;
+    }
+    .yc-doc-tile__name {
+        font-size: 11px;
+        max-width: 80px;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        color: #596376;
+        margin-top: 4px;
+    }
+</style>
+
+<div id="main">
+    <div id="ohMessages"></div>
+
+    <div class="oh-helpdesk">
+        <!-- Left: chat-style timeline -->
+        <div class="oh-helpdesk__left">
+            <div class="oh-helpdesk__header">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <a class="yearly-checkup__back oh-text--muted small d-inline-block mb-1"
+                            href="{% url 'asset-yearly-checkup-submissions' %}">
+                            <ion-icon name="arrow-back-outline"></ion-icon>
+                            {% trans "Back to Submissions" %}
+                        </a>
+                        <p class="oh-helpdesk__header-title mb-0">
+                            {{ asset_allocation.asset_id.asset_name }}
+                            {% if asset_allocation.asset_id.asset_tracking_id %}
+                                <span class="text-muted" style="font-size:0.7em;">
+                                    ({{ asset_allocation.asset_id.asset_tracking_id }})
+                                </span>
+                            {% endif %}
+                        </p>
+                    </div>
+                    <span class="helpdesk__card-value me-3">
+                        {% if asset_allocation.yearly_checkup_status == "Complete" %}
+                            <span class="oh-badge oh-badge--success">{% trans "Complete" %}</span>
+                        {% elif asset_allocation.yearly_checkup_status == "Overdue" %}
+                            <span class="oh-badge oh-badge--danger">{% trans "Overdue" %}</span>
+                        {% else %}
+                            <span class="oh-badge oh-badge--warning">{% trans "Pending" %}</span>
+                        {% endif %}
+                    </span>
+                </div>
+            </div>
+
+            <div class="oh-helpdesk__body">
+                <div class="oh-helpdesk__chat-container">
+                    <!-- Initial allocation event as the "sender" bubble -->
+                    <div class="oh-helpdesk__bubble oh-helpdesk__bubble--sender">
+                        <div class="oh-helpdesk__bubble-header">
+                            <div class="oh-helpdesk__bubble-user">
+                                <div class="oh-profile oh-profile--md">
+                                    <div class="oh-profile__avatar mr-1">
+                                        {% if asset_allocation.assigned_by_employee_id %}
+                                            <img src="{{ asset_allocation.assigned_by_employee_id.get_avatar }}"
+                                                class="oh-profile__image"
+                                                alt="{{ asset_allocation.assigned_by_employee_id }}" />
+                                        {% endif %}
+                                    </div>
+                                </div>
+                                <span class="oh-helpdesk__bubble-username">
+                                    {% if asset_allocation.assigned_by_employee_id %}
+                                        {{ asset_allocation.assigned_by_employee_id.get_full_name|default:asset_allocation.assigned_by_employee_id }}
+                                    {% else %}
+                                        {% trans "System" %}
+                                    {% endif %}
+                                </span>
+                                &nbsp;
+                                <span class="oh-badge oh-badge--info">{% trans "Allocated" %}</span>
+                            </div>
+                            <span class="oh-helpdesk__bubble-timestamp">
+                                {{ asset_allocation.assigned_date|date:"M d, Y" }}
+                            </span>
+                        </div>
+                        <div class="oh-helpdesk__bubble-body">
+                            <p class="mb-1">
+                                {% blocktrans with employee=asset_allocation.assigned_to_employee_id %}
+                                Asset allocated to {{ employee }}.
+                                {% endblocktrans %}
+                            </p>
+                            {% if asset_allocation.assign_images.all %}
+                                <div class="yc-doc-grid">
+                                    {% for doc in asset_allocation.assign_images.all %}
+                                        {% include 'request_allocation/_yearly_checkup_doc_tile.html' with doc=doc %}
+                                    {% endfor %}
+                                </div>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    {% for log in checkup_logs %}
+                        <div class="oh-helpdesk__comment--container d-flex justify-content-end">
+                            <div class="oh-helpdesk__bubble oh-helpdesk__bubble--reply" style="width:90%">
+                                <div class="oh-helpdesk__bubble-header">
+                                    <div class="oh-helpdesk__bubble-user">
+                                        <div class="oh-profile oh-profile--md">
+                                            <div class="oh-profile__avatar mr-1">
+                                                {% if log.submitted_by %}
+                                                    <img src="{{ log.submitted_by.get_avatar }}"
+                                                        class="oh-profile__image"
+                                                        alt="{{ log.submitted_by }}" />
+                                                {% endif %}
+                                            </div>
+                                        </div>
+                                        <span class="oh-helpdesk__bubble-username">
+                                            {% if log.submitted_by %}
+                                                {{ log.submitted_by.get_full_name|default:log.submitted_by }}
+                                            {% else %}
+                                                {% trans "System" %}
+                                            {% endif %}
+                                        </span>
+                                        &nbsp;
+                                        <span class="oh-badge oh-badge--light">{% trans "Check-up" %}</span>
+                                        {% if forloop.last %}
+                                            &nbsp;<span class="oh-badge oh-badge--success">{% trans "Latest" %}</span>
+                                        {% endif %}
+                                    </div>
+                                    <span class="oh-helpdesk__bubble-timestamp">
+                                        {{ log.checkup_date|date:"M d, Y" }}
+                                    </span>
+                                </div>
+                                <div class="oh-helpdesk__bubble-body">
+                                    <div class="oh-helpdesk__comment">
+                                        {{ log.description|default:"-"|linebreaksbr }}
+                                    </div>
+                                    {% if log.images.all %}
+                                        <div class="yc-doc-grid">
+                                            {% for doc in log.images.all %}
+                                                {% include 'request_allocation/_yearly_checkup_doc_tile.html' with doc=doc %}
+                                            {% endfor %}
+                                        </div>
+                                    {% endif %}
+                                    <small class="text-muted d-block mt-1">
+                                        {% trans "Logged" %} {{ log.created_at|date:"M d, Y H:i" }}
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+                    {% empty %}
+                        <div class="oh-helpdesk__chat-update text-center text-muted py-3">
+                            <ion-icon name="time-outline" style="font-size:24px;"></ion-icon>
+                            <div class="mt-1">
+                                {% trans "No yearly check-ups have been recorded yet." %}
+                            </div>
+                        </div>
+                    {% endfor %}
+
+                    {% if asset_allocation.return_date %}
+                        <div class="oh-helpdesk__chat-update">
+                            <span>
+                                <strong>{{ asset_allocation.assigned_to_employee_id|default:_("Employee") }}</strong>
+                                {% trans "returned the asset" %}
+                                {% if asset_allocation.return_status %}
+                                    &middot; <em>{{ asset_allocation.return_status }}</em>
+                                {% endif %}
+                            </span>
+                            <span>{{ asset_allocation.return_date|date:"M d, Y" }}</span>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Right: details cards -->
+        <div class="oh-helpdesk__right">
+            <div class="oh-helpdesk__right-header">{% trans "Allocation Details" %}</div>
+            <div class="oh-helpdesk__right-body">
+                <!-- Asset Info -->
+                <div class="oh-helpdesk__card">
+                    <div class="oh-helpdesk__card-header d-flex justify-content-between align-items-center">
+                        <span class="oh-helpdesk__card-title">{% trans "Asset Info" %}</span>
+                    </div>
+                    <div class="oh-helpdesk__card-body">
+                        <ul class="helpdesk__card-items">
+                            <li class="helpdesk__card-item">
+                                <span class="helpdesk__card-label">{% trans "Asset:" %}</span>
+                                <span class="helpdesk__card-value">{{ asset_allocation.asset_id.asset_name }}</span>
+                            </li>
+                            <li class="helpdesk__card-item">
+                                <span class="helpdesk__card-label">{% trans "Category:" %}</span>
+                                <span class="helpdesk__card-value">{{ asset_allocation.asset_id.asset_category_id|default:"-" }}</span>
+                            </li>
+                            <li class="helpdesk__card-item">
+                                <span class="helpdesk__card-label">{% trans "Tracking ID:" %}</span>
+                                <span class="helpdesk__card-value">{{ asset_allocation.asset_id.asset_tracking_id|default:"-" }}</span>
+                            </li>
+                            <li class="helpdesk__card-item">
+                                <span class="helpdesk__card-label">{% trans "Expiry Date:" %}</span>
+                                <span class="helpdesk__card-value">{{ asset_allocation.asset_id.expiry_date|default:"-" }}</span>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Allocation Info -->
+                <div class="oh-helpdesk__card">
+                    <div class="oh-helpdesk__card-header d-flex justify-content-between align-items-center">
+                        <span class="oh-helpdesk__card-title">{% trans "Allocation" %}</span>
+                        {% if asset_allocation.return_status %}
+                            <span class="oh-badge oh-badge--info">{% trans "Returned" %}</span>
+                        {% else %}
+                            <span class="oh-badge oh-badge--warning">{% trans "Active" %}</span>
+                        {% endif %}
+                    </div>
+                    <div class="oh-helpdesk__card-body">
+                        <ul class="helpdesk__card-items">
+                            <li class="helpdesk__card-item">
+                                <span class="helpdesk__card-label">{% trans "Allocated to:" %}</span>
+                                <span class="helpdesk__card-value">
+                                    {{ asset_allocation.assigned_to_employee_id|default:"-" }}
+                                </span>
+                            </li>
+                            <li class="helpdesk__card-item">
+                                <span class="helpdesk__card-label">{% trans "Allocated by:" %}</span>
+                                <span class="helpdesk__card-value">
+                                    {{ asset_allocation.assigned_by_employee_id|default:"-" }}
+                                </span>
+                            </li>
+                            <li class="helpdesk__card-item">
+                                <span class="helpdesk__card-label">{% trans "Allocated date:" %}</span>
+                                <span class="helpdesk__card-value">
+                                    {{ asset_allocation.assigned_date|default:"-" }}
+                                </span>
+                            </li>
+                            <li class="helpdesk__card-item">
+                                <span class="helpdesk__card-label">{% trans "Return date:" %}</span>
+                                <span class="helpdesk__card-value">
+                                    {{ asset_allocation.return_date|default:"-" }}
+                                </span>
+                            </li>
+                            {% if asset_allocation.return_status %}
+                                <li class="helpdesk__card-item">
+                                    <span class="helpdesk__card-label">{% trans "Return status:" %}</span>
+                                    <span class="helpdesk__card-value">{{ asset_allocation.return_status }}</span>
+                                </li>
+                            {% endif %}
+                            {% if asset_allocation.return_condition %}
+                                <li class="helpdesk__card-item">
+                                    <span class="helpdesk__card-label">{% trans "Return condition:" %}</span>
+                                    <span class="helpdesk__card-value">{{ asset_allocation.return_condition }}</span>
+                                </li>
+                            {% endif %}
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Yearly Check-up Status -->
+                <div class="oh-helpdesk__card">
+                    <div class="oh-helpdesk__card-header d-flex justify-content-between align-items-center">
+                        <span class="oh-helpdesk__card-title">{% trans "Yearly Check-up" %}</span>
+                        {% if asset_allocation.yearly_checkup_status == "Complete" %}
+                            <span class="oh-badge oh-badge--success">{% trans "Complete" %}</span>
+                        {% elif asset_allocation.yearly_checkup_status == "Overdue" %}
+                            <span class="oh-badge oh-badge--danger">{% trans "Overdue" %}</span>
+                        {% else %}
+                            <span class="oh-badge oh-badge--warning">{% trans "Pending" %}</span>
+                        {% endif %}
+                    </div>
+                    <div class="oh-helpdesk__card-body">
+                        <ul class="helpdesk__card-items">
+                            <li class="helpdesk__card-item">
+                                <span class="helpdesk__card-label">{% trans "Scheduled date:" %}</span>
+                                <span class="helpdesk__card-value">
+                                    {{ asset_allocation.yearly_checkup_date|default:"-" }}
+                                </span>
+                            </li>
+                            <li class="helpdesk__card-item">
+                                <span class="helpdesk__card-label">{% trans "Service shop:" %}</span>
+                                <span class="helpdesk__card-value">
+                                    {{ asset_allocation.service_shop_name|default:"-" }}
+                                </span>
+                            </li>
+                            <li class="helpdesk__card-item">
+                                <span class="helpdesk__card-label">{% trans "Submissions:" %}</span>
+                                <span class="helpdesk__card-value">
+                                    {{ checkup_logs|length }}
+                                </span>
+                            </li>
+                        </ul>
+                        {% if asset_allocation.is_checkup_button_enabled %}
+                            <div class="mt-3 d-flex justify-content-end">
+                                <button class="oh-btn oh-btn--warning oh-btn--x-small"
+                                    role="button"
+                                    style="white-space: nowrap;"
+                                    data-toggle="oh-modal-toggle"
+                                    data-target="#objectCreateModal"
+                                    hx-get="{% url 'asset-yearly-checkup-submit' asset_allocation_id=asset_allocation.id %}"
+                                    hx-target="#objectCreateModalTarget">
+                                    <ion-icon name="construct-outline"></ion-icon>
+                                    {% trans "Submit Yearly Check-up" %}
+                                </button>
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Documents -->
+                <div class="oh-helpdesk__card">
+                    <div class="oh-helpdesk__card-header">
+                        <span class="oh-helpdesk__card-title">{% trans "Documents" %}</span>
+                    </div>
+                    <div class="oh-helpdesk__card-body oh-scrollable-container">
+
+                        <!-- Assign condition images -->
+                        <div class="mb-3">
+                            <p class="text-muted small fw-semibold mb-1 text-uppercase" style="letter-spacing:.04em;">
+                                {% trans "Assign Condition Images" %}
+                            </p>
+                            {% if asset_allocation.assign_images.all %}
+                                <div class="yc-doc-grid">
+                                    {% for doc in asset_allocation.assign_images.all %}
+                                        {% include 'request_allocation/_yearly_checkup_doc_tile.html' with doc=doc %}
+                                    {% endfor %}
+                                </div>
+                            {% else %}
+                                <span class="text-muted small">{% trans "No images" %}</span>
+                            {% endif %}
+                        </div>
+
+                        <!-- Return condition images -->
+                        <div class="mb-3">
+                            <p class="text-muted small fw-semibold mb-1 text-uppercase" style="letter-spacing:.04em;">
+                                {% trans "Return Condition Images" %}
+                            </p>
+                            {% if asset_allocation.return_images.all %}
+                                <div class="yc-doc-grid">
+                                    {% for doc in asset_allocation.return_images.all %}
+                                        {% include 'request_allocation/_yearly_checkup_doc_tile.html' with doc=doc %}
+                                    {% endfor %}
+                                </div>
+                            {% else %}
+                                <span class="text-muted small">{% trans "No images" %}</span>
+                            {% endif %}
+                        </div>
+
+                        <!-- Check-up images, one sub-section per submission -->
+                        <div class="mb-1">
+                            <p class="text-muted small fw-semibold mb-1 text-uppercase" style="letter-spacing:.04em;">
+                                {% trans "Check-up Images" %}
+                            </p>
+                            {% with has_checkup_images=False %}
+                            {% for log in checkup_logs %}
+                                {% if log.images.all %}
+                                    <p class="text-muted small mb-1">
+                                        {% trans "Check-up on" %} {{ log.checkup_date|date:"M d, Y" }}
+                                    </p>
+                                    <div class="yc-doc-grid mb-2">
+                                        {% for doc in log.images.all %}
+                                            {% include 'request_allocation/_yearly_checkup_doc_tile.html' with doc=doc %}
+                                        {% endfor %}
+                                    </div>
+                                {% endif %}
+                            {% empty %}
+                                <span class="text-muted small">{% trans "No check-up images" %}</span>
+                            {% endfor %}
+                            {% endwith %}
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="objectCreateModal" class="oh-modal" role="dialog" aria-hidden="true">
+    <div class="oh-modal__dialog oh-modal__dialog--md">
+        <div id="objectCreateModalTarget"></div>
+    </div>
+</div>
+
+{% endblock %}

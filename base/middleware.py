@@ -2,11 +2,15 @@
 middleware.py
 """
 
+import time
+
 from django.apps import apps
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import logout
 from django.core.cache import cache
 from django.db.models import Q
+from django.http import HttpResponse
 from django.shortcuts import redirect
 from django.utils.translation import gettext_lazy as _
 
@@ -213,6 +217,132 @@ class ForcePasswordChangeMiddleware:
                 return redirect("change-password")
 
         return self.get_response(request)
+
+
+class NoBrowserCacheMiddleware:
+    """
+    Stamp anti-cache headers on every response served to an authenticated
+    user so the browser does not show protected pages from its history /
+    back-forward cache after logout. When the user clicks Back after
+    logging out, the browser is forced to re-fetch, which lands on the
+    login redirect instead of the previously rendered page.
+    """
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        response = self.get_response(request)
+        if getattr(request, "user", None) and request.user.is_authenticated:
+            response["Cache-Control"] = (
+                "no-store, no-cache, must-revalidate, max-age=0, private"
+            )
+            response["Pragma"] = "no-cache"
+            response["Expires"] = "0"
+        return response
+
+
+class InactivityTimeoutMiddleware:
+
+    SESSION_KEY = "last_activity"
+
+    # Paths hit by automated client-side polling (not real user activity).
+    # These requests are still subject to the timeout check, but they do
+    # not refresh the activity timestamp.
+    EXEMPT_REFRESH_PATHS = (
+        "/time-tracker/timer/heartbeat/",
+    )
+
+    # Path prefixes hit by automated client-side polling. Any request whose
+    # path starts with one of these prefixes will not refresh the activity
+    # timestamp (e.g. the notification badge poller fires every 15 seconds).
+    EXEMPT_REFRESH_PREFIXES = (
+        "/inbox/notifications/api/",
+    )
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+        self.timeout = getattr(settings, "SESSION_IDLE_TIMEOUT", 600)
+
+    def __call__(self, request):
+        if (
+            self.timeout
+            and self.timeout > 0
+            and getattr(request, "user", None)
+            and request.user.is_authenticated
+        ):
+            now = time.time()
+            last_activity = request.session.get(self.SESSION_KEY)
+
+            if last_activity and (now - last_activity) > self.timeout:
+                logout(request)
+                messages.info(
+                    request,
+                    _("You have been logged out due to inactivity."),
+                )
+                login_redirect = redirect("login")
+                location = login_redirect["Location"]
+                if not self._is_full_page_navigation(request):
+                    response = HttpResponse(status=401)
+                    response["HX-Redirect"] = location
+                    response["X-Session-Expired"] = "1"
+                    response["X-Login-Redirect"] = location
+                    response["Cache-Control"] = (
+                        "no-store, no-cache, must-revalidate, max-age=0, private"
+                    )
+                    return response
+                return login_redirect
+
+            # Refresh the activity timestamp for the current request,
+            # unless it originates from automated background polling.
+            if not self._is_exempt_from_refresh(request.path):
+                request.session[self.SESSION_KEY] = now
+
+        return self.get_response(request)
+
+    def _is_exempt_from_refresh(self, path):
+        """
+        Return True when the request path belongs to automated background
+        polling and therefore must not count as user activity.
+        """
+        if path in self.EXEMPT_REFRESH_PATHS:
+            return True
+        return path.startswith(self.EXEMPT_REFRESH_PREFIXES)
+
+    def _is_full_page_navigation(self, request):
+        """
+        Return True only for top-level document navigations (typing a URL,
+        clicking a normal link, submitting a non-AJAX form). Every partial
+        request issued by HTMX, jQuery AJAX, fetch or XHR returns False so the
+        login page HTML is never swapped into the current module.
+        """
+        headers = request.headers
+
+        # HTMX requests.
+        if headers.get("HX-Request"):
+            return False
+
+        # jQuery / classic XMLHttpRequest.
+        if headers.get("x-requested-with") == "XMLHttpRequest":
+            return False
+
+        # Modern browsers advertise the request context via Fetch Metadata.
+        # ``navigate`` is sent for real page navigations; fetch()/XHR send
+        # ``cors``/``same-origin``/``no-cors`` instead.
+        sec_fetch_mode = headers.get("Sec-Fetch-Mode")
+        if sec_fetch_mode:
+            return sec_fetch_mode == "navigate"
+
+        # ``Sec-Fetch-Dest`` is ``document`` for full-page loads and ``empty``
+        # for programmatic fetch/XHR requests.
+        sec_fetch_dest = headers.get("Sec-Fetch-Dest")
+        if sec_fetch_dest:
+            return sec_fetch_dest == "document"
+
+        # Fallback for older clients without Fetch Metadata: treat it as a real
+        # navigation only when the client explicitly asks for an HTML document.
+        accept = headers.get("Accept", "")
+        return "text/html" in accept
 
 
 class TwoFactorAuthMiddleware:

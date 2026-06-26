@@ -14,6 +14,7 @@ Django==4.2.21
 django-auditlog
 django-apscheduler
 django-cors-headers
+django-turnstile
 django-environ
 django-filter
 django-haystack
@@ -69,6 +70,7 @@ tzlocal
 uritools
 urllib3
 utils
+WeasyPrint==68.1
 webencodings
 Whoosh
 xhtml2pdf

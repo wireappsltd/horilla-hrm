@@ -44,6 +44,8 @@ from helpdesk.forms import (
     DepartmentManagerCreateForm,
     FAQCategoryForm,
     FAQForm,
+    ISOAcknowledgementForm,
+    ISOCommentTransitionForm,
     ISOReviewForm,
     PasswordResetRequestForm,
     TicketAssigneesForm,
@@ -56,6 +58,7 @@ from helpdesk.methods import is_department_manager
 from helpdesk.models import (
     FAQ,
     ISO_GROUP_NAME,
+    ISO_STATUS_CHOICES,
     TICKET_STATUS,
     Attachment,
     ClaimRequest,
@@ -79,11 +82,55 @@ from horilla.decorators import (
     permission_required,
 )
 from horilla.group_by import group_by_queryset
+from horilla_audit.methods import log_activity, log_form_changes
 from notifications.signals import notify
 
 logger = logging.getLogger(__name__)
 
 # Create your views here.
+
+
+def _helpdesk_client_ip(request):
+    """Best-effort client IP for audit logs."""
+    forwarded = request.META.get("HTTP_X_FORWARDED_FOR")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.META.get("REMOTE_ADDR", "")
+
+
+def _ticket_ref(ticket):
+    """Human ticket reference like 'IT001' (prefix + zero-padded id)."""
+    try:
+        return f"{ticket.ticket_type.prefix}{ticket.id:03d}"
+    except Exception:
+        return str(getattr(ticket, "id", ""))
+
+
+def _helpdesk_audit(request, action, ticket=None, changes=None):
+    """Write a Help Desk audit entry. Captures ticket ref, requester and IP.
+
+    `changes` is an optional dict of extra detail (e.g. {"status": {"from":..,"to":..}}).
+    Never raises (log_activity swallows errors) so it is safe in any view.
+    """
+    detail = {}
+    if ticket is not None:
+        detail["ticket"] = _ticket_ref(ticket)
+        try:
+            detail["requester"] = ticket.employee_id.get_full_name()
+        except Exception:
+            pass
+    if changes:
+        detail.update(changes)
+    ip = _helpdesk_client_ip(request)
+    if ip:
+        detail["ip_address"] = ip
+    log_activity(
+        getattr(request, "user", None),
+        module="helpdesk",
+        action=action,
+        target=ticket,
+        changes=detail or None,
+    )
 
 
 @login_required
@@ -124,7 +171,13 @@ def faq_category_create(request):
     if request.method == "POST":
         form = FAQCategoryForm(request.POST)
         if form.is_valid():
-            form.save()
+            faq_category = form.save()
+            _helpdesk_audit(
+                request,
+                "FAQ category created",
+                None,
+                {"category": faq_category.title},
+            )
             messages.success(request, _("The FAQ Category created successfully."))
             form = FAQCategoryForm()
 
@@ -156,6 +209,13 @@ def faq_category_update(request, id):
         form = FAQCategoryForm(request.POST, instance=faq_category)
         if form.is_valid():
             form.save()
+            log_form_changes(
+                request.user,
+                "helpdesk",
+                "FAQ category updated",
+                form,
+                target=faq_category,
+            )
             messages.success(request, _("The FAQ category updated successfully."))
 
     context = {
@@ -170,7 +230,14 @@ def faq_category_update(request, id):
 def faq_category_delete(request, id):
     try:
         faq = FAQCategory.objects.get(id=id)
+        category_title = faq.title
         faq.delete()
+        _helpdesk_audit(
+            request,
+            "FAQ category deleted",
+            None,
+            {"category": category_title},
+        )
         messages.success(request, _("The FAQ category has been deleted successfully."))
         return HttpResponse("")
     except ProtectedError:
@@ -249,7 +316,16 @@ def create_faq(request, obj_id):
     if request.method == "POST":
         form = FAQForm(request.POST)
         if form.is_valid():
-            form.save()
+            faq = form.save()
+            _helpdesk_audit(
+                request,
+                "FAQ created",
+                None,
+                {
+                    "question": faq.question,
+                    "category": str(faq.category),
+                },
+            )
             messages.success(request, _("The FAQ created successfully."))
 
     context = {
@@ -281,6 +357,13 @@ def faq_update(request, obj_id):
         form = FAQForm(request.POST, instance=faq)
         if form.is_valid():
             form.save()
+            log_form_changes(
+                request.user,
+                "helpdesk",
+                "FAQ updated",
+                form,
+                target=faq,
+            )
             messages.success(request, _("The FAQ updated successfully."))
     context = {
         "form": form,
@@ -378,7 +461,15 @@ def faq_delete(request, id):
     try:
         faq = FAQ.objects.get(id=id)
         cat_id = faq.category.id
+        faq_question = faq.question
+        faq_category = str(faq.category)
         faq.delete()
+        _helpdesk_audit(
+            request,
+            "FAQ deleted",
+            None,
+            {"question": faq_question, "category": faq_category},
+        )
         messages.success(
             request, _('The FAQ "{}" has been deleted successfully.').format(faq)
         )
@@ -459,6 +550,17 @@ def ticket_create(request):
             for attachment in attachments:
                 attachment_instance = Attachment(file=attachment, ticket=ticket)
                 attachment_instance.save()
+            _helpdesk_audit(
+                request,
+                "Ticket created",
+                ticket,
+                {
+                    "title": ticket.title,
+                    "priority": ticket.get_priority_display(),
+                    "status": ticket.get_status_display(),
+                    "type": str(ticket.ticket_type),
+                },
+            )
             mail_thread = TicketSendThread(request, ticket, type="create")
             mail_thread.start()
             messages.success(request, _("The Ticket created successfully."))
@@ -528,12 +630,34 @@ def ticket_update(request, ticket_id):
         form = TicketForm(instance=ticket)
         if request.method == "POST":
             form = TicketForm(request.POST, request.FILES, instance=ticket)
+            # Snapshot BEFORE is_valid(): a ModelForm's full_clean mutates
+            # form.instance (== ticket) with the submitted values, so capturing
+            # after validation would read the new values and the diff would be empty.
+            pre = {
+                "title": ticket.title,
+                "priority": ticket.get_priority_display(),
+                "status": ticket.get_status_display(),
+                "deadline": str(ticket.deadline),
+            }
             if form.is_valid():
                 ticket = form.save()
                 attachments = form.files.getlist("attachment")
                 for attachment in attachments:
                     attachment_instance = Attachment(file=attachment, ticket=ticket)
                     attachment_instance.save()
+                post = {
+                    "title": ticket.title,
+                    "priority": ticket.get_priority_display(),
+                    "status": ticket.get_status_display(),
+                    "deadline": str(ticket.deadline),
+                }
+                diff = {
+                    field: {"from": pre[field], "to": post[field]}
+                    for field in pre
+                    if pre[field] != post[field]
+                }
+                if diff:
+                    _helpdesk_audit(request, "Ticket updated", ticket, diff)
                 messages.success(request, _("The Ticket updated successfully."))
                 return HttpResponse("<script>window.location.reload()</script>")
         context = {
@@ -580,6 +704,12 @@ def ticket_archive(request, ticket_id):
         # Toggle the ticket's active state
         ticket.is_active = not ticket.is_active
         ticket.save()
+
+        _helpdesk_audit(
+            request,
+            "Ticket un-archived" if ticket.is_active else "Ticket archived",
+            ticket,
+        )
 
         if ticket.is_active:
             messages.success(request, _("The Ticket un-archived successfully."))
@@ -636,6 +766,12 @@ def change_ticket_status(request, ticket_id):
     pre_status = ticket.get_status_display()
     status = request.POST.get("status")
     user = request.user.employee_get
+    # Default response so the view never raises a NameError when the submitted
+    # status equals the current one (neither branch below would assign it).
+    response = {
+        "type": "info",
+        "message": _("The ticket status is unchanged."),
+    }
     if ticket.status != status:
         if (
             user == ticket.employee_id
@@ -644,6 +780,24 @@ def change_ticket_status(request, ticket_id):
         ):
             ticket.status = status
             ticket.save()
+            cur_status_display = ticket.get_status_display()
+            if status == "resolved":
+                status_action = "Ticket resolved"
+            elif status == "closed":
+                status_action = "Ticket closed"
+            elif pre_status in (
+                dict(TICKET_STATUS).get("resolved"),
+                dict(TICKET_STATUS).get("closed"),
+            ) and status in ("new", "in_progress", "on_hold"):
+                status_action = "Ticket reopened"
+            else:
+                status_action = "Ticket status changed"
+            _helpdesk_audit(
+                request,
+                status_action,
+                ticket,
+                {"status": {"from": pre_status, "to": cur_status_display}},
+            )
             time = datetime.now()
             time = time.strftime("%b. %d, %Y, %I:%M %p")
             response = {
@@ -733,7 +887,24 @@ def ticket_delete(request, ticket_id):
                 icon="infinite",
                 redirect=reverse("ticket-view"),
             )
+            ref = _ticket_ref(ticket)
+            try:
+                requester = ticket.employee_id.get_full_name()
+            except Exception:
+                requester = ""
+            pre_status_display = ticket.get_status_display()
             ticket.delete()
+            log_activity(
+                request.user,
+                module="helpdesk",
+                action="Ticket deleted",
+                changes={
+                    "ticket": ref,
+                    "requester": requester,
+                    "status": pre_status_display,
+                    "ip_address": _helpdesk_client_ip(request),
+                },
+            )
             messages.success(
                 request,
                 _('The Ticket "{}" has been deleted successfully.').format(ticket),
@@ -810,6 +981,17 @@ def ticket_filter(request):
     return render(request, template, context)
 
 
+def _suppress_initial_set_changes(trackings):
+    for history in trackings:
+        changes = history.get("changes")
+        if not changes:
+            continue
+        history["changes"] = [
+            change for change in changes if change.get("old") not in (None, "")
+        ]
+    return trackings
+
+
 @login_required
 def ticket_detail(request, ticket_id, **kwargs):
     ticket = Ticket.objects.get(id=ticket_id)
@@ -849,23 +1031,14 @@ def ticket_detail(request, ticket_id, **kwargs):
             and _pr_for_audit.iso_status in ("APPROVED", "REJECTED")
         )
 
-        # Status values driven by ISO review (auto-set in iso_review_password_reset)
-        _iso_driven_ticket_statuses = {"resolved", "canceled"}
-
-        if _has_iso_review:
+        if _pr_for_audit:
             for h in trackings:
                 changes = h.get("changes") or []
-                # Drop ticket.status change rows that were caused by ISO review –
-                # this information is already conveyed by the ISO Review entry
-                # and the approval/rejection comment.
-                changes = [
-                    c for c in changes
-                    if not (
-                        c.get("field_name") == "status"
-                        and str(c.get("new", "")).lower() in _iso_driven_ticket_statuses
-                    )
+                h["changes"] = [
+                    c for c in changes if c.get("field_name") != "status"
                 ]
-                h["changes"] = changes
+
+        trackings = _suppress_initial_set_changes(trackings)
 
         # Filter out history entries that have no visible changes
         trackings = [
@@ -903,6 +1076,7 @@ def ticket_detail(request, ticket_id, **kwargs):
                         if c.get("field_name") not in _iso_review_fields
                     ]
                     h["changes"] = changes
+            pr_trackings = _suppress_initial_set_changes(pr_trackings)
             # Filter out history entries that have no visible changes
             pr_trackings = [
                 h for h in pr_trackings
@@ -964,6 +1138,7 @@ def ticket_detail(request, ticket_id, **kwargs):
             "f_form": f_form,
             "attachments": attachments,
             "ticket_status": TICKET_STATUS,
+            "iso_status_choices": ISO_STATUS_CHOICES,
             "tag_form": TicketTagForm(instance=ticket),
             "sorted_activity_list": sorted_activity_list,
             "create_tag_f": TagsForm(),
@@ -1054,10 +1229,19 @@ def ticket_update_tag(request):
         or is_department_manager(request, ticket)
     ):
         tagids = data.getlist("selectedValues[]")
+        old_tags = list(ticket.tags.values_list("title", flat=True))
         ticket.tags.clear()
         for tagId in tagids:
             tag = Tags.objects.get(id=tagId)
             ticket.tags.add(tag)
+        new_tags = list(ticket.tags.values_list("title", flat=True))
+        if old_tags != new_tags:
+            _helpdesk_audit(
+                request,
+                "Ticket tags changed",
+                ticket,
+                {"tags": {"from": old_tags, "to": new_tags}},
+            )
         response = {
             "type": "success",
             "message": _("The Ticket tag updated successfully."),
@@ -1101,8 +1285,20 @@ def ticket_change_raised_on(request, ticket_id):
         form = TicketRaisedOnForm(instance=ticket)
         if request.method == "POST":
             form = TicketRaisedOnForm(request.POST, instance=ticket)
+            # Capture BEFORE is_valid(): full_clean mutates form.instance
+            # (== ticket).raised_on with the submitted value, so reading after
+            # validation would yield the new value and the diff would be empty.
+            old_raised_on = ticket.get_raised_on()
             if form.is_valid():
                 form.save()
+                new_raised_on = ticket.get_raised_on()
+                if old_raised_on != new_raised_on:
+                    _helpdesk_audit(
+                        request,
+                        "Ticket forwarded-to changed",
+                        ticket,
+                        {"forwarded_to": {"from": old_raised_on, "to": new_raised_on}},
+                    )
                 # Sync forward_to M2M for password reset requests
                 if pr_request:
                     raised_ids = ticket._parse_raised_on_ids()
@@ -1181,7 +1377,28 @@ def ticket_change_assignees(request, ticket_id):
                 added_assignees = Employee.objects.filter(id__in=added_assignee_ids)
                 removed_assignees = Employee.objects.filter(id__in=removed_assignee_ids)
 
+                prev_assignee_names = [
+                    emp.get_full_name()
+                    for emp in Employee.objects.filter(id__in=list(prev_assignee_ids))
+                ]
+
                 form.save()
+
+                new_assignee_names = [
+                    emp.get_full_name() for emp in ticket.assigned_to.all()
+                ]
+                if prev_assignee_names != new_assignee_names:
+                    _helpdesk_audit(
+                        request,
+                        "Ticket assignees changed",
+                        ticket,
+                        {
+                            "assignees": {
+                                "from": prev_assignee_names,
+                                "to": new_assignee_names,
+                            }
+                        },
+                    )
 
                 # For password reset tickets, sync the new assignee to
                 # ticket.employee_id and PasswordResetRequest.user_id so
@@ -1358,7 +1575,16 @@ def delete_ticket_document(request, doc_id):
     id (int): The id of the document.
 
     """
-    Attachment.objects.get(id=doc_id).delete()
+    attachment = Attachment.objects.get(id=doc_id)
+    doc_ticket = attachment.ticket
+    doc_name = os.path.basename(attachment.file.name) if attachment.file else ""
+    attachment.delete()
+    _helpdesk_audit(
+        request,
+        "Ticket attachment deleted",
+        doc_ticket,
+        {"attachment": doc_name} if doc_name else None,
+    )
     messages.success(request, _("Document has been deleted."))
     return HttpResponse("", status=200)
 
@@ -1410,6 +1636,12 @@ def comment_create(request, ticket_id):
                             {"file": file, "comment": comment, "ticket": ticket}
                         )
                         a_form.save()
+                _helpdesk_audit(
+                    request,
+                    "Comment added",
+                    ticket,
+                    {"comment": (comment.comment or "")[:200]},
+                )
                 messages.success(request, _("A new comment has been created."))
         elif has_files:
             comment = Comment(
@@ -1427,6 +1659,12 @@ def comment_create(request, ticket_id):
                     {"file": file, "comment": comment, "ticket": ticket}
                 )
                 a_form.save()
+            _helpdesk_audit(
+                request,
+                "Comment added",
+                ticket,
+                {"comment": (comment.comment or "")[:200]},
+            )
             messages.success(request, _("Document(s) uploaded successfully."))
     return redirect(ticket_detail, ticket_id=ticket_id)
 
@@ -1457,6 +1695,12 @@ def comment_edit(request):
     if new_comment and len(new_comment) > 1:
         comment.comment = new_comment
         comment.save()
+        _helpdesk_audit(
+            request,
+            "Comment edited",
+            comment.ticket,
+            {"comment": (comment.comment or "")[:200]},
+        )
         messages.success(request, _("The comment updated successfully."))
     else:
         messages.error(request, _("The comment needs to be at least 2 characters."))
@@ -1490,7 +1734,15 @@ def comment_delete(request, comment_id):
         return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
 
     employee_name = comment.employee_id
+    comment_ticket = comment.ticket
+    comment_text = (comment.comment or "")[:200]
     comment.delete()
+    _helpdesk_audit(
+        request,
+        "Comment deleted",
+        comment_ticket,
+        {"comment": comment_text} if comment_text else None,
+    )
     messages.success(request, _("{}'s comment has been deleted successfully.").format(employee_name))
     return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
 
@@ -1577,6 +1829,12 @@ def claim_ticket(request, id):
         employee_id=request.user.employee_get, ticket_id=ticket
     ).exists():
         ClaimRequest(employee_id=request.user.employee_get, ticket_id=ticket).save()
+        _helpdesk_audit(
+            request,
+            "Ticket claim requested",
+            ticket,
+            {"claimed_by": request.user.employee_get.get_full_name()},
+        )
     return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
 
 
@@ -1668,6 +1926,13 @@ def approve_claim_request(request, req_id):
     claim_request.is_approved = approve
     claim_request.is_rejected = not approve
     claim_request.save()
+    if approve:
+        _helpdesk_audit(
+            request,
+            "Ticket claim approved",
+            ticket,
+            {"claimed_by": employee.get_full_name()},
+        )
     html = render_to_string(
         "helpdesk/ticket/ticket_claim_requests.html",
         {"claim_requests": ticket.claimrequest_set.all(), "refresh": refresh},
@@ -1724,6 +1989,11 @@ def tickets_bulk_archive(request):
         ticket = Ticket.objects.get(id=ticket_id)
         ticket.is_active = is_active
         ticket.save()
+        _helpdesk_audit(
+            request,
+            "Ticket un-archived" if ticket.is_active else "Ticket archived",
+            ticket,
+        )
     messages.success(request, _("The Ticket updated successfully."))
     previous_url = request.META.get("HTTP_REFERER", "/")
     script = f'<script>window.location.href = "{previous_url}"</script>'
@@ -1768,7 +2038,24 @@ def tickets_bulk_delete(request):
                 icon="infinite",
                 redirect=reverse("ticket-view"),
             )
+            ref = _ticket_ref(ticket)
+            try:
+                requester = ticket.employee_id.get_full_name()
+            except Exception:
+                requester = ""
+            pre_status_display = ticket.get_status_display()
             ticket.delete()
+            log_activity(
+                request.user,
+                module="helpdesk",
+                action="Ticket deleted",
+                changes={
+                    "ticket": ref,
+                    "requester": requester,
+                    "status": pre_status_display,
+                    "ip_address": _helpdesk_client_ip(request),
+                },
+            )
             messages.success(
                 request,
                 _('The Ticket "{}" has been deleted successfully.').format(ticket),
@@ -1787,7 +2074,16 @@ def create_department_manager(request):
     if request.method == "POST":
         form = DepartmentManagerCreateForm(request.POST, request.FILES)
         if form.is_valid():
-            form.save()
+            dept_manager = form.save()
+            _helpdesk_audit(
+                request,
+                "Department manager added",
+                None,
+                {
+                    "manager": dept_manager.manager.get_full_name(),
+                    "department": str(dept_manager.department),
+                },
+            )
             messages.success(request, _("The department manager created successfully."))
 
             return HttpResponse("<script>window.location.reload()</script>")
@@ -1806,6 +2102,13 @@ def update_department_manager(request, dep_id):
         form = DepartmentManagerCreateForm(request.POST, instance=department_manager)
         if form.is_valid():
             form.save()
+            log_form_changes(
+                request.user,
+                "helpdesk",
+                "Department manager updated",
+                form,
+                target=department_manager,
+            )
             messages.success(request, _("The department manager updated successfully."))
             return HttpResponse("<script>window.location.reload()</script>")
     context = {
@@ -1819,7 +2122,15 @@ def update_department_manager(request, dep_id):
 @permission_required("helpdesk.delete_departmentmanager")
 def delete_department_manager(request, dep_id):
     department_manager = DepartmentManager.objects.get(id=dep_id)
+    manager_name = department_manager.manager.get_full_name()
+    department_name = str(department_manager.department)
     department_manager.delete()
+    _helpdesk_audit(
+        request,
+        "Department manager removed",
+        None,
+        {"manager": manager_name, "department": department_name},
+    )
     messages.success(request, _("The department manager has been deleted successfully"))
 
     return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
@@ -1851,6 +2162,7 @@ def update_priority(request, ticket_id):
     ):
         rating = request.POST.get("rating")
 
+        old_priority_display = ticket.get_priority_display()
         if rating == "1":
             ticket.priority = "low"
         elif rating == "2":
@@ -1858,6 +2170,19 @@ def update_priority(request, ticket_id):
         else:
             ticket.priority = "high"
         ticket.save()
+        new_priority_display = ticket.get_priority_display()
+        if old_priority_display != new_priority_display:
+            _helpdesk_audit(
+                request,
+                "Ticket priority changed",
+                ticket,
+                {
+                    "priority": {
+                        "from": old_priority_display,
+                        "to": new_priority_display,
+                    }
+                },
+            )
         messages.success(request, _("Priority updated successfully."))
         return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
     else:
@@ -1898,6 +2223,16 @@ def ticket_type_create(request):
         if request.GET.get("ajax"):
             if form.is_valid():
                 instance = form.save()
+                _helpdesk_audit(
+                    request,
+                    "Ticket type created",
+                    None,
+                    {
+                        "title": instance.title,
+                        "prefix": instance.prefix,
+                        "type": instance.get_type_display(),
+                    },
+                )
                 response = {
                     "errors": "no_error",
                     "ticket_id": instance.id,
@@ -1908,7 +2243,17 @@ def ticket_type_create(request):
             errors = form.errors.as_json()
             return JsonResponse({"errors": errors})
         if form.is_valid():
-            form.save()
+            instance = form.save()
+            _helpdesk_audit(
+                request,
+                "Ticket type created",
+                None,
+                {
+                    "title": instance.title,
+                    "prefix": instance.prefix,
+                    "type": instance.get_type_display(),
+                },
+            )
             form = TicketTypeForm()
             messages.success(request, _("Ticket type has been created successfully!"))
             return HttpResponse("<script>window.location.reload()</script>")
@@ -1934,6 +2279,13 @@ def ticket_type_update(request, t_type_id):
         form = TicketTypeForm(request.POST, instance=ticket_type)
         if form.is_valid():
             form.save()
+            log_form_changes(
+                request.user,
+                "helpdesk",
+                "Ticket type updated",
+                form,
+                target=ticket_type,
+            )
             form = TicketTypeForm()
             messages.success(request, _("Ticket type has been updated successfully!"))
             return HttpResponse("<script>window.location.reload()</script>")
@@ -1950,7 +2302,15 @@ def ticket_type_update(request, t_type_id):
 def ticket_type_delete(request, t_type_id):
     ticket_type = TicketType.find(t_type_id)
     if ticket_type:
+        tt_title = ticket_type.title
+        tt_prefix = ticket_type.prefix
         ticket_type.delete()
+        _helpdesk_audit(
+            request,
+            "Ticket type deleted",
+            None,
+            {"title": tt_title, "prefix": tt_prefix},
+        )
         messages.success(request, _("Ticket type has been deleted successfully!"))
     else:
         messages.error(request, _("Ticket type not found"))
@@ -2482,11 +2842,17 @@ def iso_review_password_reset(request, pr_id):
             requestor = ticket.employee_id
 
             if action == "approve":
-                pr_request.iso_status = "APPROVED"
-                ticket.status = "resolved"
+                # Approving does NOT create an "Approved" resting status: the
+                # request transitions straight to IN_ACTION (spec §1/§4). The
+                # word "Approved" only survives in the audit comment below.
+                pr_request.iso_status = "IN_ACTION"
+                pr_request.approved_by = request.user
+                ticket.status = "in_progress"
                 verb = f"Your password reset request for {pr_request.platform} has been approved."
                 messages.success(request, _("Password reset request approved."))
             else:
+                # Rejection is terminal. We reuse the existing reviewed_by field
+                # to record the rejecting user (matches existing convention).
                 pr_request.iso_status = "REJECTED"
                 ticket.status = "canceled"
                 verb = (
@@ -2502,8 +2868,12 @@ def iso_review_password_reset(request, pr_id):
             try:
                 reviewer_employee = request.user.employee_get
                 if action == "approve":
+                    # Audit comment: keep the existing "ISO Review – Approved"
+                    # heading and add a "Status: Approved" line directly beneath
+                    # it (spec §4). The request itself is now IN_ACTION.
                     comment_text = (
                         f"<strong>ISO Review – Approved</strong><br>"
+                        f"<strong>Status:</strong> Approved<br>"
                         f"Your password reset request for <strong>{pr_request.platform}</strong> "
                         f"has been approved."
                     )
@@ -2512,6 +2882,7 @@ def iso_review_password_reset(request, pr_id):
                 else:
                     comment_text = (
                         f"<strong>ISO Review – Rejected</strong><br>"
+                        f"<strong>Status:</strong> Rejected<br>"
                         f"Your password reset request for <strong>{pr_request.platform}</strong> "
                         f"has been rejected."
                     )
@@ -2580,6 +2951,157 @@ def iso_review_password_reset(request, pr_id):
         else:
             for error in review_form.errors.values():
                 messages.error(request, error)
+
+    return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+
+@login_required
+def password_reset_mark_awaiting(request, pr_id):
+    """
+    ISO Officer / Superuser: move a request from In Action → Awaiting
+    Acknowledgement (spec §5).
+
+    Triggered after the ISO Officer has performed the actual out-of-system
+    action (reset link / re-add user). Requires a mandatory comment which is
+    used to notify the requestor. Role and mandatory-comment validation are
+    authoritative server-side.
+    """
+    if request.method != "POST":
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    # Server-side role enforcement: only ISO group members (or superusers) may
+    # perform this transition. A wrong-role POST is rejected, never allowed.
+    if not request.user.is_superuser and not _is_iso_officer(request.user):
+        messages.error(request, _("You don't have permission to perform this action."))
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    pr_request = PasswordResetRequest.objects.get(id=pr_id)
+
+    if pr_request.iso_status != "IN_ACTION":
+        messages.info(request, _("This request is not awaiting an ISO action."))
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    form = ISOCommentTransitionForm(request.POST)
+    if not form.is_valid():
+        for error in form.errors.values():
+            messages.error(request, error)
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    comment = form.cleaned_data["comment"]
+    ticket = pr_request.ticket
+    requestor = ticket.employee_id
+
+    pr_request.iso_status = "AWAITING_ACKNOWLEDGEMENT"
+    pr_request.actioned_by = request.user
+    pr_request.save()
+
+    # Keep the underlying ticket status meaningful for the rest of the helpdesk UI.
+    ticket.status = "on_hold"
+    ticket.save()
+
+    # Inline audit entry on the existing comment thread (spec §5/§7).
+    try:
+        Comment.objects.create(
+            comment=(
+                f"<strong>ISO Action Completed</strong><br>"
+                f"<strong>Status:</strong> Awaiting Acknowledgement<br>"
+                f"{comment}"
+            ),
+            ticket=ticket,
+            employee_id=request.user.employee_get,
+        )
+    except Exception as exc:
+        logger.error("ISO awaiting-acknowledgement comment error: %s", exc)
+
+    # Notify the requestor that their action is ready to acknowledge.
+    try:
+        notify.send(
+            request.user.employee_get,
+            recipient=requestor.employee_user_id,
+            verb=(
+                f"Your password reset request for {pr_request.platform} has been "
+                f"actioned and is awaiting your acknowledgement."
+            ),
+            icon="key",
+            redirect=reverse("ticket-detail", kwargs={"ticket_id": ticket.id}),
+        )
+    except Exception as exc:
+        logger.error("ISO awaiting-acknowledgement notify error: %s", exc)
+
+    messages.success(request, _("Request moved to Awaiting Acknowledgement."))
+    return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+
+@login_required
+def password_reset_acknowledge(request, pr_id):
+    """
+    Requestor acknowledgement (spec §6): the employee confirms the request was
+    fulfilled, which transitions it to Closed (closed_by = requestor) with a
+    mandatory comment. The "No"/reopen branch has been removed.
+
+    Only the original requestor may perform this step; enforced server-side.
+    """
+    if request.method != "POST":
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    pr_request = PasswordResetRequest.objects.get(id=pr_id)
+
+    # Server-side role enforcement: only the original requestor may close.
+    if not _is_password_reset_request_owner(request.user, pr_request):
+        messages.error(request, _("Only the requestor can acknowledge this request."))
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    if pr_request.iso_status != "AWAITING_ACKNOWLEDGEMENT":
+        messages.info(request, _("This request is not awaiting acknowledgement."))
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    form = ISOAcknowledgementForm(request.POST)
+    if not form.is_valid():
+        for error in form.errors.values():
+            messages.error(request, error)
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    comment = form.cleaned_data["comment"]
+    ticket = pr_request.ticket
+
+    pr_request.iso_status = "CLOSED"
+    pr_request.closed_by = request.user
+    pr_request.save()
+    ticket.status = "resolved"
+    ticket.save()
+
+    try:
+        Comment.objects.create(
+            comment=(
+                f"<strong>Request Acknowledged – Fulfilled</strong><br>"
+                f"<strong>Status:</strong> Closed<br>"
+                f"{comment}"
+            ),
+            ticket=ticket,
+            employee_id=request.user.employee_get,
+        )
+    except Exception as exc:
+        logger.error("ISO close comment error: %s", exc)
+
+    verb = (
+        f"The password reset request for {pr_request.platform} has been "
+        f"acknowledged and closed by the requestor."
+    )
+    messages.success(request, _("Request closed. Thank you for confirming."))
+
+    # Notify ISO officers about the requestor's decision.
+    try:
+        officers = _get_iso_officer_users()
+        if officers:
+            notify.send(
+                request.user.employee_get,
+                recipient=officers,
+                verb=verb,
+                icon="key",
+                redirect=reverse("ticket-detail", kwargs={"ticket_id": ticket.id}),
+            )
+    except Exception as exc:
+        logger.error("ISO acknowledgement notify error: %s", exc)
 
     return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
 

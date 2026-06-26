@@ -14,7 +14,7 @@ from django.contrib import messages
 from django.core.files.base import ContentFile
 from django.core.files.storage import FileSystemStorage
 from django.core.paginator import Paginator
-from django.db.models import ProtectedError
+from django.db.models import ProtectedError, Q
 from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -40,6 +40,7 @@ from asset.forms import (
     AssetReportForm,
     AssetRequestForm,
     AssetReturnForm,
+    YearlyCheckupForm,
 )
 from asset.models import (
     Asset,
@@ -49,6 +50,7 @@ from asset.models import (
     AssetLot,
     AssetRequest,
     ReturnImages,
+    YearlyCheckupLog,
 )
 from base.methods import (
     closest_numbers,
@@ -223,6 +225,120 @@ def asset_update(request, asset_id):
     return render(request, "asset/asset_update.html", context=context)
 
 
+def build_asset_timeline(asset):
+    """
+    Build a unified, time-sorted audit trail of every notable event in an
+    asset's life: creation, each allocation, each return, each yearly
+    check-up, and each report.
+
+    Returns a list of dicts ordered newest first. Each dict has:
+        - timestamp: datetime/date used for sorting
+        - sort_key:  comparable datetime (timestamp normalised)
+        - kind:      'created' | 'allocated' | 'returned' | 'checkup' | 'report'
+        - actor:     Employee or User who performed the action (or None)
+        - title:     short headline shown in the bubble header
+        - body:      free-text body
+        - images:    iterable of ReturnImages
+        - documents: iterable of AssetDocuments
+        - extras:    dict for kind-specific badges/values
+    """
+    from datetime import datetime, time
+
+    events = []
+
+    def _to_dt(value):
+        if value is None:
+            return datetime.min
+        if isinstance(value, datetime):
+            return value.replace(tzinfo=None) if value.tzinfo else value
+        return datetime.combine(value, time.min)
+
+    if asset.created_at:
+        events.append({
+            "timestamp": _to_dt(asset.created_at),
+            "sort_key": _to_dt(asset.created_at),
+            "kind": "created",
+            "actor": asset.created_by,
+            "title": _("Asset added to inventory"),
+            "body": asset.asset_description or "",
+            "images": [],
+            "documents": [],
+            "extras": {"tracking_id": asset.asset_tracking_id},
+        })
+
+    assignments = AssetAssignment.objects.filter(asset_id=asset).select_related(
+        "assigned_to_employee_id", "assigned_by_employee_id"
+    )
+    for assignment in assignments:
+        if assignment.assigned_date:
+            events.append({
+                "timestamp": _to_dt(assignment.assigned_date),
+                "sort_key": _to_dt(assignment.assigned_date),
+                "kind": "allocated",
+                "actor": assignment.assigned_by_employee_id,
+                "title": _("Allocated to %(employee)s") % {
+                    "employee": assignment.assigned_to_employee_id or "-",
+                },
+                "body": "",
+                "images": list(assignment.assign_images.all()),
+                "documents": [],
+                "extras": {
+                    "assigned_to": assignment.assigned_to_employee_id,
+                    "assignment_id": assignment.id,
+                },
+            })
+        if assignment.return_date:
+            events.append({
+                "timestamp": _to_dt(assignment.return_date),
+                "sort_key": _to_dt(assignment.return_date),
+                "kind": "returned",
+                "actor": assignment.assigned_to_employee_id,
+                "title": _("Returned by %(employee)s") % {
+                    "employee": assignment.assigned_to_employee_id or "-",
+                },
+                "body": assignment.return_condition or "",
+                "images": list(assignment.return_images.all()),
+                "documents": [],
+                "extras": {
+                    "return_status": assignment.return_status,
+                    "assignment_id": assignment.id,
+                },
+            })
+        for log in assignment.checkup_logs.all():
+            log_ts = log.created_at or log.checkup_date
+            events.append({
+                "timestamp": _to_dt(log_ts),
+                "sort_key": _to_dt(log_ts),
+                "kind": "checkup",
+                "actor": log.submitted_by,
+                "title": _("Yearly check-up performed"),
+                "body": log.description or "",
+                "images": list(log.images.all()),
+                "documents": [],
+                "extras": {
+                    "checkup_date": log.checkup_date,
+                    "assigned_to": assignment.assigned_to_employee_id,
+                    "assignment_id": assignment.id,
+                },
+            })
+
+    for report in asset.asset_report.all():
+        events.append({
+            "timestamp": _to_dt(report.created_at),
+            "sort_key": _to_dt(report.created_at),
+            "kind": "report",
+            "actor": report.created_by,
+            "title": _("Report filed: %(title)s") % {"title": report.title or "-"},
+            "body": "",
+            "images": [],
+            "documents": list(report.documents.all()) if hasattr(report, "documents") else [],
+            "extras": {"report_id": report.id},
+        })
+
+    events.sort(key=lambda e: e["sort_key"], reverse=True)
+    return events
+
+
 @login_required
 @hx_request_required
 def asset_information(request, asset_id):
@@ -236,7 +352,10 @@ def asset_information(request, asset_id):
     """
 
     asset = Asset.objects.get(id=asset_id)
-    context = {"asset": asset}
+    context = {
+        "asset": asset,
+        "asset_timeline": build_asset_timeline(asset),
+    }
     requests_ids_json = request.GET.get("requests_ids")
     if requests_ids_json:
         requests_ids = json.loads(requests_ids_json)
@@ -885,19 +1004,26 @@ def filter_pagination_asset_request_allocation(request):
     and returns a context dictionary with the filtered data and associated forms for rendering in
     a template.
     """
+    from django.contrib.auth.models import Group
+
     asset_request_allocation_search = request.GET.get("search")
     request_field = request.GET.get("request_field")
     allocation_field = request.GET.get("allocation_field")
     if asset_request_allocation_search is None:
         asset_request_allocation_search = ""
     employee = request.user.employee_get
-    asset_assignment = AssetAssignment.objects.all()
-    asset_request = filtersubordinates(
-        request=request,
-        perm="asset.view_assetrequest",
-        queryset=AssetRequest.objects.all(),
-        field="requested_employee_id",
-    ) | AssetRequest.objects.filter(requested_employee_id=request.user.employee_get)
+    is_hr_or_ops = (
+        request.user.is_superuser
+        or request.user.groups.filter(name__in=("HR", "OPS")).exists()
+    )
+    if is_hr_or_ops:
+        asset_assignment = AssetAssignment.objects.all()
+        asset_request = AssetRequest.objects.all()
+    else:
+        asset_assignment = AssetAssignment.objects.filter(
+            assigned_to_employee_id=employee
+        )
+        asset_request = AssetRequest.objects.filter(requested_employee_id=employee)
     asset_request = asset_request.distinct()
     if request.GET.get("assign_sortby"):
         asset_assignment = sortby(request, asset_assignment, "assign_sortby")
@@ -1040,7 +1166,13 @@ def own_asset_individual_view(request, asset_id):
         request : HTTP request object
         id (int): Id of the asset assignment
     """
-    asset_assignment = AssetAssignment.objects.get(id=asset_id)
+    asset_assignment = get_object_or_404(AssetAssignment, id=asset_id)
+    is_hr_or_ops = (
+        request.user.is_superuser
+        or request.user.groups.filter(name__in=("HR", "OPS")).exists()
+    )
+    if not is_hr_or_ops and asset_assignment.assigned_to_employee_id != request.user.employee_get:
+        return HttpResponse(status=403)
     asset = asset_assignment.asset_id
     context = {
         "asset": asset,
@@ -1077,7 +1209,13 @@ def asset_request_individual_view(request, asset_request_id):
     dashboard = not request.META.get("HTTP_HX_CURRENT_URL", "").endswith(
         "asset-request-allocation-view/"
     )
-    asset_request = AssetRequest.objects.get(id=asset_request_id)
+    asset_request = get_object_or_404(AssetRequest, id=asset_request_id)
+    is_hr_or_ops = (
+        request.user.is_superuser
+        or request.user.groups.filter(name__in=("HR", "OPS")).exists()
+    )
+    if not is_hr_or_ops and asset_request.requested_employee_id != request.user.employee_get:
+        return HttpResponse(status=403)
     context = {
         "asset_request": asset_request,
         "dashboard": dashboard,
@@ -1110,7 +1248,13 @@ def asset_allocation_individual_view(request, asset_allocation_id):
     Returns:
         HttpResponse: The rendered 'individual_allocation.html' template with the context data.
     """
-    asset_allocation = AssetAssignment.objects.get(id=asset_allocation_id)
+    asset_allocation = get_object_or_404(AssetAssignment, id=asset_allocation_id)
+    is_hr_or_ops = (
+        request.user.is_superuser
+        or request.user.groups.filter(name__in=("HR", "OPS")).exists()
+    )
+    if not is_hr_or_ops and asset_allocation.assigned_to_employee_id != request.user.employee_get:
+        return HttpResponse(status=403)
     context = {"asset_allocation": asset_allocation}
     allocation_ids_json = request.GET.get("allocations_ids")
     if allocation_ids_json:
@@ -1869,17 +2013,416 @@ def asset_request_tab(request, emp_id):
 @permission_required(perm="asset.view_assetassignment")
 def trigger_checkup_notifications(request):
     """
-    Temporary view to manually trigger checkup notification schedulers for QA testing.
+    Manually trigger checkup notification schedulers for QA testing.
+
+    Query params:
+        type=upcoming|overdue (default: upcoming)
+        reset=1 — clears the matching idempotency flag on every active
+                  assignment first, so the job will re-fire even if you
+                  already tested today.
     """
+    from datetime import date, timedelta
+
+    from asset.models import AssetAssignment
     from asset.scheduler import notify_overdue_checkups, notify_upcoming_checkups
 
     notification_type = request.GET.get("type", "upcoming")
+    reset = request.GET.get("reset") == "1"
+    today = date.today()
+
+    # Snapshot what the filter will see before we run the job, so the user
+    # immediately knows whether anything *can* match.
+    if notification_type == "overdue":
+        flag_field = "last_overdue_notification_date"
+        if reset:
+            reset_count = AssetAssignment.objects.filter(
+                yearly_checkup_date__lt=today,
+                checkup_completed=False,
+                return_date__isnull=True,
+            ).update(last_overdue_notification_date=None)
+        else:
+            reset_count = 0
+        candidates = AssetAssignment.objects.filter(
+            yearly_checkup_date__lt=today,
+            checkup_completed=False,
+            return_date__isnull=True,
+            last_overdue_notification_date__isnull=True,
+        )
+    else:
+        flag_field = "last_upcoming_notification_date"
+        if reset:
+            reset_count = AssetAssignment.objects.filter(
+                yearly_checkup_date__gt=today,
+                yearly_checkup_date__lte=today + timedelta(days=30),
+                checkup_completed=False,
+                return_date__isnull=True,
+            ).update(last_upcoming_notification_date=None)
+        else:
+            reset_count = 0
+        candidates = AssetAssignment.objects.filter(
+            yearly_checkup_date__gt=today,
+            yearly_checkup_date__lte=today + timedelta(days=30),
+            checkup_completed=False,
+            return_date__isnull=True,
+            last_upcoming_notification_date__isnull=True,
+        )
+
+    candidate_ids = list(candidates.values_list("pk", flat=True))
+    match_count = len(candidate_ids)
 
     if notification_type == "overdue":
         notify_overdue_checkups()
-        messages.success(request, _("Overdue checkup notifications triggered."))
     else:
         notify_upcoming_checkups()
-        messages.success(request, _("Upcoming checkup notifications triggered."))
+
+    if match_count == 0:
+        # Help the admin understand why nothing fired.
+        total_assigned = AssetAssignment.objects.filter(
+            checkup_completed=False, return_date__isnull=True
+        ).count()
+        already_flagged = AssetAssignment.objects.filter(
+            checkup_completed=False,
+            return_date__isnull=True,
+            **{f"{flag_field}__isnull": False},
+        ).count()
+        messages.warning(
+            request,
+            _(
+                "%(type)s trigger ran but matched 0 assignments. "
+                "Active assignments: %(total)s. Already-notified (flag set): %(flagged)s. "
+                "Add ?reset=1 to the URL to clear the flag and retest."
+            ) % {
+                "type": notification_type.capitalize(),
+                "total": total_assigned,
+                "flagged": already_flagged,
+            },
+        )
+    else:
+        messages.success(
+            request,
+            _(
+                "%(type)s trigger ran. Matched %(count)s assignment(s) (ids: %(ids)s)%(reset)s. "
+                "Check the server console for [CheckupMailThread] SENT/failed lines."
+            ) % {
+                "type": notification_type.capitalize(),
+                "count": match_count,
+                "ids": ", ".join(str(i) for i in candidate_ids) or "-",
+                "reset": (
+                    f" — reset %d flag(s)" % reset_count if reset else ""
+                ),
+            },
+        )
 
     return redirect("asset-request-allocation-view")
+
+
+@login_required
+@hx_request_required
+def asset_yearly_checkup_submit(request, asset_allocation_id):
+    """
+    Submit a yearly check-up for an asset allocation.
+
+    All authenticated users can submit a check-up. On success the assignment is
+    marked Complete and a notification is sent to Admin (superusers) and the
+    ISO group immediately.
+    """
+    asset_allocation = get_object_or_404(AssetAssignment, id=asset_allocation_id)
+
+    if not asset_allocation.is_checkup_button_enabled:
+        messages.error(
+            request,
+            _("Yearly check-up can only be submitted within 30 days of the scheduled date."),
+        )
+        if request.META.get("HTTP_HX_REQUEST") == "true":
+            return HttpResponse("<script>location.reload();</script>")
+        return redirect("asset-request-allocation-view")
+
+    initial = {"yearly_checkup_date": date.today()}
+    form = YearlyCheckupForm(instance=asset_allocation, initial=initial)
+
+    if request.method == "POST":
+        form = YearlyCheckupForm(
+            request.POST, request.FILES, instance=asset_allocation
+        )
+        if form.is_valid():
+            assignment = form.save(commit=False)
+            assignment.checkup_completed = True
+            checkup_date = form.cleaned_data.get(
+                "yearly_checkup_date"
+            ) or date.today()
+            # Advance the next scheduled check-up by one year so the eligibility
+            # window re-opens for the next cycle.
+            try:
+                assignment.yearly_checkup_date = checkup_date.replace(
+                    year=checkup_date.year + 1
+                )
+            except ValueError:
+                assignment.yearly_checkup_date = checkup_date.replace(
+                    year=checkup_date.year + 1, day=28
+                )
+            # Clear notification flags so next year's Upcoming/Overdue re-trigger.
+            assignment.last_upcoming_notification_date = None
+            assignment.last_overdue_notification_date = None
+            assignment.save()
+
+            files = request.FILES.getlist("checkup_images")
+            attachments = []
+            for file in files:
+                attachment = ReturnImages()
+                attachment.image = file
+                attachment.save()
+                attachments.append(attachment)
+
+            log = YearlyCheckupLog.objects.create(
+                asset_assignment=assignment,
+                checkup_date=checkup_date,
+                description=form.cleaned_data.get("checkup_description") or "",
+                submitted_by=getattr(request.user, "employee_get", None),
+            )
+            if attachments:
+                log.images.add(*attachments)
+
+            send_checkup_completion_notification(request, assignment)
+            messages.success(
+                request, _("Yearly check-up submitted successfully.")
+            )
+            response = render(
+                request,
+                "request_allocation/yearly_checkup_form.html",
+                {
+                    "yearly_checkup_form": YearlyCheckupForm(initial=initial),
+                    "asset_allocation": assignment,
+                },
+            )
+            return HttpResponse(
+                response.content.decode("utf-8")
+                + "<script>location.reload();</script>"
+            )
+
+    context = {
+        "yearly_checkup_form": form,
+        "asset_allocation": asset_allocation,
+    }
+    return render(
+        request, "request_allocation/yearly_checkup_form.html", context
+    )
+
+
+def send_checkup_completion_notification(request, assignment):
+    """
+    Notify Admin (superusers) and ISO group users that a yearly check-up has
+    been marked complete for an asset assignment.
+    """
+    import logging
+
+    from django.contrib.auth.models import Group, User
+
+    logger = logging.getLogger(__name__)
+    logger.info(
+        "[send_checkup_completion_notification] START assignment=%s",
+        assignment.pk,
+    )
+
+    asset = assignment.asset_id
+    employee = assignment.assigned_to_employee_id
+    checkup_date = (
+        assignment.yearly_checkup_date.strftime("%Y-%m-%d")
+        if assignment.yearly_checkup_date
+        else "-"
+    )
+
+    submitted_by = (
+        request.user.employee_get
+        if hasattr(request.user, "employee_get")
+        else request.user
+    )
+
+    message = (
+        f"Yearly check-up for asset '{asset.asset_name}' "
+        f"({asset.asset_tracking_id}) assigned to {employee.get_full_name()} "
+        f"has been marked Complete on {checkup_date}."
+    )
+    message_ar = (
+        f"تم وضع علامة على الفحص السنوي للأصل '{asset.asset_name}' "
+        f"({asset.asset_tracking_id}) المخصص للموظف {employee.get_full_name()} "
+        f"كمكتمل بتاريخ {checkup_date}."
+    )
+    message_de = (
+        f"Die jährliche Überprüfung für Asset '{asset.asset_name}' "
+        f"({asset.asset_tracking_id}), zugewiesen an {employee.get_full_name()}, "
+        f"wurde am {checkup_date} als abgeschlossen markiert."
+    )
+    message_es = (
+        f"La revisión anual del activo '{asset.asset_name}' "
+        f"({asset.asset_tracking_id}) asignado a {employee.get_full_name()} "
+        f"se marcó como completada el {checkup_date}."
+    )
+    message_fr = (
+        f"Le contrôle annuel de l'actif '{asset.asset_name}' "
+        f"({asset.asset_tracking_id}) attribué à {employee.get_full_name()} "
+        f"a été marqué comme terminé le {checkup_date}."
+    )
+
+    iso_group_name = "ISO"
+    recipient_user_qs = User.objects.filter(is_active=True).filter(
+        Q(is_superuser=True) | Q(groups__name=iso_group_name)
+    ).distinct()
+    logger.info(
+        "[send_checkup_completion_notification] recipients (superusers + %s group) count=%s ids=%s",
+        iso_group_name,
+        recipient_user_qs.count(),
+        list(recipient_user_qs.values_list("pk", flat=True)),
+    )
+
+    if not recipient_user_qs.exists():
+        logger.warning(
+            "[send_checkup_completion_notification] no superusers or %s group members; aborting",
+            iso_group_name,
+        )
+        return
+
+    notify.send(
+        submitted_by,
+        recipient=recipient_user_qs,
+        verb=message,
+        verb_ar=message_ar,
+        verb_de=message_de,
+        verb_es=message_es,
+        verb_fr=message_fr,
+        redirect=reverse("asset-request-allocation-view"),
+        label="System",
+        icon="checkmark-circle",
+    )
+    logger.info(
+        "[send_checkup_completion_notification] in-app notify sent to %s recipient(s)",
+        recipient_user_qs.count(),
+    )
+
+    from asset.threading import CheckupMailThread
+    from employee.models import Employee
+
+    email_context = {
+        "asset_name": asset.asset_name,
+        "tracking_id": asset.asset_tracking_id,
+        "assigned_to": employee.get_full_name(),
+        "checkup_date": checkup_date,
+        "service_shop": assignment.service_shop_name or "N/A",
+        "message": message,
+    }
+    email_recipients = list(
+        Employee.objects.filter(employee_user_id__in=recipient_user_qs)
+    )
+    logger.info(
+        "[send_checkup_completion_notification] email recipients employees=%s emails=%s",
+        [str(e) for e in email_recipients],
+        [e.get_mail() for e in email_recipients],
+    )
+    if email_recipients:
+        CheckupMailThread(
+            email_recipients, email_context, notification_type="completed"
+        ).start()
+        logger.info(
+            "[send_checkup_completion_notification] CheckupMailThread started type=completed"
+        )
+    else:
+        logger.warning(
+            "[send_checkup_completion_notification] no Employee rows linked to recipient users; "
+            "no email will be sent. Check that the superusers/ISO users have linked Employee records."
+        )
+
+
+def _is_asset_admin(user):
+    return (
+        user.is_superuser
+        or user.groups.filter(name__in=("HR", "OPS", "ISO")).exists()
+        or user.has_perm("asset.view_assetassignment")
+    )
+
+
+@login_required
+def asset_yearly_checkup_list(request):
+    """
+    Standalone list of asset allocations for yearly check-up tracking.
+
+    HR/OPS/ISO/superusers and users with `asset.view_assetassignment` see every
+    allocation; everyone else sees only their own. Clicking a row navigates to
+    the full-page detail view that shows the chat-style submission timeline.
+    """
+    qs = (
+        AssetAssignment.objects.select_related(
+            "asset_id",
+            "asset_id__asset_category_id",
+            "assigned_to_employee_id",
+        )
+        .prefetch_related("checkup_logs")
+    )
+    if not _is_asset_admin(request.user):
+        qs = qs.filter(assigned_to_employee_id=request.user.employee_get)
+
+    search = request.GET.get("search", "").strip()
+    if search:
+        qs = qs.filter(
+            Q(asset_id__asset_name__icontains=search)
+            | Q(assigned_to_employee_id__employee_first_name__icontains=search)
+            | Q(assigned_to_employee_id__employee_last_name__icontains=search)
+        )
+
+    status_filter = request.GET.get("status", "").strip()
+    if status_filter == "complete":
+        qs = qs.filter(checkup_completed=True)
+    elif status_filter == "overdue":
+        qs = qs.filter(
+            checkup_completed=False,
+            yearly_checkup_date__lte=date.today(),
+            return_date__isnull=True,
+        )
+    elif status_filter == "pending":
+        qs = qs.exclude(checkup_completed=True).exclude(
+            yearly_checkup_date__lte=date.today(),
+            return_date__isnull=True,
+        )
+
+    qs = qs.order_by("yearly_checkup_date", "-id")
+    page_obj = Paginator(qs, get_pagination()).get_page(request.GET.get("page"))
+    context = {
+        "allocations": page_obj,
+        "search": search,
+        "status_filter": status_filter,
+    }
+    if request.headers.get("HX-Request"):
+        return render(
+            request,
+            "request_allocation/_yearly_checkup_rows.html",
+            context,
+        )
+    return render(
+        request,
+        "request_allocation/yearly_checkup_list.html",
+        context,
+    )
+
+
+@login_required
+def asset_yearly_checkup_detail(request, allocation_id):
+    """
+    Full-page detail for an asset allocation, modeled after the helpdesk
+    ticket-detail layout: a chat-style timeline of check-up submissions on the
+    left and summary cards (asset, allocation, status, documents) on the right.
+    """
+    asset_allocation = get_object_or_404(AssetAssignment, id=allocation_id)
+    if (
+        not _is_asset_admin(request.user)
+        and asset_allocation.assigned_to_employee_id != request.user.employee_get
+    ):
+        return HttpResponse(status=403)
+
+    checkup_logs = asset_allocation.checkup_logs.all().order_by("created_at", "id")
+    context = {
+        "asset_allocation": asset_allocation,
+        "checkup_logs": checkup_logs,
+    }
+    return render(
+        request,
+        "request_allocation/yearly_checkup_detail.html",
+        context,
+    )

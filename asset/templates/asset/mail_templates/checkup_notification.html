@@ -108,8 +108,8 @@
                             font-size: 12px;
                         "
                     >
-                        This email was sent because an asset check-up is
-                        {% if is_overdue %}overdue{% else %}approaching{% endif %}.
+                        This email was sent because an asset check-up
+                        {% if is_completed %}has been marked complete{% elif is_overdue %}is overdue{% else %}is approaching{% endif %}.
                     </td>
                 </tr>
                 <tr>

@@ -20,6 +20,26 @@ INSTALLED_APPS.append("helpdesk")
 INSTALLED_APPS.append("offboarding")
 INSTALLED_APPS.append("horilla_backup")
 INSTALLED_APPS.append("project")
+INSTALLED_APPS.append("horilla_retention")
+INSTALLED_APPS.append("turnstile")
+
+# Cloudflare Turnstile keys for login challenge. Default to Cloudflare's
+# published "always passes" test keys so local dev works without any setup;
+# production deployments MUST set real keys via env (TURNSTILE_SITEKEY,
+# TURNSTILE_SECRETKEY) in the .env file.
+setattr(
+    settings,
+    "TURNSTILE_SITEKEY",
+    settings.env("TURNSTILE_SITEKEY", default="1x00000000000000000000AA"),
+)
+setattr(
+    settings,
+    "TURNSTILE_SECRETKEY",
+    settings.env(
+        "TURNSTILE_SECRETKEY", default="1x0000000000000000000000000000000AA"
+    ),
+)
+
 if settings.env("AWS_ACCESS_KEY_ID", default=None) and "storages" not in INSTALLED_APPS:
     INSTALLED_APPS.append("storages")
 
@@ -48,6 +68,7 @@ SIDEBARS = [
     "recruitment",
     "onboarding",
     "employee",
+    "time_tracker",
     "attendance",
     "leave",
     "payroll",
@@ -56,8 +77,10 @@ SIDEBARS = [
     "asset",
     "helpdesk",
     "project",
+    "horilla_retention",
+    "horilla_audit",
 ]
 
 WHITE_LABELLING = False
 NESTED_SUBORDINATE_VISIBILITY = False
-TWO_FACTORS_AUTHENTICATION = True
+TWO_FACTORS_AUTHENTICATION = False

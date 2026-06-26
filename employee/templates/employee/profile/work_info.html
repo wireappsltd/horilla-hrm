@@ -1,6 +1,10 @@
 {% load i18n %}
 <div class="oh-general__tab-target oh-profile-section mb-4 d-none" id="work" data-select2-id="select2-data-work">
     <div class="oh-profile-section__card" data-select2-id="select2-data-29-vht3">
+        <div id="workMessage"></div>
+        <form method="post" action="" novalidate>
+            {% csrf_token %}
+            <input type="hidden" name="form_type" value="work">
         <div class="row" data-select2-id="select2-data-27-19z8">
             <div class="col-12 col-sm-12 col-md-12 col-lg-6" data-select2-id="select2-data-26-o2rs">
             <div class="oh-input-group" data-select2-id="select2-data-25-5380">
@@ -87,9 +91,21 @@
                 {{work_form.salary_hour}}
             </div>
             </div>
+            <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+            <div class="oh-input-group">
+                <label class="oh-label">{% trans "Intern Period End Date" %}</label>
+                {{work_form.intern_period_end_date}}
+            </div>
+            </div>
         </div>
 
 
+        <hr class="mt-5 mb-3" />
+        <div class="w-100 d-flex align-items-center justify-content-end">
+            <button type="submit" class="oh-btn oh-btn--secondary oh-btn--w-100-resp">
+                {% trans "Save" %}
+            </button>
+        </div>
         </form>
     </div>
     </div>
