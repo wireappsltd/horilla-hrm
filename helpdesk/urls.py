@@ -265,5 +265,41 @@ urlpatterns = [
         views.exception_request_delete,
         name="exception-request-delete",
     ),
+    # ── Admin Access Request URLs ────────────────────────────────────────────
+    path(
+        "admin-access-request/create/",
+        views.admin_access_request_create,
+        name="admin-access-request-create",
+    ),
+    path(
+        "admin-access-request/update/<int:aar_id>/",
+        views.admin_access_request_update,
+        name="admin-access-request-update",
+    ),
+    path(
+        "admin-access-request/iso-review/<int:aar_id>/",
+        views.iso_review_admin_access_request,
+        name="admin-access-request-iso-review",
+    ),
+    path(
+        "admin-access-request/isc-review/<int:aar_id>/",
+        views.isc_review_admin_access_request,
+        name="admin-access-request-isc-review",
+    ),
+    path(
+        "admin-access-request/acknowledge/<int:aar_id>/",
+        views.admin_access_request_acknowledge,
+        name="admin-access-request-acknowledge",
+    ),
+    path(
+        "admin-access-request/withdraw/<int:aar_id>/",
+        views.admin_access_request_withdraw,
+        name="admin-access-request-withdraw",
+    ),
+    path(
+        "admin-access-request/delete/<int:aar_id>/",
+        views.admin_access_request_delete,
+        name="admin-access-request-delete",
+    ),
 ]
 
