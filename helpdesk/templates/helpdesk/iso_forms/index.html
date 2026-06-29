@@ -164,10 +164,20 @@
             {% include 'helpdesk/iso_forms/_access_request_list.html' with access_requests=access_requests %}
         </div>
     </div>
+
+    <div class="oh-card mb-4">
+        <div class="oh-card__body">
+            <h5 class="fw-bold mb-3">{% trans "Exception Requests" %}</h5>
+        </div>
+        <div id="exceptionRequestsList">
+            {% include 'helpdesk/iso_forms/_exception_request_list.html' with exception_requests=exception_requests %}
+        </div>
+    </div>
 </div>
 
 <div id="passwordResetModalTarget"></div>
 <div id="accessRequestModalTarget"></div>
+<div id="exceptionRequestModalTarget"></div>
 
 <div class="oh-modal" id="isoFormPickerModal" role="dialog" aria-labelledby="isoFormPickerTitle" aria-hidden="true">
     <div class="oh-modal__dialog">
