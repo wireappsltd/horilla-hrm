@@ -712,6 +712,12 @@
                                 <span class="helpdesk__card-label">{% trans "Domain:" %}</span>
                                 <span class="helpdesk__card-value">{{ access_request.get_domain_display }}</span>
                             </li>
+                            {% if access_request.effective_date %}
+                            <li class="helpdesk__card-item">
+                                <span class="helpdesk__card-label">{% trans "Effective Date:" %}</span>
+                                <span class="helpdesk__card-value">{{ access_request.effective_date }}</span>
+                            </li>
+                            {% endif %}
                             <li class="helpdesk__card-item">
                                 <span class="helpdesk__card-label">{% trans "User:" %}</span>
                                 <span class="helpdesk__card-value">{{ ticket.employee_id.get_full_name|default:access_request.user_id }}</span>
@@ -1204,7 +1210,6 @@
     }
 
     $(document).ready(function () {
-        // Initialize summernote on the edit comment editor (hidden until modal opens)
         try {
             $('#editCommentTextarea').summernote(noteProperties());
         } catch (e) { /* summernote may already be initialized via data-summernote */ }

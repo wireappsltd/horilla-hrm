@@ -442,14 +442,24 @@ class AccessRequest(HorillaModel):
     )
     user_id = models.EmailField(verbose_name=_("User ID (Email)"))
     requested_date = models.DateField(verbose_name=_("Requested Date"))
+    effective_date = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name=_("Effective Date"),
+    )
+
     business_critical = models.CharField(
         max_length=3,
         choices=ACCESS_BUSINESS_CRITICAL_CHOICES,
+        null=True,
+        blank=True,
         verbose_name=_("Business Critical Systems"),
     )
     level_of_access = models.CharField(
         max_length=20,
         choices=ACCESS_LEVEL_CHOICES,
+        null=True,
+        blank=True,
         verbose_name=_("Level of Access"),
     )
     domain = models.CharField(

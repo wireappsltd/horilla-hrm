@@ -43,22 +43,34 @@
                     </div>
                 </div>
 
-                <!-- Access Request fields (rendered when "Access Request" is selected) -->
+                <!-- User ID (Email) & Domain -->
+                <div class="oh-layout--row mt-2">
+                    <div class="oh-form__group col-md-6">
+                        <label class="oh-label oh-label--mandatory" for="id_user_email">
+                            {% trans "User ID (Email)" %} <span style="color: red;">*</span>
+                        </label>
+                        {{ form.user_email }}
+                        {% if form.user_email.errors %}
+                            <span class="oh-text--danger" style="font-size:12px;">{{ form.user_email.errors|join:", " }}</span>
+                        {% endif %}
+                    </div>
+
+                    <div class="oh-form__group col-md-6">
+                        <label class="oh-label oh-label--mandatory" for="id_domain">
+                            {% trans "Domain" %} <span style="color: red;">*</span>
+                        </label>
+                        {{ form.domain }}
+                        {% if form.domain.errors %}
+                            <span class="oh-text--danger" style="font-size:12px;">{{ form.domain.errors|join:", " }}</span>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Access Request fields -->
                 <div id="accessRequestFields">
                     <div class="oh-layout--row mt-2">
-                        <!-- User ID (Email) -->
-                        <div class="oh-form__group col-md-6">
-                            <label class="oh-label oh-label--mandatory" for="id_user_email">
-                                {% trans "User ID (Email)" %} <span style="color: red;">*</span>
-                            </label>
-                            {{ form.user_email }}
-                            {% if form.user_email.errors %}
-                                <span class="oh-text--danger" style="font-size:12px;">{{ form.user_email.errors|join:", " }}</span>
-                            {% endif %}
-                        </div>
-
                         <!-- Requested Date -->
-                        <div class="oh-form__group col-md-6">
+                        <div class="oh-form__group col-md-4">
                             <label class="oh-label oh-label--mandatory" for="id_requested_date">
                                 {% trans "Requested Date" %} <span style="color: red;">*</span>
                             </label>
@@ -67,9 +79,7 @@
                                 <span class="oh-text--danger" style="font-size:12px;">{{ form.requested_date.errors|join:", " }}</span>
                             {% endif %}
                         </div>
-                    </div>
 
-                    <div class="oh-layout--row mt-2">
                         <!-- Business Critical Systems -->
                         <div class="oh-form__group col-md-4">
                             <label class="oh-label oh-label--mandatory" for="id_business_critical">
@@ -91,19 +101,26 @@
                                 <span class="oh-text--danger" style="font-size:12px;">{{ form.level_of_access.errors|join:", " }}</span>
                             {% endif %}
                         </div>
+                    </div>
+                </div>
 
-                        <!-- Domain -->
-                        <div class="oh-form__group col-md-4">
-                            <label class="oh-label oh-label--mandatory" for="id_domain">
-                                {% trans "Domain" %} <span style="color: red;">*</span>
+                <!-- Access Deactivation fields  -->
+                <div id="accessDeactivationFields" style="display:none;">
+                    <div class="oh-layout--row mt-2">
+                        <!-- Effective Date -->
+                        <div class="oh-form__group col-md-6">
+                            <label class="oh-label oh-label--mandatory" for="id_effective_date">
+                                {% trans "Effective Date" %} <span style="color: red;">*</span>
                             </label>
-                            {{ form.domain }}
-                            {% if form.domain.errors %}
-                                <span class="oh-text--danger" style="font-size:12px;">{{ form.domain.errors|join:", " }}</span>
+                            {{ form.effective_date }}
+                            {% if form.effective_date.errors %}
+                                <span class="oh-text--danger" style="font-size:12px;">{{ form.effective_date.errors|join:", " }}</span>
                             {% endif %}
                         </div>
                     </div>
+                </div>
 
+                <div>
                     <!-- Priority & Due Date -->
                     <div class="oh-layout--row mt-2">
                         <div class="oh-form__group col-md-6">
@@ -132,10 +149,10 @@
                         </div>
                     </div>
 
-                    <!-- Reason for Request -->
+                    <!-- Reason -->
                     <div class="oh-form__group mt-2">
                         <label class="oh-label oh-label--mandatory" for="id_reason">
-                            {% trans "Reason for Request" %} <span style="color: red;">*</span>
+                            <span id="accessReasonLabel">{% trans "Reason for Request" %}</span> <span style="color: red;">*</span>
                         </label>
                         {{ form.reason }}
                         <div class="d-flex justify-content-between mt-1">
@@ -172,17 +189,37 @@
 
         const form = modal.querySelector("form");
         const subType = modal.querySelector("#id_sub_type");
-        const fields = modal.querySelector("#accessRequestFields");
+        const requestFields = modal.querySelector("#accessRequestFields");
+        const deactivationFields = modal.querySelector("#accessDeactivationFields");
+        const reasonLabel = modal.querySelector("#accessReasonLabel");
         const reasonInput = modal.querySelector("#id_reason");
         const counter = modal.querySelector("#accessReasonCounter");
         const errorEl = modal.querySelector("#accessReasonClientError");
 
-        // Toggle the structured fields based on the selected sub-type.
+        // Toggle the structured fields based on the selected sub-type so the
+        // form changes the moment the user picks from the dropdown.
         const toggleFields = function () {
-            if (!subType || !fields) { return; }
-            // The structured fields are required for both sub-types; keep them
-            // visible whenever a sub-type is chosen.
-            fields.style.display = subType.value ? "block" : "block";
+            if (!subType) { return; }
+            const isDeactivation = subType.value === "access_deactivation";
+            if (requestFields) {
+                requestFields.style.display = isDeactivation ? "none" : "block";
+                requestFields.querySelectorAll("select, input").forEach(function (el) {
+                    el.required = !isDeactivation;
+                    el.disabled = isDeactivation;
+                });
+            }
+            if (deactivationFields) {
+                deactivationFields.style.display = isDeactivation ? "block" : "none";
+                deactivationFields.querySelectorAll("select, input").forEach(function (el) {
+                    el.required = isDeactivation;
+                    el.disabled = !isDeactivation;
+                });
+            }
+            if (reasonLabel) {
+                reasonLabel.textContent = isDeactivation
+                    ? "{% trans 'Reason for Deactivation' %}"
+                    : "{% trans 'Reason for Request' %}";
+            }
         };
         if (subType) {
             subType.addEventListener("change", toggleFields);

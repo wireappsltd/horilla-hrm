@@ -3301,12 +3301,30 @@ def _get_access_request_ticket_type():
 
 def _build_access_request_description(access_request, user_display):
     """Build the HTML description block shown on the linked Ticket.
-
     User-controlled values (``user_id``, ``user_display`` and ``reason``) are
     interpolated via :func:`~django.utils.html.format_html`, which escapes every
     argument. This prevents stored XSS even though the resulting description is
     later rendered with the ``|safe`` filter.
+
     """
+    if access_request.sub_type == "access_deactivation":
+        effective_date = access_request.effective_date
+        return format_html(
+            "<b>{} Details:</b><br><br>"
+            "<b>Sub Type:</b> {}<br>"
+            "<b>User ID (Email):</b> {}<br>"
+            "<b>Domain:</b> {}<br>"
+            "<b>Effective Date:</b> {}<br>"
+            "<b>User:</b> {}<br>"
+            "<b>Reason:</b> {}",
+            access_request.get_sub_type_display(),
+            access_request.get_sub_type_display(),
+            access_request.user_id,
+            access_request.get_domain_display(),
+            effective_date.isoformat() if effective_date else "",
+            user_display,
+            access_request.reason,
+        )
     return format_html(
         "<b>{} Details:</b><br><br>"
         "<b>Sub Type:</b> {}<br>"
