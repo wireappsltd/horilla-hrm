@@ -4035,7 +4035,11 @@ def exception_request_create(request):
 @hx_request_required
 def exception_request_update(request, er_id):
     """Allow the owner / ISO officer to edit a PENDING Exception Request."""
-    exception_request = ExceptionRequest.objects.get(id=er_id)
+    try:
+        exception_request = ExceptionRequest.objects.get(id=er_id)
+    except ExceptionRequest.DoesNotExist:
+        messages.error(request, _("Exception request not found."))
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
     ticket = exception_request.ticket
 
     current_employee = getattr(request.user, "employee_get", None)
@@ -4124,7 +4128,11 @@ def iso_review_exception_request(request, er_id):
         messages.info(request, _("Only an ISO Officer can review this request."))
         return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
 
-    exception_request = ExceptionRequest.objects.get(id=er_id)
+    try:
+        exception_request = ExceptionRequest.objects.get(id=er_id)
+    except ExceptionRequest.DoesNotExist:
+        messages.error(request, _("Exception request not found."))
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
 
     if _is_exception_request_owner(request.user, exception_request):
         messages.info(request, _("You cannot approve or reject your own request."))
@@ -4225,7 +4233,11 @@ def isc_review_exception_request(request, er_id):
         messages.info(request, _("Only an IS Council member can review this request."))
         return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
 
-    exception_request = ExceptionRequest.objects.get(id=er_id)
+    try:
+        exception_request = ExceptionRequest.objects.get(id=er_id)
+    except ExceptionRequest.DoesNotExist:
+        messages.error(request, _("Exception request not found."))
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
 
     if _is_exception_request_owner(request.user, exception_request):
         messages.info(request, _("You cannot approve or reject your own request."))
@@ -4305,7 +4317,11 @@ def exception_request_acknowledge(request, er_id):
     if request.method != "POST":
         return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
 
-    exception_request = ExceptionRequest.objects.get(id=er_id)
+    try:
+        exception_request = ExceptionRequest.objects.get(id=er_id)
+    except ExceptionRequest.DoesNotExist:
+        messages.error(request, _("Exception request not found."))
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
     if not _is_exception_request_owner(request.user, exception_request):
         messages.error(request, _("Only the requestor can close this request."))
         return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
