@@ -3974,8 +3974,10 @@ def exception_request_create(request):
             )
             raised_on = ",".join(combined_employee_ids) or str(selected_employee.id)
 
+            ref = (exception_request.isms_reference or "").strip()
+            short_ref = (ref[:27] + "...") if len(ref) > 30 else ref
             ticket = Ticket(
-                title=f"Exception Request – {exception_request.isms_reference}",
+                title=f"Exception Request – {short_ref}",
                 employee_id=selected_employee,
                 ticket_type=ticket_type,
                 description=_build_exception_request_description(
@@ -4052,9 +4054,7 @@ def exception_request_update(request, er_id):
         messages.info(request, _("You don't have permission."))
         if "HTTP_HX_REQUEST" in request.META:
             return render(request, "decorator_404.html")
-        return HttpResponse(
-            f'<script>window.location.href = "{request.META.get("HTTP_REFERER", "/")}"</script>'
-        )
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
 
     if exception_request.status != "PENDING":
         messages.info(
@@ -4100,7 +4100,9 @@ def exception_request_update(request, er_id):
             ticket.employee_id = selected_employee
             ticket.priority = form.cleaned_data.get("priority")
             ticket.deadline = form.cleaned_data.get("deadline")
-            ticket.title = f"Exception Request – {exception_request.isms_reference}"
+            ref = (exception_request.isms_reference or "").strip()
+            short_ref = (ref[:27] + "...") if len(ref) > 30 else ref
+            ticket.title = f"Exception Request – {short_ref}"
             ticket.description = _build_exception_request_description(
                 exception_request, user_display
             )
@@ -4169,9 +4171,7 @@ def iso_review_exception_request(request, er_id):
                 messages.success(request, _("Exception request approved (Stage 1)."))
                 # Notify Stage 2 reviewers (IS Council members).
                 try:
-                    isc_recipients = list(exception_request.forward_to.all()) or [
-                        u for u in _get_isc_users()
-                    ]
+                    isc_recipients = list(exception_request.forward_to.all()) or _get_isc_users()
                     if isc_recipients:
                         notify.send(
                             request.user.employee_get,
