@@ -4696,7 +4696,7 @@ def admin_access_request_update(request, aar_id):
             ticket.priority = form.cleaned_data.get("priority")
             ticket.deadline = form.cleaned_data.get("deadline")
             app = (admin_access_request.system_application or "").strip()
-            short_app = (app[:27] + "...") if len(app) > 30 else app
+            short_app = (app[:24] + "...") if len(app) > 27 else app
             ticket.title = f"Admin Access Request – {short_app}"
             ticket.description = _build_admin_access_request_description(
                 admin_access_request, user_display
