@@ -1165,11 +1165,8 @@ def ticket_detail(request, ticket_id, **kwargs):
         access_request = getattr(ticket, "access_request", None)
         access_review_form = ISOReviewForm() if access_request else None
 
-        # Fetch exception request if it exists for this ticket. Mirrors the
-        # access-request accept/reject workflow, but uses the two-stage
-        # (ISO Officer → IS Council) approval procedure.
+        # Fetch exception request if it exists for this ticket.
         exception_request = getattr(ticket, "exception_request", None)
-        exception_review_form = ISOReviewForm() if exception_request else None
 
         context = {
             "ticket": ticket,
@@ -1192,7 +1189,6 @@ def ticket_detail(request, ticket_id, **kwargs):
             "access_request": access_request,
             "access_review_form": access_review_form,
             "exception_request": exception_request,
-            "exception_review_form": exception_review_form,
             "is_iso_officer": request.user.is_superuser or _is_iso_officer(request.user),
             "is_divisional_head": request.user.is_superuser
             or _is_divisional_head(request.user),
