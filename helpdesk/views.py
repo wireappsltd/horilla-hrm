@@ -4572,7 +4572,7 @@ def admin_access_request_create(request):
             raised_on = ",".join(combined_employee_ids) or str(selected_employee.id)
 
             app = (admin_access_request.system_application or "").strip()
-            short_app = (app[:27] + "...") if len(app) > 30 else app
+            short_app = (app[:24] + "...") if len(app) > 27 else app
             ticket = Ticket(
                 title=f"Admin Access Request – {short_app}",
                 employee_id=selected_employee,
