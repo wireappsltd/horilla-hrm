@@ -3301,6 +3301,10 @@ def _get_access_request_ticket_type():
 
 def _build_access_request_description(access_request, user_display):
     """Build the HTML description block shown on the linked Ticket.
+    User-controlled values (``user_id``, ``user_display`` and ``reason``) are
+    interpolated via :func:`~django.utils.html.format_html`, which escapes every
+    argument. This prevents stored XSS even though the resulting description is
+    later rendered with the ``|safe`` filter.
 
     """
     if access_request.sub_type == "access_deactivation":
