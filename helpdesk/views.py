@@ -512,7 +512,9 @@ def ticket_view(request):
     all_tickets = []
     if is_reportingmanager(request):
         all_tickets = filtersubordinates(request, tickets, "helpdesk.view_ticket")
-    if request.user.has_perm("helpdesk.view_ticket"):
+    if request.user.has_perm("helpdesk.view_ticket") or _is_helpdesk_admin(
+        request.user
+    ):
         all_tickets = tickets
 
     data_dict = parse_qs(previous_data)
@@ -527,6 +529,7 @@ def ticket_view(request):
         "view": view,
         "today": datetime.today().date(),
         "filter_dict": data_dict,
+        "is_helpdesk_admin": _is_helpdesk_admin(request.user),
     }
 
     return render(request, template, context=context)
@@ -638,6 +641,7 @@ def ticket_update(request, ticket_id):
         or is_department_manager(request, ticket)
         or request.user.employee_get == ticket.employee_id
         or request.user.employee_get in ticket.assigned_to.all()
+        or _is_helpdesk_admin(request.user)
     ):
         form = TicketForm(instance=ticket)
         if request.method == "POST":
@@ -711,6 +715,7 @@ def ticket_archive(request, ticket_id):
         request.user.has_perm("helpdesk.change_ticket")
         or ticket.employee_id == request.user.employee_get
         or is_department_manager(request, ticket)
+        or _is_helpdesk_admin(request.user)
     ):
 
         # Toggle the ticket's active state
@@ -789,6 +794,7 @@ def change_ticket_status(request, ticket_id):
             user == ticket.employee_id
             or user in ticket.assigned_to.all()
             or request.user.has_perm("helpdesk.change_ticket")
+            or _is_helpdesk_admin(request.user)
         ):
             ticket.status = status
             ticket.save()
@@ -953,7 +959,9 @@ def ticket_filter(request):
 
     all_tickets = tickets.filter(is_active=True)
     all_tickets = filtersubordinates(request, tickets, "helpdesk.add_tickets")
-    if request.user.has_perm("helpdesk.view_ticket"):
+    if request.user.has_perm("helpdesk.view_ticket") or _is_helpdesk_admin(
+        request.user
+    ):
         all_tickets = tickets
 
     template = "helpdesk/ticket/ticket_list.html"
@@ -1057,6 +1065,7 @@ def ticket_detail(request, ticket_id, **kwargs):
         or request.user.employee_get == ticket.employee_id
         or request.user.employee_get in ticket.assigned_to.all()
         or is_forwarded_recipient
+        or _is_helpdesk_admin(request.user)
         or (has_pr and is_iso)
         or is_forward_to_user
         or (has_ar and (is_iso or is_dh))
@@ -1306,6 +1315,7 @@ def ticket_update_tag(request):
         request.user.has_perm("helpdesk.view_ticket")
         or request.user.employee_get == ticket.employee_id
         or is_department_manager(request, ticket)
+        or _is_helpdesk_admin(request.user)
     ):
         tagids = data.getlist("selectedValues[]")
         old_tags = list(ticket.tags.values_list("title", flat=True))
@@ -1360,6 +1370,7 @@ def ticket_change_raised_on(request, ticket_id):
     if (
         request.user.has_perm("helpdesk.view_ticket")
         or request.user.employee_get == ticket.employee_id
+        or _is_helpdesk_admin(request.user)
     ):
         form = TicketRaisedOnForm(instance=ticket)
         if request.method == "POST":
@@ -1430,7 +1441,7 @@ def ticket_change_assignees(request, ticket_id):
 
     if request.user.has_perm("helpdesk.change_ticket") or is_department_manager(
         request, ticket
-    ):
+    ) or _is_helpdesk_admin(request.user):
         prev_assignee_ids = ticket.assigned_to.values_list("id", flat=True)
         form = TicketAssigneesForm(instance=ticket)
         if request.method == "POST":
@@ -2238,6 +2249,7 @@ def update_priority(request, ticket_id):
         or is_department_manager(request, ticket)
         or request.user.employee_get == ticket.employee_id
         or request.user.employee_get in ticket.assigned_to.all()
+        or _is_helpdesk_admin(request.user)
     ):
         rating = request.POST.get("rating")
 
@@ -2597,6 +2609,22 @@ def _is_access_request_owner(user, access_request):
 def _is_isc_member(user):
     """Return True if the user belongs to the IS Council (ISC) group."""
     return user.groups.filter(name=ISC_GROUP_NAME).exists()
+
+
+def _is_helpdesk_admin(user):
+    """
+    Return True for users who should have Administrator-level access to every
+    helpdesk ticket (view and review/edit), regardless of ownership or
+    assignment.
+
+    This covers Django superusers as well as ISO officers and IS Council
+    members, who provide information-security oversight across the whole
+    helpdesk and therefore need the same blanket access as an Administrator so
+    they can review any ticket.
+    """
+    return bool(
+        user.is_superuser or _is_iso_officer(user) or _is_isc_member(user)
+    )
 
 
 def _get_isc_users():
