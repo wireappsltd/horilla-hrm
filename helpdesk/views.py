@@ -11,7 +11,7 @@ from django.contrib import messages
 from django.contrib.auth.models import Group, User
 from django.core import serializers
 from django.db.models import ProtectedError, Q
-from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
+from django.http import Http404, HttpResponse, HttpResponseRedirect, JsonResponse
 from django.shortcuts import redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
@@ -1013,7 +1013,9 @@ def _suppress_initial_set_changes(trackings):
 
 @login_required
 def ticket_detail(request, ticket_id, **kwargs):
-    ticket = Ticket.objects.get(id=ticket_id)
+    ticket = Ticket.objects.entire().filter(id=ticket_id).first()
+    if ticket is None:
+        raise Http404("Ticket not found")
     # A ticket can be "forwarded" to one or more individuals by storing their
     # employee ids in ``raised_on`` (the model labels this field "Forward To").
     # Anyone the ticket is forwarded to must be able to open it, including ISO
