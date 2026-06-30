@@ -1034,18 +1034,17 @@ def ticket_detail(request, ticket_id, **kwargs):
     is_aar_forward_to_user = (
         has_aar and admin_access_request.forward_to.filter(pk=request.user.pk).exists()
     )
-    # ISO officers and IS Council members provide information-security
-    # oversight across the helpdesk, so they are allowed to open any ticket
-    # (including every ISO workflow form: password reset, access, exception
-    # and admin access).
+    # ISO officers and IS Council members can open a ticket only when that
+    # ticket carries an ISO workflow request that requires their feedback
+    # (e.g. they are the relevant reviewer) or it was explicitly forwarded to
+    # them. They are intentionally NOT granted blanket access to every ticket:
+    # only their own tickets plus the requests forwarded to them are visible.
     if (
         request.user.has_perm("helpdesk.view_ticket")
         or ticket.employee_id.get_reporting_manager() == request.user.employee_get
         or is_department_manager(request, ticket)
         or request.user.employee_get == ticket.employee_id
         or request.user.employee_get in ticket.assigned_to.all()
-        or is_iso
-        or is_isc
         or (has_pr and is_iso)
         or is_forward_to_user
         or (has_ar and (is_iso or is_dh))
