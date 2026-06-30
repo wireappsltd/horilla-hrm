@@ -24,7 +24,7 @@
                             >
                                 <div class="oh-sticky-table__sd iso-col--ticket
                                     {% if ar.status == 'PENDING' %}row-status--blue
-                                    {% elif ar.status == 'DH_APPROVED' %}row-status--orange
+                                    {% elif ar.status == 'ISO_APPROVED' %}row-status--orange
                                     {% elif ar.status == 'COMPLETED' %}row-status--yellowgreen
                                     {% elif ar.status == 'CLOSED' %}row-status--grey
                                     {% elif ar.status == 'REJECTED' %}row-status--red{% endif %}"
@@ -45,7 +45,7 @@
                                 <div class="oh-sticky-table__td iso-col--status">
                                     {% if ar.status == 'PENDING' %}
                                         <span class="oh-badge oh-badge--iso-pending">{{ ar.get_status_display }}</span>
-                                    {% elif ar.status == 'DH_APPROVED' %}
+                                    {% elif ar.status == 'ISO_APPROVED' %}
                                         <span class="oh-badge oh-badge--iso-action">{{ ar.get_status_display }}</span>
                                     {% elif ar.status == 'COMPLETED' %}
                                         <span class="oh-badge oh-badge--iso-awaiting">{{ ar.get_status_display }}</span>
@@ -93,28 +93,28 @@
                                             {% endif %}
                                         {% endif %}
 
-                                        {# ── Stage 1: Divisional Head approve / reject (PENDING) ── #}
-                                        {% if ar.status == 'PENDING' and is_divisional_head and current_employee != ar.ticket.employee_id %}
-                                            <button type="button" class="oh-btn oh-btn--light-bkg p-3 w-50" title="{% trans 'Approve (Divisional Head)' %}"
-                                                onclick="event.stopPropagation(); openApproveModal('{% url 'access-request-dh-review' ar.id %}', '{{ ar.ticket.ticket_type.prefix }}{{ ar.ticket.id|stringformat:"03d" }}');"
+                                        {# ── Stage 1: ISO Officer approve / reject (PENDING) ── #}
+                                        {% if ar.status == 'PENDING' and is_iso_officer and current_employee != ar.ticket.employee_id %}
+                                            <button type="button" class="oh-btn oh-btn--light-bkg p-3 w-50" title="{% trans 'Approve (ISO Officer)' %}"
+                                                onclick="event.stopPropagation(); openApproveModal('{% url 'access-request-iso-review' ar.id %}', '{{ ar.ticket.ticket_type.prefix }}{{ ar.ticket.id|stringformat:"03d" }}');"
                                                 style="color: green;">
                                                 <ion-icon name="checkmark-outline"></ion-icon>
                                             </button>
-                                            <button type="button" class="oh-btn oh-btn--danger-outline oh-btn--light-bkg p-3 w-50" title="{% trans 'Reject (Divisional Head)' %}"
-                                                onclick="event.stopPropagation(); openRejectModal('{% url 'access-request-dh-review' ar.id %}', '{{ ar.ticket.ticket_type.prefix }}{{ ar.ticket.id|stringformat:"03d" }}');">
+                                            <button type="button" class="oh-btn oh-btn--danger-outline oh-btn--light-bkg p-3 w-50" title="{% trans 'Reject (ISO Officer)' %}"
+                                                onclick="event.stopPropagation(); openRejectModal('{% url 'access-request-iso-review' ar.id %}', '{{ ar.ticket.ticket_type.prefix }}{{ ar.ticket.id|stringformat:"03d" }}');">
                                                 <ion-icon name="close-outline"></ion-icon>
                                             </button>
                                         {% endif %}
 
-                                        {# ── Stage 2: ISO Officer approve / reject (DH_APPROVED) ── #}
-                                        {% if ar.status == 'DH_APPROVED' and is_iso_officer and current_employee != ar.ticket.employee_id %}
-                                            <button type="button" class="oh-btn oh-btn--light-bkg p-3 w-50" title="{% trans 'Approve (ISO Officer)' %}"
-                                                onclick="event.stopPropagation(); openApproveModal('{% url 'access-request-iso-review' ar.id %}', '{{ ar.ticket.ticket_type.prefix }}{{ ar.ticket.id|stringformat:"03d" }}');"
+                                        {# ── Stage 2: IS Council approve / reject (ISO_APPROVED) ── #}
+                                        {% if ar.status == 'ISO_APPROVED' and is_isc_member and current_employee != ar.ticket.employee_id %}
+                                            <button type="button" class="oh-btn oh-btn--light-bkg p-3 w-50" title="{% trans 'Approve (IS Council)' %}"
+                                                onclick="event.stopPropagation(); openApproveModal('{% url 'access-request-isc-review' ar.id %}', '{{ ar.ticket.ticket_type.prefix }}{{ ar.ticket.id|stringformat:"03d" }}');"
                                                 style="color: green;">
                                                 <ion-icon name="shield-checkmark-outline"></ion-icon>
                                             </button>
-                                            <button type="button" class="oh-btn oh-btn--danger-outline oh-btn--light-bkg p-3 w-50" title="{% trans 'Reject (ISO Officer)' %}"
-                                                onclick="event.stopPropagation(); openRejectModal('{% url 'access-request-iso-review' ar.id %}', '{{ ar.ticket.ticket_type.prefix }}{{ ar.ticket.id|stringformat:"03d" }}');">
+                                            <button type="button" class="oh-btn oh-btn--danger-outline oh-btn--light-bkg p-3 w-50" title="{% trans 'Reject (IS Council)' %}"
+                                                onclick="event.stopPropagation(); openRejectModal('{% url 'access-request-isc-review' ar.id %}', '{{ ar.ticket.ticket_type.prefix }}{{ ar.ticket.id|stringformat:"03d" }}');">
                                                 <ion-icon name="close-outline"></ion-icon>
                                             </button>
                                         {% endif %}

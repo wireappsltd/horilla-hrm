@@ -26,10 +26,6 @@ PRIORITY = [
 # Name of the Django auth Group whose members act as ISO Officers.
 ISO_GROUP_NAME = "ISO"
 
-# Name of the Django auth Group whose members act as Divisional Heads (Stage 1
-# approvers of the two-stage Access Request workflow).
-DIVISIONAL_HEAD_GROUP_NAME = "Divisional Head"
-
 # Name of the Django auth Group whose members act as IS Council (ISC) members
 # (Stage 2 approvers of the two-stage Exception Request workflow).
 ISC_GROUP_NAME = "IS Council"
@@ -104,12 +100,12 @@ ACCESS_DOMAIN_CHOICES = [
 ]
 
 # Two-stage approval lifecycle for Access Requests:
-#   PENDING → (Divisional Head approves) DH_APPROVED → (ISO approves) COMPLETED
-#           → (requestor acknowledges) CLOSED
+#   PENDING → (ISO Officer approves) ISO_APPROVED → (IS Council approves)
+#           COMPLETED → (requestor acknowledges) CLOSED
 # Rejection at either stage is terminal → REJECTED.
 ACCESS_REQUEST_STATUS_CHOICES = [
     ("PENDING", "Pending"),
-    ("DH_APPROVED", "Divisional Head Approved"),
+    ("ISO_APPROVED", "ISO Approved"),
     ("COMPLETED", "Completed"),
     ("CLOSED", "Closed"),
     ("REJECTED", "Rejected"),
@@ -454,7 +450,7 @@ class AccessRequest(HorillaModel):
     (ISO Forms category). Linked 1-to-1 with a Ticket via the ``ticket`` field.
 
     Mirrors :class:`PasswordResetRequest` but adds the structured access-request
-    fields and a two-stage approval workflow (Divisional Head → ISO Officer).
+    fields and a two-stage approval workflow (ISO Officer → IS Council).
     """
 
     ticket = models.OneToOneField(
@@ -511,18 +507,7 @@ class AccessRequest(HorillaModel):
     )
     feedback = models.TextField(blank=True, null=True, verbose_name=_("Feedback"))
 
-    # Stage 1 — Divisional Head review
-    dh_reviewed_by = models.ForeignKey(
-        User,
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
-        related_name="dh_reviewed_access_requests",
-        verbose_name=_("Divisional Head"),
-    )
-    dh_reviewed_at = models.DateTimeField(null=True, blank=True)
-
-    # Stage 2 — ISO Officer review
+    # Stage 1 — ISO Officer review
     iso_reviewed_by = models.ForeignKey(
         User,
         null=True,
@@ -532,6 +517,17 @@ class AccessRequest(HorillaModel):
         verbose_name=_("ISO Officer"),
     )
     iso_reviewed_at = models.DateTimeField(null=True, blank=True)
+
+    # Stage 2 — IS Council review
+    isc_reviewed_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="isc_reviewed_access_requests",
+        verbose_name=_("IS Council"),
+    )
+    isc_reviewed_at = models.DateTimeField(null=True, blank=True)
 
     closed_by = models.ForeignKey(
         User,
