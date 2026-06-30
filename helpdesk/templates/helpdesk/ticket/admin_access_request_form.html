@@ -1,0 +1,176 @@
+{% load i18n %}
+
+<div class="oh-modal oh-modal--show" id="adminAccessRequestModal">
+    <div class="oh-modal__dialog">
+        <div class="oh-modal__dialog-header">
+            <h2 class="oh-modal__dialog-title">
+                {% if admin_access_request %}
+                    {% trans "Edit Admin Access Request" %}
+                {% else %}
+                    {% trans "Admin Access Request" %}
+                {% endif %}
+            </h2>
+            <button
+                class="oh-modal__close"
+                aria-label="Close"
+                onclick="document.getElementById('adminAccessRequestModal').classList.remove('oh-modal--show')"
+            >
+                <ion-icon name="close-outline"></ion-icon>
+            </button>
+        </div>
+
+        <div class="oh-modal__dialog-body">
+            <form
+                method="post"
+                {% if admin_access_request %}
+                    hx-post="{% url 'admin-access-request-update' admin_access_request.id %}"
+                {% else %}
+                    hx-post="{% url 'admin-access-request-create' %}"
+                {% endif %}
+                hx-target="#adminAccessRequestModalTarget"
+                hx-swap="innerHTML"
+                hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+            >
+                {% csrf_token %}
+                {{ form.employee }}
+
+                <!-- User ID (Email) & Admin User Type -->
+                <div class="oh-layout--row">
+                    <div class="oh-form__group col-md-6">
+                        <label class="oh-label oh-label--mandatory" for="id_user_email">
+                            {% trans "User ID (Email)" %} <span style="color: red;">*</span>
+                        </label>
+                        {{ form.user_email }}
+                        {% if form.user_email.errors %}
+                            <span class="oh-text--danger" style="font-size:12px;">{{ form.user_email.errors|join:", " }}</span>
+                        {% endif %}
+                    </div>
+                    <div class="oh-form__group col-md-6">
+                        <label class="oh-label oh-label--mandatory" for="id_admin_user_type">
+                            {% trans "Admin User Type" %} <span style="color: red;">*</span>
+                        </label>
+                        {{ form.admin_user_type }}
+                        {% if form.admin_user_type.errors %}
+                            <span class="oh-text--danger" style="font-size:12px;">{{ form.admin_user_type.errors|join:", " }}</span>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Required Privileges -->
+                <h6 class="fw-bold mt-3 mb-1">{% trans "Required Privileges" %}</h6>
+                <div class="oh-layout--row">
+                    <div class="oh-form__group col-md-6">
+                        <label class="oh-label oh-label--mandatory" for="id_system_application">
+                            {% trans "System / Application" %} <span style="color: red;">*</span>
+                        </label>
+                        {{ form.system_application }}
+                        {% if form.system_application.errors %}
+                            <span class="oh-text--danger" style="font-size:12px;">{{ form.system_application.errors|join:", " }}</span>
+                        {% endif %}
+                    </div>
+                    <div class="oh-form__group col-md-6">
+                        <label class="oh-label oh-label--mandatory" for="id_privilege_level">
+                            {% trans "Privilege Level" %} <span style="color: red;">*</span>
+                        </label>
+                        {{ form.privilege_level }}
+                        {% if form.privilege_level.errors %}
+                            <span class="oh-text--danger" style="font-size:12px;">{{ form.privilege_level.errors|join:", " }}</span>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Reason for Need of Privilege -->
+                <div class="oh-form__group mt-2">
+                    <label class="oh-label oh-label--mandatory" for="id_reason">
+                        {% trans "Reason for Need of Privilege" %} <span style="color: red;">*</span>
+                    </label>
+                    {{ form.reason }}
+                    <div class="d-flex justify-content-between mt-1">
+                        <span class="oh-text--muted" style="font-size:12px;">
+                            {% blocktrans with max=form.reason.field.max_length %}Max {{ max }} characters{% endblocktrans %}
+                        </span>
+                        <span class="oh-text--muted" id="adminReasonCounter" style="font-size:12px;">
+                            0/{{ form.reason.field.max_length }}
+                        </span>
+                    </div>
+                    <span class="oh-text--danger" id="adminReasonClientError" style="font-size:12px; display:none;"></span>
+                    {% if form.reason.errors %}
+                        <span class="oh-text--danger" style="font-size:12px;">{{ form.reason.errors|join:", " }}</span>
+                    {% endif %}
+                </div>
+
+                <!-- Priority & Due Date -->
+                <div class="oh-layout--row mt-2">
+                    <div class="oh-form__group col-md-6">
+                        <label class="oh-label" for="id_priority">{% trans "Priority" %}</label>
+                        {{ form.priority }}
+                    </div>
+                    <div class="oh-form__group col-md-6">
+                        <label class="oh-label" for="id_deadline">{% trans "Due Date" %}</label>
+                        {{ form.deadline }}
+                        {% if form.deadline.errors %}
+                            <span class="oh-text--danger" style="font-size:12px;">{{ form.deadline.errors|join:", " }}</span>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Forward To (IS Council) -->
+                <div class="oh-layout--row mt-2">
+                    <div class="oh-form__group col-md-12">
+                        <label class="oh-label oh-label--mandatory" for="id_forward_to">
+                            {% trans "Forward To" %} <span style="color: red;">*</span>
+                        </label>
+                        {{ form.forward_to }}
+                        {% if form.forward_to.errors %}
+                            <span class="oh-text--danger" style="font-size:12px;">{{ form.forward_to.errors|join:", " }}</span>
+                        {% endif %}
+                    </div>
+                </div>
+
+                {% if form.non_field_errors %}
+                    <div class="oh-alert oh-alert--danger mt-2">{{ form.non_field_errors }}</div>
+                {% endif %}
+
+                <div class="d-flex justify-content-end mt-3">
+                    <button type="submit" class="oh-btn oh-btn--secondary">{% trans "Save" %}</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    (function () {
+        const modal = document.getElementById("adminAccessRequestModal");
+        if (!modal) { return; }
+
+        const form = modal.querySelector("form");
+        const reasonInput = modal.querySelector("#id_reason");
+        const counter = modal.querySelector("#adminReasonCounter");
+        const errorEl = modal.querySelector("#adminReasonClientError");
+
+        if (!form || !reasonInput || !counter || !errorEl) { return; }
+        const maxLength = parseInt(reasonInput.dataset.maxlength || "0", 10);
+        if (!maxLength) { return; }
+        const errorMessage = reasonInput.dataset.maxlengthMessage ||
+            `Reason cannot exceed ${maxLength} characters.`;
+
+        const updateState = function () {
+            const currentLength = reasonInput.value.length;
+            counter.textContent = `${currentLength}/${maxLength}`;
+            const exceedsLimit = currentLength > maxLength;
+            errorEl.style.display = exceedsLimit ? "block" : "none";
+            errorEl.textContent = exceedsLimit ? errorMessage : "";
+            reasonInput.setCustomValidity(exceedsLimit ? errorMessage : "");
+            return exceedsLimit;
+        };
+        reasonInput.addEventListener("input", updateState);
+        form.addEventListener("submit", function (event) {
+            if (updateState()) {
+                event.preventDefault();
+                reasonInput.focus();
+            }
+        });
+        updateState();
+    })();
+</script>

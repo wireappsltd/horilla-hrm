@@ -66,6 +66,59 @@ CONFIG_MODELS = [
     ("horilla_audit", "AccountBlockUnblock", _CONFIG_MODULE, "Account Block/Unblock Setting"),
     ("employee", "Actiontype", _CONFIG_MODULE, "Action Type"),
     ("base", "PenaltyAccounts", _CONFIG_MODULE, "Penalty Account"),
+    # Org structure - shift / work-type definitions
+    ("base", "RotatingWorkType", _CONFIG_MODULE, "Rotating Work Type"),
+    ("base", "RotatingShift", _CONFIG_MODULE, "Rotating Shift"),
+    ("base", "EmployeeShiftSchedule", _CONFIG_MODULE, "Shift Schedule"),
+    ("base", "DynamicEmailConfiguration", _CONFIG_MODULE, "Mail Server"),
+    ("employee", "EmployeeTag", _CONFIG_MODULE, "Employee Tag"),
+    # Attendance settings
+    (
+        "attendance",
+        "AttendanceValidationCondition",
+        _CONFIG_MODULE,
+        "Attendance Break-point Setting",
+    ),
+    (
+        "attendance",
+        "AttendanceGeneralSetting",
+        _CONFIG_MODULE,
+        "Check-In/Check-Out Setting",
+    ),
+    ("attendance", "GraceTime", _CONFIG_MODULE, "Grace Time"),
+    # Leave settings
+    (
+        "leave",
+        "EmployeePastLeaveRestrict",
+        _CONFIG_MODULE,
+        "Past Leave Restriction Setting",
+    ),
+    # Payroll settings
+    ("payroll", "PayslipAutoGenerate", _CONFIG_MODULE, "Auto Payslip Setting"),
+    # Performance (PMS) settings
+    ("pms", "BonusPointSetting", _CONFIG_MODULE, "Bonus Point Setting"),
+    # Recruitment definitions / settings
+    ("recruitment", "Skill", _CONFIG_MODULE, "Skill"),
+    ("recruitment", "RejectReason", _CONFIG_MODULE, "Candidate Reject Reason"),
+    (
+        "recruitment",
+        "RecruitmentGeneralSetting",
+        _CONFIG_MODULE,
+        "Candidate Self-Tracking Setting",
+    ),
+    ("recruitment", "LinkedInAccount", _CONFIG_MODULE, "LinkedIn Integration Setting"),
+    # Integrations
+    ("horilla_ldap", "LDAPSettings", _CONFIG_MODULE, "LDAP Setting"),
+    ("horilla_backup", "GoogleDriveBackup", _CONFIG_MODULE, "Google Drive Backup Setting"),
+    ("outlook_auth", "AzureApi", _CONFIG_MODULE, "Outlook/Azure Mail Server"),
+    # Data retention policies
+    ("horilla_retention", "DataRetentionPolicy", _CONFIG_MODULE, "Data Retention Policy"),
+    # Time tracker settings
+    ("time_tracker", "RequiredFieldConfig", _CONFIG_MODULE, "Time Tracker Setting"),
+    ("time_tracker", "Client", _CONFIG_MODULE, "Time Tracker Client"),
+    ("time_tracker", "Tag", _CONFIG_MODULE, "Time Tracker Tag"),
+    # Accessibility settings
+    ("accessibility", "DefaultAccessibility", _CONFIG_MODULE, "Accessibility Setting"),
 ]
 
 

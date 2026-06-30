@@ -26,6 +26,10 @@ PRIORITY = [
 # Name of the Django auth Group whose members act as ISO Officers.
 ISO_GROUP_NAME = "ISO"
 
+# Name of the Django auth Group whose members act as IS Council (ISC) members
+# (Stage 2 approvers of the two-stage Exception Request workflow).
+ISC_GROUP_NAME = "IS Council"
+
 MANAGER_TYPES = [
     ("department", "Department"),
     ("job_position", "Job Position"),
@@ -68,6 +72,67 @@ ISO_STATUS_CHOICES = [
 
 ISO_REQUEST_TYPE_CHOICES = [
     ("password_reset", "Password Reset Request"),
+]
+
+# ── Access Request & Deactivation (ISO Forms) ────────────────────────────────
+
+# Sub-type selector shown in the "Access Request & Deactivation" modal.
+ACCESS_REQUEST_SUBTYPE_CHOICES = [
+    ("access_request", "Access Request"),
+    ("access_deactivation", "Access Deactivation"),
+]
+
+ACCESS_BUSINESS_CRITICAL_CHOICES = [
+    ("yes", "Yes"),
+    ("no", "No"),
+]
+
+ACCESS_LEVEL_CHOICES = [
+    ("read", "Read"),
+    ("write", "Write"),
+    ("repository", "Repository"),
+]
+
+ACCESS_DOMAIN_CHOICES = [
+    ("ftp_access", "FTP Access"),
+    ("o365_access", "O365 Access"),
+    ("email", "Email"),
+]
+
+# Two-stage approval lifecycle for Access Requests:
+#   PENDING → (ISO Officer approves) ISO_APPROVED → (IS Council approves)
+#           COMPLETED → (requestor acknowledges) CLOSED
+# Rejection at either stage is terminal → REJECTED.
+ACCESS_REQUEST_STATUS_CHOICES = [
+    ("PENDING", "Pending"),
+    ("ISO_APPROVED", "ISO Approved"),
+    ("COMPLETED", "Completed"),
+    ("CLOSED", "Closed"),
+    ("REJECTED", "Rejected"),
+]
+
+# Two-stage approval lifecycle for Exception Requests:
+#   PENDING → (ISO Officer approves) ISO_APPROVED → (IS Council approves)
+#           COMPLETED → (requestor acknowledges) CLOSED
+# Rejection at either stage is terminal → REJECTED.
+EXCEPTION_REQUEST_STATUS_CHOICES = [
+    ("PENDING", "Pending"),
+    ("ISO_APPROVED", "ISO Approved"),
+    ("COMPLETED", "Completed"),
+    ("CLOSED", "Closed"),
+    ("REJECTED", "Rejected"),
+]
+
+ADMIN_ACCESS_TYPE_CHOICES = [
+    ("PROMOTE_EXISTING", "Promote Existing User"),
+    ("NEW_USER", "New User (Admin)"),
+]
+ADMIN_ACCESS_REQUEST_STATUS_CHOICES = [
+    ("PENDING", "Pending"),
+    ("ISO_APPROVED", "ISO Approved"),
+    ("COMPLETED", "Completed"),
+    ("CLOSED", "Closed"),
+    ("REJECTED", "Rejected"),
 ]
 
 
@@ -376,6 +441,328 @@ class PasswordResetRequest(HorillaModel):
         if self.iso_status == "REJECTED" and not self.iso_feedback:
             raise ValidationError(
                 {"iso_feedback": _("Feedback is required when rejecting a request.")}
+            )
+
+
+class AccessRequest(HorillaModel):
+    """
+    Stores the extra details for an "Access Request & Deactivation" ticket
+    (ISO Forms category). Linked 1-to-1 with a Ticket via the ``ticket`` field.
+
+    Mirrors :class:`PasswordResetRequest` but adds the structured access-request
+    fields and a two-stage approval workflow (ISO Officer → IS Council).
+    """
+
+    ticket = models.OneToOneField(
+        Ticket,
+        on_delete=models.CASCADE,
+        related_name="access_request",
+    )
+    sub_type = models.CharField(
+        max_length=30,
+        choices=ACCESS_REQUEST_SUBTYPE_CHOICES,
+        default="access_request",
+        verbose_name=_("Sub Type"),
+    )
+    user_id = models.EmailField(verbose_name=_("User ID (Email)"))
+    requested_date = models.DateField(verbose_name=_("Requested Date"))
+    effective_date = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name=_("Effective Date"),
+    )
+
+    business_critical = models.CharField(
+        max_length=3,
+        choices=ACCESS_BUSINESS_CRITICAL_CHOICES,
+        null=True,
+        blank=True,
+        verbose_name=_("Business Critical Systems"),
+    )
+    level_of_access = models.CharField(
+        max_length=20,
+        choices=ACCESS_LEVEL_CHOICES,
+        null=True,
+        blank=True,
+        verbose_name=_("Level of Access"),
+    )
+    domain = models.CharField(
+        max_length=20,
+        choices=ACCESS_DOMAIN_CHOICES,
+        verbose_name=_("Domain"),
+    )
+    reason = models.TextField(verbose_name=_("Reason for Request"))
+    forward_to = models.ManyToManyField(
+        User,
+        blank=True,
+        related_name="forwarded_access_requests",
+        verbose_name=_("Forward To"),
+    )
+
+    status = models.CharField(
+        max_length=20,
+        choices=ACCESS_REQUEST_STATUS_CHOICES,
+        default="PENDING",
+        verbose_name=_("Status"),
+    )
+    feedback = models.TextField(blank=True, null=True, verbose_name=_("Feedback"))
+
+    # Stage 1 — ISO Officer review
+    iso_reviewed_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="iso_reviewed_access_requests",
+        verbose_name=_("ISO Officer"),
+    )
+    iso_reviewed_at = models.DateTimeField(null=True, blank=True)
+
+    # Stage 2 — IS Council review
+    isc_reviewed_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="isc_reviewed_access_requests",
+        verbose_name=_("IS Council"),
+    )
+    isc_reviewed_at = models.DateTimeField(null=True, blank=True)
+
+    closed_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="closed_access_requests",
+        verbose_name=_("Closed By"),
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True, verbose_name=_("Updated At"))
+
+    class Meta:
+        verbose_name = _("Access Request")
+        verbose_name_plural = _("Access Requests")
+
+    def __str__(self):
+        return f"Access Request – {self.get_domain_display()} – {self.ticket}"
+
+    def get_forward_to_users(self):
+        """Return selected forwarding users as a queryset."""
+        return self.forward_to.select_related("employee_get").all()
+
+    def get_forward_to_display(self):
+        """Return a comma-separated list of forwarded-to user display names."""
+        names = []
+        for user in self.get_forward_to_users():
+            try:
+                names.append(user.employee_get.get_full_name())
+            except Exception:
+                names.append(user.get_full_name() or user.username)
+        return ", ".join([name for name in names if name])
+
+    def clean(self, *args, **kwargs):
+        super().clean(*args, **kwargs)
+        if self.status == "REJECTED" and not self.feedback:
+            raise ValidationError(
+                {"feedback": _("Feedback is required when rejecting a request.")}
+            )
+
+
+class ExceptionRequest(HorillaModel):
+    """
+    Stores the extra details for an "Exception Request" ticket (ISO Forms
+    category).
+    """
+
+    ticket = models.OneToOneField(
+        Ticket,
+        on_delete=models.CASCADE,
+        related_name="exception_request",
+    )
+    user_id = models.EmailField(verbose_name=_("User ID (Email)"))
+    description = models.TextField(verbose_name=_("Description of Exception"))
+    isms_reference = models.CharField(
+        max_length=250,
+        verbose_name=_("ISMS Reference"),
+    )
+    forward_to = models.ManyToManyField(
+        User,
+        blank=True,
+        related_name="forwarded_exception_requests",
+        verbose_name=_("Forward To"),
+    )
+
+    status = models.CharField(
+        max_length=20,
+        choices=EXCEPTION_REQUEST_STATUS_CHOICES,
+        default="PENDING",
+        verbose_name=_("Status"),
+    )
+    feedback = models.TextField(blank=True, null=True, verbose_name=_("Feedback"))
+
+    # Stage 1 — ISO Officer review
+    iso_reviewed_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="iso_reviewed_exception_requests",
+        verbose_name=_("ISO Officer"),
+    )
+    iso_reviewed_at = models.DateTimeField(null=True, blank=True)
+
+    # Stage 2 — IS Council review
+    isc_reviewed_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="isc_reviewed_exception_requests",
+        verbose_name=_("IS Council"),
+    )
+    isc_reviewed_at = models.DateTimeField(null=True, blank=True)
+
+    closed_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="closed_exception_requests",
+        verbose_name=_("Closed By"),
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True, verbose_name=_("Updated At"))
+
+    class Meta:
+        verbose_name = _("Exception Request")
+        verbose_name_plural = _("Exception Requests")
+
+    def __str__(self):
+        return f"Exception Request – {self.isms_reference} – {self.ticket}"
+
+    def get_forward_to_users(self):
+        """Return selected forwarding users as a queryset."""
+        return self.forward_to.select_related("employee_get").all()
+
+    def get_forward_to_display(self):
+        """Return a comma-separated list of forwarded-to user display names."""
+        names = []
+        for user in self.get_forward_to_users():
+            try:
+                names.append(user.employee_get.get_full_name())
+            except Exception:
+                names.append(user.get_full_name() or user.username)
+        return ", ".join([name for name in names if name])
+
+    def clean(self, *args, **kwargs):
+        super().clean(*args, **kwargs)
+        if self.status == "REJECTED" and not self.feedback:
+            raise ValidationError(
+                {"feedback": _("Feedback is required when rejecting a request.")}
+            )
+
+
+class AdminAccessRequest(HorillaModel):
+    """
+    Stores the extra details for an "Admin Access Request" ticket (ISO Forms
+    category).
+    """
+
+    ticket = models.OneToOneField(
+        Ticket,
+        on_delete=models.CASCADE,
+        related_name="admin_access_request",
+    )
+    user_id = models.EmailField(verbose_name=_("User ID (Email)"))
+    admin_user_type = models.CharField(
+        max_length=20,
+        choices=ADMIN_ACCESS_TYPE_CHOICES,
+        verbose_name=_("Admin User Type"),
+    )
+    system_application = models.CharField(
+        max_length=250,
+        verbose_name=_("System / Application"),
+    )
+    privilege_level = models.CharField(
+        max_length=250,
+        verbose_name=_("Privilege Level"),
+    )
+    reason = models.TextField(verbose_name=_("Reason for Need of Privilege"))
+    forward_to = models.ManyToManyField(
+        User,
+        blank=True,
+        related_name="forwarded_admin_access_requests",
+        verbose_name=_("Forward To"),
+    )
+
+    status = models.CharField(
+        max_length=20,
+        choices=ADMIN_ACCESS_REQUEST_STATUS_CHOICES,
+        default="PENDING",
+        verbose_name=_("Status"),
+    )
+    feedback = models.TextField(blank=True, null=True, verbose_name=_("Feedback"))
+
+    # Stage 1 — ISO Officer review
+    iso_reviewed_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="iso_reviewed_admin_access_requests",
+        verbose_name=_("ISO Officer"),
+    )
+    iso_reviewed_at = models.DateTimeField(null=True, blank=True)
+
+    # Stage 2 — IS Council review
+    isc_reviewed_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="isc_reviewed_admin_access_requests",
+        verbose_name=_("IS Council"),
+    )
+    isc_reviewed_at = models.DateTimeField(null=True, blank=True)
+
+    closed_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="closed_admin_access_requests",
+        verbose_name=_("Closed By"),
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True, verbose_name=_("Updated At"))
+
+    class Meta:
+        verbose_name = _("Admin Access Request")
+        verbose_name_plural = _("Admin Access Requests")
+
+    def __str__(self):
+        return f"Admin Access Request – {self.system_application} – {self.ticket}"
+
+    def get_forward_to_users(self):
+        """Return selected forwarding users as a queryset."""
+        return self.forward_to.select_related("employee_get").all()
+
+    def get_forward_to_display(self):
+        """Return a comma-separated list of forwarded-to user display names."""
+        names = []
+        for user in self.get_forward_to_users():
+            try:
+                names.append(user.employee_get.get_full_name())
+            except Exception:
+                names.append(user.get_full_name() or user.username)
+        return ", ".join([name for name in names if name])
+
+    def clean(self, *args, **kwargs):
+        super().clean(*args, **kwargs)
+        if self.status == "REJECTED" and not self.feedback:
+            raise ValidationError(
+                {"feedback": _("Feedback is required when rejecting a request.")}
             )
 
 

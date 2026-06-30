@@ -254,7 +254,7 @@
 (function () {
   "use strict";
 
-  var IDLE_TIMEOUT_MS = (window.TT_IDLE_TIMEOUT_MINUTES || 10) * 60 * 1000;
+  var IDLE_TIMEOUT_MS = (window.TT_IDLE_TIMEOUT_MINUTES || 60) * 60 * 1000;
   var HEARTBEAT_INTERVAL_MS = 30000;
   var lastActivity = Date.now();
   var idleModalShown = false;

@@ -101,6 +101,29 @@
     .oh-badge--iso-closed   { background-color: hsl(8, 77%, 56%);  color: #fff; } /* keep current Closed tone */
     .oh-badge--iso-rejected { background-color: hsl(1, 100%, 61%); color: #fff; } /* red / destructive */
     .oh-badge--iso-default  { background-color: hsl(0, 0%, 45%);   color: #fff; } /* neutral fallback */
+
+    /* Access Request table reuses the same column sizing as Password Reset. */
+    #access-request-table .oh-sticky-table__th,
+    #access-request-table .oh-sticky-table__td,
+    #access-request-table .oh-sticky-table__sd { width: auto; }
+    #access-request-table .iso-col--ticket { width: 105px; min-width: 105px; }
+    #access-request-table .iso-col--type { width: 160px; min-width: 160px; }
+    #access-request-table .iso-col--platform { width: 140px; min-width: 140px; }
+    #access-request-table .iso-col--user { width: 200px; min-width: 200px; }
+    #access-request-table .iso-col--status { width: 200px; min-width: 200px; }
+    #access-request-table .iso-col--status .oh-badge { white-space: nowrap; }
+    #access-request-table .iso-col--updated { width: 155px; min-width: 155px; }
+    #access-request-table .iso-col--actions { width: 176px; min-width: 176px; }
+    #access-request-table .iso-ellipsis {
+        display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    #access-request-table .iso-col--actions .oh-btn-group {
+        display: inline-flex; align-items: center; justify-content: flex-end;
+        flex-wrap: nowrap; white-space: nowrap; gap: 0;
+    }
+    #access-request-table .iso-col--actions .w-50,
+    #access-request-table .iso-col--actions .w-100 { width: auto !important; flex: 0 0 auto; }
+    #access-request-table .iso-col--actions .oh-btn { min-width: 34px; }
 </style>
 
 <section class="oh-wrapper oh-main__topbar">
@@ -125,13 +148,46 @@
 
 <div class="oh-wrapper" id="isoFormsContainer">
     <div class="oh-card mb-4">
+        <div class="oh-card__body">
+            <h5 class="fw-bold mb-3">{% trans "Password Reset Requests" %}</h5>
+        </div>
         <div id="isoFormsList">
             {% include 'helpdesk/iso_forms/_password_reset_list.html' with password_reset_requests=password_reset_requests %}
+        </div>
+    </div>
+
+    <div class="oh-card mb-4">
+        <div class="oh-card__body">
+            <h5 class="fw-bold mb-3">{% trans "Access Request & Deactivation" %}</h5>
+        </div>
+        <div id="accessRequestsList">
+            {% include 'helpdesk/iso_forms/_access_request_list.html' with access_requests=access_requests %}
+        </div>
+    </div>
+
+    <div class="oh-card mb-4">
+        <div class="oh-card__body">
+            <h5 class="fw-bold mb-3">{% trans "Exception Requests" %}</h5>
+        </div>
+        <div id="exceptionRequestsList">
+            {% include 'helpdesk/iso_forms/_exception_request_list.html' with exception_requests=exception_requests %}
+        </div>
+    </div>
+
+    <div class="oh-card mb-4">
+        <div class="oh-card__body">
+            <h5 class="fw-bold mb-3">{% trans "Admin Access Requests" %}</h5>
+        </div>
+        <div id="adminAccessRequestsList">
+            {% include 'helpdesk/iso_forms/_admin_access_request_list.html' with admin_access_requests=admin_access_requests %}
         </div>
     </div>
 </div>
 
 <div id="passwordResetModalTarget"></div>
+<div id="accessRequestModalTarget"></div>
+<div id="exceptionRequestModalTarget"></div>
+<div id="adminAccessRequestModalTarget"></div>
 
 <div class="oh-modal" id="isoFormPickerModal" role="dialog" aria-labelledby="isoFormPickerTitle" aria-hidden="true">
     <div class="oh-modal__dialog">
@@ -149,10 +205,10 @@
                         href="#"
                         class="oh-btn oh-btn--light-bkg text-start d-flex align-items-center justify-content-between"
                         hx-get="{{ form_option.create_url }}"
-                        hx-target="#passwordResetModalTarget"
+                        hx-target="#{{ form_option.target|default:'passwordResetModalTarget' }}"
                         hx-swap="innerHTML"
                         data-toggle="oh-modal-toggle"
-                        data-target="#passwordResetModal"
+                        data-target="#{{ form_option.modal|default:'passwordResetModal' }}"
                         onclick="document.getElementById('isoFormPickerModal').classList.remove('oh-modal--show');"
                     >
                         <span class="d-flex align-items-center">

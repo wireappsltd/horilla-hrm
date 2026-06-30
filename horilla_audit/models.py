@@ -167,7 +167,7 @@ class LoginLog(models.Model):
     REASON_INVALID_CREDENTIALS = "invalid_credentials"
     REASON_ACCOUNT_BLOCKED = "account_blocked"
     REASON_TOO_MANY_ATTEMPTS = "too_many_attempts"
-    REASON_CAPTCHA_FAILED = "captcha_failed"
+    # REASON_CAPTCHA_FAILED = "captcha_failed"
     REASON_NO_EMPLOYEE = "no_employee"
     REASON_EMPLOYEE_ARCHIVED = "employee_archived"
     REASON_NO_ACTIVE_CONTRACT = "no_active_contract"

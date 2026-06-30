@@ -71,29 +71,29 @@
                         </div>
                     {% endif %}
                     <div class="oh-sticky-table__th {% if request.sort_option.order == '-employee_id__employee_first_name' %}arrow-up {% elif request.sort_option.order == 'employee_id__employee_first_name' %}arrow-down {% else %}arrow-up-down {% endif %}"
-                        hx-get="{% url 'request-filter' %}?{{pd}}&sortby=employee_id__employee_first_name"
+                        hx-get="{% url 'request-filter' %}?{{pd}}&sortby=employee_id__employee_first_name&page=1"
                         hx-target="#leaveRequest">
                         {% trans "Employee" %}
                     </div>
                     <div class="oh-sticky-table__th {% if request.sort_option.order == '-leave_type_id__name' %}arrow-up {% elif request.sort_option.order == 'leave_type_id__name' %}arrow-down {% else %}arrow-up-down {% endif %}"
-                        hx-get="{% url 'request-filter' %}?{{pd}}&sortby=leave_type_id__name" hx-target="#leaveRequest">
+                        hx-get="{% url 'request-filter' %}?{{pd}}&sortby=leave_type_id__name&page=1" hx-target="#leaveRequest">
                         {% trans "Leave Type" %}
                     </div>
                     <div class="oh-sticky-table__th {% if request.sort_option.order == '-start_date' %}arrow-up {% elif request.sort_option.order == 'start_date' %}arrow-down {% else %}arrow-up-down {% endif %}"
-                        hx-get="{% url 'request-filter' %}?{{pd}}&sortby=start_date" hx-target="#leaveRequest">
+                        hx-get="{% url 'request-filter' %}?{{pd}}&sortby=start_date&page=1" hx-target="#leaveRequest">
                         {% trans "Start Date" %}
                     </div>
                     <div class="oh-sticky-table__th {% if request.sort_option.order == '-end_date' %}arrow-up {% elif request.sort_option.order == 'end_date' %}arrow-down {% else %}arrow-up-down {% endif %}"
-                        hx-get="{% url 'request-filter' %}?{{pd}}&sortby=end_date" hx-target="#leaveRequest">
+                        hx-get="{% url 'request-filter' %}?{{pd}}&sortby=end_date&page=1" hx-target="#leaveRequest">
                         {% trans "End Date" %}
                     </div>
                     <div class="oh-sticky-table__th {% if request.sort_option.order == '-requested_days' %}arrow-up {% elif request.sort_option.order == 'requested_days' %}arrow-down {% else %}arrow-up-down {% endif %}"
-                        hx-get="{% url 'request-filter' %}?{{pd}}&sortby=requested_days" hx-target="#leaveRequest">
+                        hx-get="{% url 'request-filter' %}?{{pd}}&sortby=requested_days&page=1" hx-target="#leaveRequest">
                         {% trans "Requested Days" %}
                     </div>
                     <div class="oh-sticky-table__th" style="width:115px;">{% trans "Leave Clash" %}</div>
                     <div class="oh-sticky-table__th {% if request.sort_option.order == '-status' %}arrow-up {% elif request.sort_option.order == 'status' %}arrow-down {% else %}arrow-up-down {% endif %}"
-                        hx-get="{% url 'request-filter' %}?{{pd}}&sortby=status" hx-target="#leaveRequest">
+                        hx-get="{% url 'request-filter' %}?{{pd}}&sortby=status&page=1" hx-target="#leaveRequest">
                         {% trans "Status" %}
                     </div>
                     {% if not dashboard %}
@@ -240,20 +240,14 @@
                             <div class="oh-sticky-table__td oh-sticky-table__right" onclick="event.stopPropagation()">
                                 <div class="oh-btn-group">
                                     {% if leave_request.status == 'cancelled' %}
-                                        {% if leave_request.end_date >= current_date %}
-                                            <a type="submit" data-toggle="oh-modal-toggle" data-target="#rejectModal"
-                                                hx-get="{% url 'request-cancel' leave_request.id %}" hx-target="#rejectForm"
-                                                title="{% trans 'Approve cancellation request' %}" class="oh-btn oh-btn--warning w-100" ;>
-                                                <ion-icon class="me-1" name="checkmark-outline"></ion-icon>
-                                            </a>
-                                        {% else %}
-                                            <a type="submit" href="#" title="{% trans 'Approve cancellation request' %}" class="oh-btn oh-btn--secondary oh-btn--disabled w-100">
-                                                <ion-icon class="me-1" name="checkmark-outline"></ion-icon>
-                                            </a>
-                                        {% endif %}
+                                        <a type="submit" data-toggle="oh-modal-toggle" data-target="#rejectModal"
+                                            hx-get="{% url 'request-cancel' leave_request.id %}?{{pd}}" hx-target="#rejectForm"
+                                            title="{% trans 'Approve cancellation request' %}" class="oh-btn oh-btn--warning w-100" ;>
+                                            <ion-icon class="me-1" name="checkmark-outline"></ion-icon>
+                                        </a>
                                     {% else %}
                                         {% if leave_request.is_approved and leave_request.status == 'requested' %}
-                                            <a href="{% url 'request-approve' leave_request.id %}" title="{% trans 'Approve' %}"
+                                            <a href="{% url 'request-approve' leave_request.id %}?{{pd}}" title="{% trans 'Approve' %}"
                                                 class="oh-btn oh-btn--success w-100"
                                                 {% if leave_request.end_date.month > current_date.month %}
                                                     onclick = "leaveRequestConfirm('This leave request is for the month of {{leave_request.start_date|date:'F'}}.
@@ -272,7 +266,7 @@
                                         {% endif %}
                                         {% if leave_request.status == 'requested' %}
                                             <a type="submit" data-toggle="oh-modal-toggle" data-target="#rejectModal"
-                                                hx-get="{% url 'request-cancel' leave_request.id %}" hx-target="#rejectForm"
+                                                hx-get="{% url 'request-cancel' leave_request.id %}?{{pd}}" hx-target="#rejectForm"
                                                 title="{% trans 'Reject' %}" class="oh-btn oh-btn--danger w-100">
                                                 <ion-icon class="me-1" name="close-circle-outline"></ion-icon>
                                             </a>

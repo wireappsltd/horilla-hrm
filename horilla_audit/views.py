@@ -17,6 +17,7 @@ AUDIT_MODULES = (
     ("pms", "Performance"),
     ("offboarding", "Offboarding"),
     ("asset", "Assets"),
+    ("helpdesk", "ISO Forms"),
     ("password_reset", "Password Reset Logs"),
     ("configuration", "Configuration"),
     ("logins", "Logins"),
