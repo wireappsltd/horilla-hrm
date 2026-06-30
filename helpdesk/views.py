@@ -3266,7 +3266,7 @@ def password_reset_acknowledge(request, pr_id):
             messages.error(request, error)
         return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
 
-    comment = strip_tags(form.cleaned_data["comment"])
+    comment = form.cleaned_data["comment"]
     ticket = pr_request.ticket
 
     pr_request.iso_status = "CLOSED"
@@ -3277,10 +3277,11 @@ def password_reset_acknowledge(request, pr_id):
 
     try:
         Comment.objects.create(
-            comment=(
-                f"<strong>Request Acknowledged – Fulfilled</strong><br>"
-                f"<strong>Status:</strong> Closed<br>"
-                f"{comment}"
+            comment=format_html(
+                "<strong>Request Acknowledged – Fulfilled</strong><br>"
+                "<strong>Status:</strong> Closed<br>"
+                "{}",
+                comment,
             ),
             ticket=ticket,
             employee_id=request.user.employee_get,
