@@ -16,7 +16,7 @@ from django.shortcuts import redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils import timezone
-from django.utils.html import format_html
+from django.utils.html import format_html, strip_tags
 from django.utils.translation import gettext as _
 from django.views.decorators.http import require_http_methods
 
@@ -3266,7 +3266,7 @@ def password_reset_acknowledge(request, pr_id):
             messages.error(request, error)
         return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
 
-    comment = form.cleaned_data["comment"]
+    comment = strip_tags(form.cleaned_data["comment"])
     ticket = pr_request.ticket
 
     pr_request.iso_status = "CLOSED"
@@ -3660,17 +3660,19 @@ def _access_review_comment(ticket, actor_user, heading, status_label, body, feed
     """Create an inline comment entry on the ticket (reviewer audit trail).
     """
     try:
+        clean_body = strip_tags(body) if body else body
+        clean_feedback = strip_tags(feedback) if feedback else feedback
         comment_text = format_html(
             "<strong>{}</strong><br>"
             "<strong>Status:</strong> {}<br>"
             "{}",
             heading,
             status_label,
-            body,
+            clean_body,
         )
-        if feedback:
+        if clean_feedback:
             comment_text += format_html(
-                "<br><strong>Feedback:</strong> {}", feedback
+                "<br><strong>Feedback:</strong> {}", clean_feedback
             )
         Comment.objects.create(
             comment=comment_text,
