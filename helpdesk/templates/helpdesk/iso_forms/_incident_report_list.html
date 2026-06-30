@@ -1,0 +1,129 @@
+{% load i18n %}
+
+{% if incident_reports %}
+    <div class="oh-table_sticky--wrapper">
+        <div id="incident-report-table" data-table-name="incident_report_table">
+            <div class="oh-sticky-table">
+                <div class="oh-sticky-table__table">
+                    <div class="oh-sticky-table__thead">
+                        <div class="oh-sticky-table__tr">
+                            <div class="oh-sticky-table__th iso-col--ticket">{% trans "Ticket ID" %}</div>
+                            <div class="oh-sticky-table__th iso-col--platform">{% trans "Business Unit" %}</div>
+                            <div class="oh-sticky-table__th iso-col--user">{% trans "Reporter" %}</div>
+                            <div class="oh-sticky-table__th iso-col--status">{% trans "Status" %}</div>
+                            <div class="oh-sticky-table__th iso-col--updated">{% trans "Updated" %}</div>
+                            <div class="oh-sticky-table__th oh-sticky-table__right iso-col--actions">{% trans "Actions" %}</div>
+                        </div>
+                    </div>
+                    <div class="oh-sticky-table__tbody">
+                        {% for inc in incident_reports %}
+                            <div class="oh-sticky-table__tr"
+                                onclick="window.location.href = '{% url 'ticket-detail' inc.ticket.id %}'"
+                                style="cursor:pointer;"
+                            >
+                                <div class="oh-sticky-table__sd iso-col--ticket
+                                    {% if inc.status == 'PENDING' %}row-status--blue
+                                    {% elif inc.status == 'UNDER_REVIEW' %}row-status--orange
+                                    {% elif inc.status == 'RESOLVED' %}row-status--yellowgreen
+                                    {% elif inc.status == 'CLOSED' %}row-status--grey{% endif %}"
+                                >
+                                    <span class="d-flex justify-content-between align-items-center">
+                                        {{ inc.ticket.ticket_type.prefix }}{{ inc.ticket.id|stringformat:"03d" }}
+                                    </span>
+                                </div>
+                                <div class="oh-sticky-table__td iso-col--platform">
+                                    <span class="iso-ellipsis" title="{{ inc.business_unit }}">{{ inc.business_unit }}</span>
+                                </div>
+                                <div class="oh-sticky-table__td iso-col--user">
+                                    <span class="iso-ellipsis" title="{{ inc.ticket.employee_id.get_full_name|default:inc.ir_name }}">
+                                        {{ inc.ticket.employee_id.get_full_name|default:inc.ir_name }}
+                                    </span>
+                                </div>
+                                <div class="oh-sticky-table__td iso-col--status">
+                                    {% if inc.status == 'PENDING' %}
+                                        <span class="oh-badge oh-badge--iso-pending">{{ inc.get_status_display }}</span>
+                                    {% elif inc.status == 'UNDER_REVIEW' %}
+                                        <span class="oh-badge oh-badge--iso-action">{{ inc.get_status_display }}</span>
+                                    {% elif inc.status == 'RESOLVED' %}
+                                        <span class="oh-badge oh-badge--iso-awaiting">{{ inc.get_status_display }}</span>
+                                    {% elif inc.status == 'CLOSED' %}
+                                        <span class="oh-badge oh-badge--iso-closed">{{ inc.get_status_display }}</span>
+                                    {% else %}
+                                        <span class="oh-badge oh-badge--iso-default">{{ inc.get_status_display }}</span>
+                                    {% endif %}
+                                </div>
+                                <div class="oh-sticky-table__td iso-col--updated">{{ inc.updated_at|date:"M d, Y H:i" }}</div>
+                                <div class="oh-sticky-table__td oh-sticky-table__right iso-col--actions" onclick="event.stopPropagation()">
+                                    <div class="oh-btn-group">
+
+                                        {# ── Edit / Withdraw (only PENDING, owner) ── #}
+                                        {% if inc.status == 'PENDING' %}
+                                            {% if is_isc_member or current_employee == inc.ticket.employee_id %}
+                                                <button
+                                                    class="oh-btn oh-btn--light-bkg p-3 w-50"
+                                                    title="{% trans 'Edit' %}"
+                                                    hx-get="{% url 'incident-report-update' inc.id %}"
+                                                    hx-target="#incidentReportModalTarget"
+                                                    hx-swap="innerHTML"
+                                                    data-toggle="oh-modal-toggle"
+                                                    data-target="#incidentReportModal"
+                                                >
+                                                    <ion-icon name="create-outline"></ion-icon>
+                                                </button>
+                                            {% endif %}
+                                            {% if current_employee == inc.ticket.employee_id %}
+                                                <form
+                                                    action="{% url 'incident-report-withdraw' inc.id %}"
+                                                    class="w-50"
+                                                    onsubmit="return confirm('{% trans "Withdraw this incident report?" %}');"
+                                                    method="post"
+                                                    onclick="event.stopPropagation()"
+                                                    style="display:contents;"
+                                                >
+                                                    {% csrf_token %}
+                                                    <button type="submit" class="oh-btn oh-btn--warning-outline oh-btn--light-bkg p-3 w-100" title="{% trans 'Withdraw' %}">
+                                                        <ion-icon name="close-circle-outline"></ion-icon>
+                                                    </button>
+                                                </form>
+                                            {% endif %}
+                                        {% endif %}
+
+                                        {# ── Review actions are performed from the ticket detail view (ISC). ── #}
+                                        {% if inc.status != 'PENDING' and inc.status != 'CLOSED' and is_isc_member %}
+                                            <a class="oh-btn oh-btn--light-bkg p-3 w-50"
+                                                href="{% url 'ticket-detail' inc.ticket.id %}"
+                                                title="{% trans 'Open to review' %}"
+                                                onclick="event.stopPropagation()"
+                                                style="color: dodgerblue;">
+                                                <ion-icon name="open-outline"></ion-icon>
+                                            </a>
+                                        {% endif %}
+
+                                        {# ── Delete (IS Council / superuser) ── #}
+                                        {% if is_isc_member %}
+                                            <form action="{% url 'incident-report-delete' inc.id %}" class="w-50"
+                                                onsubmit="return confirm('{% trans "Delete this incident report?" %}');"
+                                                method="post" onclick="event.stopPropagation()" style="display:contents;">
+                                                {% csrf_token %}
+                                                <button type="submit" class="oh-btn oh-btn--danger-outline oh-btn--light-bkg p-3 w-100" title="{% trans 'Delete' %}">
+                                                    <ion-icon name="trash-outline"></ion-icon>
+                                                </button>
+                                            </form>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+{% else %}
+    <div class="py-5 d-flex flex-column align-items-center text-center text-muted">
+        <ion-icon name="warning-outline" style="font-size:42px;"></ion-icon>
+        <p class="mt-2 mb-0">{% trans "No incident reports found." %}</p>
+        <small>{% trans "Click Create above to submit a new report." %}</small>
+    </div>
+{% endif %}
+

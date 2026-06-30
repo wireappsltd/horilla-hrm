@@ -48,6 +48,9 @@ from helpdesk.forms import (
     ExceptionRequestForm,
     FAQCategoryForm,
     FAQForm,
+    IncidentPostReviewForm,
+    IncidentReportForm,
+    IncidentTransitionForm,
     ISOAcknowledgementForm,
     ISOCommentTransitionForm,
     ISOReviewForm,
@@ -66,6 +69,7 @@ from helpdesk.models import (
     ACCESS_REQUEST_STATUS_CHOICES,
     EXCEPTION_REQUEST_STATUS_CHOICES,
     ADMIN_ACCESS_REQUEST_STATUS_CHOICES,
+    INCIDENT_REPORT_STATUS_CHOICES,
     ISO_STATUS_CHOICES,
     TICKET_STATUS,
     AccessRequest,
@@ -76,6 +80,7 @@ from helpdesk.models import (
     DepartmentManager,
     ExceptionRequest,
     FAQCategory,
+    IncidentReport,
     PasswordResetRequest,
     Ticket,
     TicketType,
@@ -1053,6 +1058,13 @@ def ticket_detail(request, ticket_id, **kwargs):
     is_aar_forward_to_user = (
         has_aar and admin_access_request.forward_to.filter(pk=request.user.pk).exists()
     )
+    # Incident Report visibility: IS Council members drive the workflow and
+    # forward_to recipients must be able to open the ticket.
+    incident_report = getattr(ticket, "incident_report", None)
+    has_inc = incident_report is not None
+    is_inc_forward_to_user = (
+        has_inc and incident_report.forward_to.filter(pk=request.user.pk).exists()
+    )
     # ISO officers and IS Council members can open a ticket only when that
     # ticket carries an ISO workflow request that requires their feedback
     # (e.g. they are the relevant reviewer) or it was explicitly forwarded to
@@ -1074,6 +1086,8 @@ def ticket_detail(request, ticket_id, **kwargs):
         or is_er_forward_to_user
         or (has_aar and (is_iso or is_isc))
         or is_aar_forward_to_user
+        or (has_inc and is_isc)
+        or is_inc_forward_to_user
     ):
         today = datetime.now().date()
         c_form = CommentForm()
@@ -1207,6 +1221,14 @@ def ticket_detail(request, ticket_id, **kwargs):
         # Fetch admin access request if it exists for this ticket.
         admin_access_request = getattr(ticket, "admin_access_request", None)
 
+        # Fetch incident report if it exists for this ticket.
+        incident_report = getattr(ticket, "incident_report", None)
+        incident_post_review_form = (
+            IncidentPostReviewForm(instance=incident_report)
+            if incident_report
+            else None
+        )
+
         context = {
             "ticket": ticket,
             "display_description": _get_ticket_display_description(ticket),
@@ -1218,6 +1240,7 @@ def ticket_detail(request, ticket_id, **kwargs):
             "access_request_status_choices": ACCESS_REQUEST_STATUS_CHOICES,
             "exception_request_status_choices": EXCEPTION_REQUEST_STATUS_CHOICES,
             "admin_access_request_status_choices": ADMIN_ACCESS_REQUEST_STATUS_CHOICES,
+            "incident_report_status_choices": INCIDENT_REPORT_STATUS_CHOICES,
             "tag_form": TicketTagForm(instance=ticket),
             "sorted_activity_list": sorted_activity_list,
             "create_tag_f": TagsForm(),
@@ -1230,6 +1253,8 @@ def ticket_detail(request, ticket_id, **kwargs):
             "access_review_form": access_review_form,
             "exception_request": exception_request,
             "admin_access_request": admin_access_request,
+            "incident_report": incident_report,
+            "incident_post_review_form": incident_post_review_form,
             "is_iso_officer": request.user.is_superuser or _is_iso_officer(request.user),
             "is_isc_member": request.user.is_superuser
             or _is_isc_member(request.user),
@@ -2730,6 +2755,16 @@ def iso_forms_home(request):
             "target": "adminAccessRequestModalTarget",
             "modal": "adminAccessRequestModal",
         },
+        {
+            "title": _("Incident Report"),
+            "description": _(
+                "Report a security incident for IS Council review."
+            ),
+            "icon": "warning-outline",
+            "create_url": reverse("incident-report-create"),
+            "target": "incidentReportModalTarget",
+            "modal": "incidentReportModal",
+        },
     ]
 
     # ── Access Requests visible to the current user ──
@@ -2776,11 +2811,29 @@ def iso_forms_home(request):
         else:
             admin_access_qs = admin_access_qs.none()
 
+    # ── Incident Reports visible to the current user ──
+    # The Incident Report workflow is IS Council–driven, so only ISC members
+    # (and superusers) get blanket visibility; everyone else sees only their
+    # own reports or ones forwarded to them.
+    incident_qs = IncidentReport.objects.select_related(
+        "ticket", "ticket__employee_id"
+    ).order_by("-created_at")
+    if not request.user.is_superuser and not is_isc:
+        if current_employee:
+            incident_qs = incident_qs.filter(
+                Q(ticket__employee_id=current_employee)
+                | Q(ticket__assigned_to=current_employee)
+                | Q(forward_to=request.user)
+            ).distinct()
+        else:
+            incident_qs = incident_qs.none()
+
     context = {
         "password_reset_requests": queryset,
         "access_requests": access_qs,
         "exception_requests": exception_qs,
         "admin_access_requests": admin_access_qs,
+        "incident_reports": incident_qs,
         "current_employee": current_employee,
         "is_iso_officer": request.user.is_superuser or _is_iso_officer(request.user),
         "is_isc_member": is_isc,
@@ -5040,3 +5093,555 @@ def admin_access_request_delete(request, aar_id):
             messages.error(request, _("You cannot delete this admin access request."))
 
     return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+
+# ── Incident Report views ────────────────────────────────────────────────────
+
+
+def _get_incident_report_ticket_type():
+    """Return (creating if needed) the TicketType for Incident Report tickets."""
+    ticket_type, _created = TicketType.objects.get_or_create(
+        title="Incident Report",
+        defaults={"type": "others", "prefix": "INC"},
+    )
+    return ticket_type
+
+
+def _is_incident_report_owner(user, incident_report):
+    """Return True when the authenticated user owns the incident report."""
+    current_employee = getattr(user, "employee_get", None)
+    ticket_employee = getattr(incident_report.ticket, "employee_id", None)
+    return bool(
+        current_employee and ticket_employee and current_employee == ticket_employee
+    )
+
+
+def _build_incident_report_description(incident_report):
+    """Build the HTML description block shown on the linked Ticket.
+
+    Every interpolated value is escaped by :func:`format_html`, preventing
+    stored XSS even though the description is later rendered with ``|safe``.
+    """
+    return format_html(
+        "<b>Incident Report Details:</b><br><br>"
+        "<b>IR Name:</b> {}<br>"
+        "<b>IR Email:</b> {}<br>"
+        "<b>Reported By:</b> {}<br>"
+        "<b>Incident Reporting Date:</b> {}<br>"
+        "<b>Incident Occurrence Date:</b> {}<br>"
+        "<b>Incident Occurrence Time:</b> {}<br>"
+        "<b>Business Unit / Process Affected:</b> {}<br>"
+        "<b>Location of Incident:</b> {}<br>"
+        "<b>Duration of Incident:</b> {}<br>"
+        "<b>Initial Classification:</b> {}<br>"
+        "<b>Incident Description:</b> {}",
+        incident_report.ir_name,
+        incident_report.ir_email,
+        incident_report.get_reported_by_display(),
+        incident_report.reporting_date,
+        incident_report.occurrence_date,
+        incident_report.occurrence_time,
+        incident_report.business_unit,
+        incident_report.get_location_type_display(),
+        incident_report.get_duration_display(),
+        incident_report.get_initial_classification_display(),
+        incident_report.description,
+    )
+
+
+@login_required
+@hx_request_required
+def incident_report_create(request):
+    """
+    GET  → renders the Incident Report modal form (Reporter section).
+    POST → creates Ticket + IncidentReport (status PENDING), notifies the
+           IS Council members who drive the workflow.
+    """
+    form = IncidentReportForm(request=request)
+
+    if request.method == "POST":
+        form = IncidentReportForm(request.POST, request=request)
+        if form.is_valid():
+            ticket_type = _get_incident_report_ticket_type()
+            priority = form.cleaned_data.get("priority", "medium")
+            deadline = form.cleaned_data.get("deadline") or (
+                timezone.now() + timedelta(days=7)
+            ).date()
+
+            selected_employee = form.cleaned_data["employee"]
+            selected_forward_users = list(form.cleaned_data["forward_to"])
+
+            incident_report = form.save(commit=False)
+            incident_report.status = "PENDING"
+
+            forward_employee_ids, _emps = _get_forward_employee_ids_and_employees(
+                selected_forward_users
+            )
+            # IS Council members drive the workflow, so route the ticket to the
+            # selected ISC recipients (plus all ISC members as a fallback).
+            isc_users = _get_isc_users()
+            isc_employee_ids, _isc_emps = _get_forward_employee_ids_and_employees(
+                isc_users
+            )
+            combined_employee_ids = list(
+                dict.fromkeys(isc_employee_ids + forward_employee_ids)
+            )
+            raised_on = ",".join(combined_employee_ids) or str(selected_employee.id)
+
+            unit = (incident_report.business_unit or "").strip()
+            short_unit = (unit[:27] + "...") if len(unit) > 30 else unit
+            ticket = Ticket(
+                title=f"Incident Report – {short_unit}",
+                employee_id=selected_employee,
+                ticket_type=ticket_type,
+                description=_build_incident_report_description(incident_report),
+                priority=priority,
+                assigning_type="individual",
+                raised_on=raised_on,
+                deadline=deadline,
+                status="new",
+            )
+            ticket.save()
+            ticket.assigned_to.add(selected_employee)
+
+            incident_report.ticket = ticket
+            incident_report.save()
+            incident_report.forward_to.set(selected_forward_users)
+
+            _helpdesk_audit(request, "Incident report created", ticket)
+
+            notification_actor = getattr(
+                request.user, "employee_get", selected_employee
+            )
+            try:
+                isc_recipients = [
+                    u for u in (selected_forward_users or isc_users)
+                    if u.pk != request.user.pk
+                ]
+                if isc_recipients:
+                    notify.send(
+                        notification_actor,
+                        recipient=isc_recipients,
+                        verb=(
+                            f"New Incident Report submitted by "
+                            f"{selected_employee.get_full_name()} awaiting IS Council review."
+                        ),
+                        icon="warning",
+                        redirect=reverse(
+                            "ticket-detail", kwargs={"ticket_id": ticket.id}
+                        ),
+                    )
+            except Exception as exc:
+                logger.error("Incident report ISC notify error: %s", exc)
+
+            messages.success(
+                request,
+                _("Incident report submitted successfully."),
+            )
+            return HttpResponse("<script>window.location.reload()</script>")
+
+    context = {"form": form}
+    return render(request, "helpdesk/ticket/incident_report_form.html", context)
+
+
+@login_required
+@hx_request_required
+def incident_report_update(request, inc_id):
+    """Allow the owner / ISC member to edit a PENDING Incident Report."""
+    try:
+        incident_report = IncidentReport.objects.get(id=inc_id)
+    except IncidentReport.DoesNotExist:
+        messages.error(request, _("Incident report not found."))
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+    ticket = incident_report.ticket
+
+    current_employee = getattr(request.user, "employee_get", None)
+    has_access = (
+        request.user.is_superuser
+        or _is_isc_member(request.user)
+        or current_employee == ticket.employee_id
+    )
+    if not has_access:
+        messages.info(request, _("You don't have permission."))
+        if "HTTP_HX_REQUEST" in request.META:
+            return render(request, "decorator_404.html")
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    if incident_report.status != "PENDING":
+        messages.info(
+            request,
+            _("This report is already under review and cannot be edited."),
+        )
+        return HttpResponse("<script>window.location.reload()</script>")
+
+    form = IncidentReportForm(instance=incident_report, request=request)
+    if request.method == "POST":
+        incident_report.refresh_from_db()
+        if incident_report.status != "PENDING":
+            messages.info(
+                request,
+                _("This report is already under review and cannot be edited."),
+            )
+            return HttpResponse("<script>window.location.reload()</script>")
+        form = IncidentReportForm(
+            request.POST, instance=incident_report, request=request
+        )
+        if form.is_valid():
+            selected_employee = form.cleaned_data["employee"]
+            selected_forward_users = list(form.cleaned_data["forward_to"])
+
+            incident_report = form.save(commit=False)
+            incident_report.save()
+            incident_report.forward_to.set(selected_forward_users)
+
+            forward_employee_ids, _emps = _get_forward_employee_ids_and_employees(
+                selected_forward_users
+            )
+            isc_users = _get_isc_users()
+            isc_employee_ids, _isc_emps = _get_forward_employee_ids_and_employees(
+                isc_users
+            )
+            combined_employee_ids = list(
+                dict.fromkeys(isc_employee_ids + forward_employee_ids)
+            )
+            ticket = Ticket.objects.get(pk=incident_report.ticket_id)
+            ticket.employee_id = selected_employee
+            ticket.priority = form.cleaned_data.get("priority")
+            ticket.deadline = form.cleaned_data.get("deadline")
+            unit = (incident_report.business_unit or "").strip()
+            short_unit = (unit[:27] + "...") if len(unit) > 30 else unit
+            ticket.title = f"Incident Report – {short_unit}"
+            ticket.description = _build_incident_report_description(incident_report)
+            ticket.raised_on = ",".join(combined_employee_ids) or str(
+                selected_employee.id
+            )
+            ticket.save()
+            ticket.assigned_to.clear()
+            ticket.assigned_to.add(selected_employee)
+
+            _helpdesk_audit(request, "Incident report updated", ticket)
+            messages.success(request, _("Incident report updated successfully."))
+            return HttpResponse("<script>window.location.reload()</script>")
+
+    context = {"form": form, "incident_report": incident_report}
+    return render(request, "helpdesk/ticket/incident_report_form.html", context)
+
+
+def _incident_report_isc_guard(request, incident_report):
+    """Shared ISC-authorization guard for Incident Report transitions.
+
+    Returns an HttpResponse to short-circuit on failure, or ``None`` when the
+    caller may proceed.
+    """
+    if not request.user.is_superuser and not _is_isc_member(request.user):
+        messages.info(
+            request, _("Only an IS Council member can perform this action.")
+        )
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+    return None
+
+
+@login_required
+def incident_report_take_review(request, inc_id):
+    """ISC takes ownership: PENDING → UNDER_REVIEW (mandatory comment)."""
+    if request.method != "POST":
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    try:
+        incident_report = IncidentReport.objects.get(id=inc_id)
+    except IncidentReport.DoesNotExist:
+        messages.error(request, _("Incident report not found."))
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    guard = _incident_report_isc_guard(request, incident_report)
+    if guard is not None:
+        return guard
+
+    if incident_report.status != "PENDING":
+        messages.info(request, _("This report is not awaiting review."))
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    form = IncidentTransitionForm(request.POST)
+    if not form.is_valid():
+        for error in form.errors.values():
+            messages.error(request, error)
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    comment = form.cleaned_data["comment"]
+    ticket = incident_report.ticket
+    incident_report.status = "UNDER_REVIEW"
+    incident_report.reviewed_by = request.user
+    incident_report.reviewed_at = timezone.now()
+    incident_report.save()
+    ticket.status = "in_progress"
+    ticket.save()
+
+    _access_review_comment(
+        ticket,
+        request.user,
+        _("Incident Report – Under Review"),
+        _("Under Review"),
+        _("The IS Council has taken ownership of this incident report."),
+        comment,
+    )
+    _helpdesk_audit(
+        request,
+        "Incident report moved to Under Review",
+        ticket,
+        {"status": {"from": "PENDING", "to": "UNDER_REVIEW"}},
+    )
+
+    try:
+        notify.send(
+            request.user.employee_get,
+            recipient=ticket.employee_id.employee_user_id,
+            verb=_("Your incident report is now under review by the IS Council."),
+            icon="warning",
+            redirect=reverse("ticket-detail", kwargs={"ticket_id": ticket.id}),
+        )
+    except Exception as exc:
+        logger.error("Incident report take-review notify error: %s", exc)
+
+    messages.success(request, _("Incident report is now under review."))
+    return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+
+@login_required
+def incident_report_save_classification(request, inc_id):
+    """ISC sets/edits the Post-Review Classification while UNDER_REVIEW."""
+    if request.method != "POST":
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    try:
+        incident_report = IncidentReport.objects.get(id=inc_id)
+    except IncidentReport.DoesNotExist:
+        messages.error(request, _("Incident report not found."))
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    guard = _incident_report_isc_guard(request, incident_report)
+    if guard is not None:
+        return guard
+
+    if incident_report.status != "UNDER_REVIEW":
+        messages.info(
+            request,
+            _("Post-Review Classification can only be edited while under review."),
+        )
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    form = IncidentPostReviewForm(request.POST, instance=incident_report)
+    if not form.is_valid():
+        for error in form.errors.values():
+            messages.error(request, error)
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    incident_report = form.save()
+    _helpdesk_audit(
+        request,
+        "Incident report post-review classification updated",
+        incident_report.ticket,
+        {"post_review_classification": incident_report.get_post_review_classification_display()},
+    )
+    messages.success(request, _("Post-Review Classification saved."))
+    return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+
+@login_required
+def incident_report_resolve(request, inc_id):
+    """ISC resolves: UNDER_REVIEW → RESOLVED.
+
+    Blocked until the Post-Review Classification is filled (it may be supplied
+    on this request or beforehand via the classification editor).
+    """
+    if request.method != "POST":
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    try:
+        incident_report = IncidentReport.objects.get(id=inc_id)
+    except IncidentReport.DoesNotExist:
+        messages.error(request, _("Incident report not found."))
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    guard = _incident_report_isc_guard(request, incident_report)
+    if guard is not None:
+        return guard
+
+    if incident_report.status != "UNDER_REVIEW":
+        messages.info(request, _("This report is not under review."))
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    form = IncidentTransitionForm(request.POST)
+    if not form.is_valid():
+        for error in form.errors.values():
+            messages.error(request, error)
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    comment = form.cleaned_data["comment"]
+    classification = form.cleaned_data.get("post_review_classification")
+    if classification:
+        incident_report.post_review_classification = classification
+
+    if not incident_report.post_review_classification:
+        messages.error(
+            request,
+            _("Post-Review Classification is required before resolving."),
+        )
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    ticket = incident_report.ticket
+    incident_report.status = "RESOLVED"
+    incident_report.resolved_by = request.user
+    incident_report.resolved_at = timezone.now()
+    incident_report.save()
+    ticket.status = "resolved"
+    ticket.save()
+
+    _access_review_comment(
+        ticket,
+        request.user,
+        _("Incident Report – Resolved"),
+        _("Resolved"),
+        _("Post-Review Classification: %(value)s")
+        % {"value": incident_report.get_post_review_classification_display()},
+        comment,
+    )
+    _helpdesk_audit(
+        request,
+        "Incident report resolved",
+        ticket,
+        {"status": {"from": "UNDER_REVIEW", "to": "RESOLVED"}},
+    )
+
+    try:
+        notify.send(
+            request.user.employee_get,
+            recipient=ticket.employee_id.employee_user_id,
+            verb=_("Your incident report has been resolved by the IS Council."),
+            icon="warning",
+            redirect=reverse("ticket-detail", kwargs={"ticket_id": ticket.id}),
+        )
+    except Exception as exc:
+        logger.error("Incident report resolve notify error: %s", exc)
+
+    messages.success(request, _("Incident report resolved."))
+    return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+
+@login_required
+def incident_report_close(request, inc_id):
+    """ISC closes: RESOLVED → CLOSED (mandatory comment)."""
+    if request.method != "POST":
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    try:
+        incident_report = IncidentReport.objects.get(id=inc_id)
+    except IncidentReport.DoesNotExist:
+        messages.error(request, _("Incident report not found."))
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    guard = _incident_report_isc_guard(request, incident_report)
+    if guard is not None:
+        return guard
+
+    if incident_report.status != "RESOLVED":
+        messages.info(request, _("This report is not ready to be closed."))
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    form = IncidentTransitionForm(request.POST)
+    if not form.is_valid():
+        for error in form.errors.values():
+            messages.error(request, error)
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    comment = form.cleaned_data["comment"]
+    ticket = incident_report.ticket
+    incident_report.status = "CLOSED"
+    incident_report.closed_by = request.user
+    incident_report.closed_at = timezone.now()
+    incident_report.save()
+    ticket.status = "resolved"
+    ticket.save()
+
+    _access_review_comment(
+        ticket,
+        request.user,
+        _("Incident Report – Closed"),
+        _("Closed"),
+        _("The IS Council has confirmed this incident is fully closed."),
+        comment,
+    )
+    _helpdesk_audit(
+        request,
+        "Incident report closed",
+        ticket,
+        {"status": {"from": "RESOLVED", "to": "CLOSED"}},
+    )
+
+    messages.success(request, _("Incident report closed."))
+    return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+
+@login_required
+def incident_report_withdraw(request, inc_id):
+    """Allow the owner to withdraw their own PENDING Incident Report."""
+    if request.method != "POST":
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    try:
+        incident_report = IncidentReport.objects.get(id=inc_id)
+    except IncidentReport.DoesNotExist:
+        messages.error(request, _("Incident report not found."))
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    ticket = incident_report.ticket
+    current_employee = getattr(request.user, "employee_get", None)
+    if current_employee != ticket.employee_id:
+        messages.info(request, _("You don't have permission to withdraw this report."))
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    if incident_report.status != "PENDING":
+        messages.info(
+            request,
+            _("This report is already under review and cannot be withdrawn."),
+        )
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    ticket_title = str(ticket)
+    incident_report.delete()
+    ticket.delete()
+    messages.success(
+        request,
+        _('Your incident report "{}" has been withdrawn successfully.').format(
+            ticket_title
+        ),
+    )
+    return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+
+@login_required
+def incident_report_delete(request, inc_id):
+    """IS Council / Superuser deletes an Incident Report and its ticket."""
+    if not request.user.is_superuser and not _is_isc_member(request.user):
+        messages.info(request, _("You don't have permission."))
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    if request.method == "POST":
+        try:
+            incident_report = IncidentReport.objects.get(id=inc_id)
+            ticket = incident_report.ticket
+            ticket_title = str(ticket)
+            incident_report.delete()
+            ticket.delete()
+            messages.success(
+                request,
+                _('The incident report "{}" has been deleted successfully.').format(
+                    ticket_title
+                ),
+            )
+        except IncidentReport.DoesNotExist:
+            messages.error(request, _("Incident report not found."))
+        except Exception:
+            messages.error(request, _("You cannot delete this incident report."))
+
+    return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+

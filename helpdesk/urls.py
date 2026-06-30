@@ -301,5 +301,46 @@ urlpatterns = [
         views.admin_access_request_delete,
         name="admin-access-request-delete",
     ),
+    # ── Incident Report URLs ─────────────────────────────────────────────────
+    path(
+        "incident-report/create/",
+        views.incident_report_create,
+        name="incident-report-create",
+    ),
+    path(
+        "incident-report/update/<int:inc_id>/",
+        views.incident_report_update,
+        name="incident-report-update",
+    ),
+    path(
+        "incident-report/take-review/<int:inc_id>/",
+        views.incident_report_take_review,
+        name="incident-report-take-review",
+    ),
+    path(
+        "incident-report/save-classification/<int:inc_id>/",
+        views.incident_report_save_classification,
+        name="incident-report-save-classification",
+    ),
+    path(
+        "incident-report/resolve/<int:inc_id>/",
+        views.incident_report_resolve,
+        name="incident-report-resolve",
+    ),
+    path(
+        "incident-report/close/<int:inc_id>/",
+        views.incident_report_close,
+        name="incident-report-close",
+    ),
+    path(
+        "incident-report/withdraw/<int:inc_id>/",
+        views.incident_report_withdraw,
+        name="incident-report-withdraw",
+    ),
+    path(
+        "incident-report/delete/<int:inc_id>/",
+        views.incident_report_delete,
+        name="incident-report-delete",
+    ),
 ]
 
