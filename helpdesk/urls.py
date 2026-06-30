@@ -205,14 +205,14 @@ urlpatterns = [
         name="access-request-update",
     ),
     path(
-        "access-request/dh-review/<int:ar_id>/",
-        views.divisional_head_review_access_request,
-        name="access-request-dh-review",
-    ),
-    path(
         "access-request/iso-review/<int:ar_id>/",
         views.iso_review_access_request,
         name="access-request-iso-review",
+    ),
+    path(
+        "access-request/isc-review/<int:ar_id>/",
+        views.isc_review_access_request,
+        name="access-request-isc-review",
     ),
     path(
         "access-request/acknowledge/<int:ar_id>/",
