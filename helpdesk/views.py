@@ -1007,6 +1007,17 @@ def _suppress_initial_set_changes(trackings):
 @login_required
 def ticket_detail(request, ticket_id, **kwargs):
     ticket = Ticket.objects.get(id=ticket_id)
+    # A ticket can be "forwarded" to one or more individuals by storing their
+    # employee ids in ``raised_on`` (the model labels this field "Forward To").
+    # Anyone the ticket is forwarded to must be able to open it, including ISO
+    # officers and IS Council members who receive forwarded requests.
+    is_forwarded_recipient = False
+    if ticket.assigning_type == "individual":
+        current_employee = getattr(request.user, "employee_get", None)
+        if current_employee is not None:
+            is_forwarded_recipient = str(current_employee.id) in (
+                ticket._parse_raised_on_ids()
+            )
     # Allow ISO officers to view password reset tickets
     is_iso = request.user.is_superuser or _is_iso_officer(request.user)
     is_dh = request.user.is_superuser or _is_divisional_head(request.user)
@@ -1045,6 +1056,7 @@ def ticket_detail(request, ticket_id, **kwargs):
         or is_department_manager(request, ticket)
         or request.user.employee_get == ticket.employee_id
         or request.user.employee_get in ticket.assigned_to.all()
+        or is_forwarded_recipient
         or (has_pr and is_iso)
         or is_forward_to_user
         or (has_ar and (is_iso or is_dh))
