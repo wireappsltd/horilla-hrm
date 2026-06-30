@@ -137,6 +137,16 @@
                         <td class="align-middle">
                             {% if log.user %}
                                 <strong>{{ log.user.get_full_name|default:log.user.username }}</strong>
+                                {% with actor_emp=log.user.employee_get %}
+                                    {% if actor_emp.get_department %}
+                                    <br>
+                                    <span class="text-muted small">{% trans "Division" %}: {{ actor_emp.get_department }}</span>
+                                    {% endif %}
+                                    {% if actor_emp.get_job_position %}
+                                    <br>
+                                    <span class="text-muted small">{% trans "Designation" %}: {{ actor_emp.get_job_position }}</span>
+                                    {% endif %}
+                                {% endwith %}
                             {% else %}
                                 <span class="text-muted">{% trans "System" %}</span>
                             {% endif %}

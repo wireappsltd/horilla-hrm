@@ -16,7 +16,7 @@ from django.shortcuts import redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils import timezone
-from django.utils.html import format_html
+from django.utils.html import format_html, strip_tags
 from django.utils.translation import gettext as _
 from django.views.decorators.http import require_http_methods
 
@@ -3301,10 +3301,11 @@ def password_reset_acknowledge(request, pr_id):
 
     try:
         Comment.objects.create(
-            comment=(
-                f"<strong>Request Acknowledged – Fulfilled</strong><br>"
-                f"<strong>Status:</strong> Closed<br>"
-                f"{comment}"
+            comment=format_html(
+                "<strong>Request Acknowledged – Fulfilled</strong><br>"
+                "<strong>Status:</strong> Closed<br>"
+                "{}",
+                comment,
             ),
             ticket=ticket,
             employee_id=request.user.employee_get,
@@ -3684,17 +3685,19 @@ def _access_review_comment(ticket, actor_user, heading, status_label, body, feed
     """Create an inline comment entry on the ticket (reviewer audit trail).
     """
     try:
+        clean_body = strip_tags(body) if body else body
+        clean_feedback = strip_tags(feedback) if feedback else feedback
         comment_text = format_html(
             "<strong>{}</strong><br>"
             "<strong>Status:</strong> {}<br>"
             "{}",
             heading,
             status_label,
-            body,
+            clean_body,
         )
-        if feedback:
+        if clean_feedback:
             comment_text += format_html(
-                "<br><strong>Feedback:</strong> {}", feedback
+                "<br><strong>Feedback:</strong> {}", clean_feedback
             )
         Comment.objects.create(
             comment=comment_text,

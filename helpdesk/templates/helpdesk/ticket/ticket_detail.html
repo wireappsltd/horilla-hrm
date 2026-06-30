@@ -518,20 +518,20 @@
                     {% elif item.type == 'history' %}
                     {% if item.history.type == 'Ticket created' or item.history.type == 'Password reset request created' %}
                     <div class="oh-helpdesk__chat-update">
-                        <span><strong>{{item.history.updated_by}}</strong> {% trans "Created the ticket " %}</span>
+                        <span><strong>{{item.history.updated_by}}</strong>{% if item.history.updated_by.get_department or item.history.updated_by.get_job_position %} <span class="text-muted small">({% if item.history.updated_by.get_department %}{% trans "Division" %}: {{item.history.updated_by.get_department}}{% endif %}{% if item.history.updated_by.get_job_position %}{% if item.history.updated_by.get_department %} · {% endif %}{% trans "Designation" %}: {{item.history.updated_by.get_job_position}}{% endif %})</span>{% endif %} {% trans "Created the ticket " %}</span>
                     </div>
                     {% else %}
                     {% for change in item.history.changes %}
                     {% if change.is_fk == True %}
                     <div class="oh-helpdesk__chat-update">
-                        <span>{{item.history.updated_by}} {% trans "changed the ticket " %}{{change.field|safe}} {% trans " from" %}
+                        <span>{{item.history.updated_by}}{% if item.history.updated_by.get_department or item.history.updated_by.get_job_position %} <span class="text-muted small">({% if item.history.updated_by.get_department %}{% trans "Division" %}: {{item.history.updated_by.get_department}}{% endif %}{% if item.history.updated_by.get_job_position %}{% if item.history.updated_by.get_department %} · {% endif %}{% trans "Designation" %}: {{item.history.updated_by.get_job_position}}{% endif %})</span>{% endif %} {% trans "changed the ticket " %}{{change.field|safe}} {% trans " from" %}
                             <strong>{{item.history.pair.1|fk_history:change|safe}}</strong> {% trans "to" %}
                             <strong>{{item.history.pair.0|fk_history:change|safe}}</strong></span>
                         <span>{{ item.history.pair.0.history_date}}</span>
                     </div>
                     {% else %}
                     <div class="oh-helpdesk__chat-update">
-                        <span>{{item.history.updated_by}} {% trans "changed the ticket " %}{{change.field|safe}} {% trans " from" %}
+                        <span>{{item.history.updated_by}}{% if item.history.updated_by.get_department or item.history.updated_by.get_job_position %} <span class="text-muted small">({% if item.history.updated_by.get_department %}{% trans "Division" %}: {{item.history.updated_by.get_department}}{% endif %}{% if item.history.updated_by.get_job_position %}{% if item.history.updated_by.get_department %} · {% endif %}{% trans "Designation" %}: {{item.history.updated_by.get_job_position}}{% endif %})</span>{% endif %} {% trans "changed the ticket " %}{{change.field|safe}} {% trans " from" %}
                             <strong>{{change.old|safe}}</strong>
                             <br><br>
                             {% trans "to" %}
