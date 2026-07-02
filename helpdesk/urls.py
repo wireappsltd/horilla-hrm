@@ -342,5 +342,51 @@ urlpatterns = [
         views.incident_report_delete,
         name="incident-report-delete",
     ),
+    # ── Change Request URLs ──────────────────────────────────────────────────
+    path(
+        "change-request/create/",
+        views.change_request_create,
+        name="change-request-create",
+    ),
+    path(
+        "change-request/update/<int:cr_id>/",
+        views.change_request_update,
+        name="change-request-update",
+    ),
+    path(
+        "change-request/dh-review/<int:cr_id>/",
+        views.change_request_dh_review,
+        name="change-request-dh-review",
+    ),
+    path(
+        "change-request/save-implementer/<int:cr_id>/",
+        views.change_request_save_implementer,
+        name="change-request-save-implementer",
+    ),
+    path(
+        "change-request/iso-review/<int:cr_id>/",
+        views.change_request_iso_review,
+        name="change-request-iso-review",
+    ),
+    path(
+        "change-request/isc-review/<int:cr_id>/",
+        views.change_request_isc_review,
+        name="change-request-isc-review",
+    ),
+    path(
+        "change-request/save-release/<int:cr_id>/",
+        views.change_request_save_release,
+        name="change-request-save-release",
+    ),
+    path(
+        "change-request/withdraw/<int:cr_id>/",
+        views.change_request_withdraw,
+        name="change-request-withdraw",
+    ),
+    path(
+        "change-request/delete/<int:cr_id>/",
+        views.change_request_delete,
+        name="change-request-delete",
+    ),
 ]
 

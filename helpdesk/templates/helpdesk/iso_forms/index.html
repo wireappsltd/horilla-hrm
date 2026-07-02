@@ -191,6 +191,15 @@
             {% include 'helpdesk/iso_forms/_incident_report_list.html' with incident_reports=incident_reports %}
         </div>
     </div>
+
+    <div class="oh-card mb-4">
+        <div class="oh-card__body">
+            <h5 class="fw-bold mb-3">{% trans "Change Requests" %}</h5>
+        </div>
+        <div id="changeRequestsList">
+            {% include 'helpdesk/iso_forms/_change_request_list.html' with change_requests=change_requests %}
+        </div>
+    </div>
 </div>
 
 <div id="passwordResetModalTarget"></div>
@@ -198,6 +207,7 @@
 <div id="exceptionRequestModalTarget"></div>
 <div id="adminAccessRequestModalTarget"></div>
 <div id="incidentReportModalTarget"></div>
+<div id="changeRequestModalTarget"></div>
 
 <div class="oh-modal" id="isoFormPickerModal" role="dialog" aria-labelledby="isoFormPickerTitle" aria-hidden="true">
     <div class="oh-modal__dialog">
