@@ -54,6 +54,12 @@
                             {% trans "ISMS Reference" %} <span style="color: red;">*</span>
                         </label>
                         {{ form.isms_reference }}
+                        <div class="d-flex justify-content-end mt-1">
+                            <span class="oh-text--muted" id="exceptionIsmsReferenceCounter" style="font-size:12px;">
+                                0/{{ form.isms_reference.field.max_length }}
+                            </span>
+                        </div>
+                        <span class="oh-text--danger" id="exceptionIsmsReferenceClientError" style="font-size:12px; display:none;"></span>
                         {% if form.isms_reference.errors %}
                             <span class="oh-text--danger" style="font-size:12px;">{{ form.isms_reference.errors|join:", " }}</span>
                         {% endif %}
@@ -94,10 +100,7 @@
                         {% trans "Description of Exception" %} <span style="color: red;">*</span>
                     </label>
                     {{ form.description }}
-                    <div class="d-flex justify-content-between mt-1">
-                        <span class="oh-text--muted" style="font-size:12px;">
-                            {% blocktrans with max=form.description.field.max_length %}Max {{ max }} characters{% endblocktrans %}
-                        </span>
+                    <div class="d-flex justify-content-end mt-1">
                         <span class="oh-text--muted" id="exceptionDescriptionCounter" style="font-size:12px;">
                             0/{{ form.description.field.max_length }}
                         </span>
@@ -126,32 +129,60 @@
         if (!modal) { return; }
 
         const form = modal.querySelector("form");
-        const descriptionInput = modal.querySelector("#id_description");
-        const counter = modal.querySelector("#exceptionDescriptionCounter");
-        const errorEl = modal.querySelector("#exceptionDescriptionClientError");
+        if (!form) { return; }
 
-        if (!form || !descriptionInput || !counter || !errorEl) { return; }
-        const maxLength = parseInt(descriptionInput.dataset.maxlength || "0", 10);
-        if (!maxLength) { return; }
-        const errorMessage = descriptionInput.dataset.maxlengthMessage ||
-            `Description cannot exceed ${maxLength} characters.`;
+        // Fields that expose a character limit + live counter to the user.
+        const fields = [
+            {
+                input: modal.querySelector("#id_isms_reference"),
+                counter: modal.querySelector("#exceptionIsmsReferenceCounter"),
+                error: modal.querySelector("#exceptionIsmsReferenceClientError"),
+                label: "ISMS Reference",
+            },
+            {
+                input: modal.querySelector("#id_description"),
+                counter: modal.querySelector("#exceptionDescriptionCounter"),
+                error: modal.querySelector("#exceptionDescriptionClientError"),
+                label: "Description",
+            },
+        ];
 
-        const updateState = function () {
-            const currentLength = descriptionInput.value.length;
-            counter.textContent = `${currentLength}/${maxLength}`;
-            const exceedsLimit = currentLength > maxLength;
-            errorEl.style.display = exceedsLimit ? "block" : "none";
-            errorEl.textContent = exceedsLimit ? errorMessage : "";
-            descriptionInput.setCustomValidity(exceedsLimit ? errorMessage : "");
-            return exceedsLimit;
+        const setup = function (field) {
+            const { input, counter, error, label } = field;
+            if (!input || !counter || !error) { return null; }
+            const maxLength = parseInt(input.dataset.maxlength || "0", 10);
+            if (!maxLength) { return null; }
+            const errorMessage = input.dataset.maxlengthMessage ||
+                `${label} cannot exceed ${maxLength} characters.`;
+
+            const updateState = function () {
+                const currentLength = input.value.length;
+                counter.textContent = `${currentLength}/${maxLength}`;
+                const exceedsLimit = currentLength > maxLength;
+                error.style.display = exceedsLimit ? "block" : "none";
+                error.textContent = exceedsLimit ? errorMessage : "";
+                input.setCustomValidity(exceedsLimit ? errorMessage : "");
+                return exceedsLimit;
+            };
+
+            input.addEventListener("input", updateState);
+            updateState();
+            return { input, updateState };
         };
-        descriptionInput.addEventListener("input", updateState);
+
+        const managed = fields.map(setup).filter(Boolean);
+
         form.addEventListener("submit", function (event) {
-            if (updateState()) {
+            let firstInvalid = null;
+            managed.forEach(function (item) {
+                if (item.updateState() && !firstInvalid) {
+                    firstInvalid = item.input;
+                }
+            });
+            if (firstInvalid) {
                 event.preventDefault();
-                descriptionInput.focus();
+                firstInvalid.focus();
             }
         });
-        updateState();
     })();
 </script>

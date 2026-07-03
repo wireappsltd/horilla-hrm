@@ -853,8 +853,20 @@ class ExceptionRequestForm(forms.ModelForm):
                 "maxlength": str(self.DESCRIPTION_MAX_LENGTH),
             }
         )
-        self.fields["isms_reference"].widget.attrs["maxlength"] = str(
-            self.ISMS_REFERENCE_MAX_LENGTH
+        # ISMS Reference character cap (mirrors Description behaviour so the
+        # limit and a live counter can be surfaced to the user in the template).
+        isms_error_message = _(
+            "ISMS Reference cannot exceed %(max_length)s characters."
+        ) % {"max_length": self.ISMS_REFERENCE_MAX_LENGTH}
+        isms_field = self.fields["isms_reference"]
+        isms_field.max_length = self.ISMS_REFERENCE_MAX_LENGTH
+        isms_field.error_messages["max_length"] = isms_error_message
+        isms_field.widget.attrs.update(
+            {
+                "data-maxlength": str(self.ISMS_REFERENCE_MAX_LENGTH),
+                "data-maxlength-message": isms_error_message,
+                "maxlength": str(self.ISMS_REFERENCE_MAX_LENGTH),
+            }
         )
 
         isc_user_qs = self.fields["forward_to"].queryset
