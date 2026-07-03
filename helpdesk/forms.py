@@ -255,8 +255,11 @@ class PasswordResetRequestForm(forms.ModelForm):
             except Exception:
                 selected_employee = None
 
+        # Forward To → show all ISO officers and IS Council members.
         self.fields["forward_to"].queryset = (
-            User.objects.filter(groups__name=ISO_GROUP_NAME, is_active=True)
+            User.objects.filter(
+                groups__name__in=[ISO_GROUP_NAME, ISC_GROUP_NAME], is_active=True
+            )
             .distinct()
             .order_by("first_name", "username")
         )
@@ -312,9 +315,9 @@ class PasswordResetRequestForm(forms.ModelForm):
         # Pre-select: if editing, use the saved forward_to M2M; otherwise default to all ISO members
         if self.instance and self.instance.pk:
             # For editing, use the saved forward_to M2M as the authoritative initial.
-            # Filter to only include users still in the ISO group.
+            # Filter to only include users still in the ISO / IS Council groups.
             saved_forward = self.instance.forward_to.filter(
-                groups__name=ISO_GROUP_NAME, is_active=True
+                groups__name__in=[ISO_GROUP_NAME, ISC_GROUP_NAME], is_active=True
             ).distinct()
             if saved_forward.exists():
                 self.fields["forward_to"].initial = saved_forward
@@ -592,9 +595,11 @@ class AccessRequestForm(forms.ModelForm):
             self.fields["employee"].initial = owner
         self.initial["user_email"] = email_initial
 
-        # Forward To → Stage 2 reviewers (ISO group members).
+        # Forward To → show all ISO officers and IS Council members.
         self.fields["forward_to"].queryset = (
-            User.objects.filter(groups__name=ISO_GROUP_NAME, is_active=True)
+            User.objects.filter(
+                groups__name__in=[ISO_GROUP_NAME, ISC_GROUP_NAME], is_active=True
+            )
             .distinct()
             .order_by("first_name", "username")
         )
@@ -618,7 +623,7 @@ class AccessRequestForm(forms.ModelForm):
         iso_user_qs = self.fields["forward_to"].queryset
         if self.instance and self.instance.pk:
             saved_forward = self.instance.forward_to.filter(
-                groups__name=ISO_GROUP_NAME, is_active=True
+                groups__name__in=[ISO_GROUP_NAME, ISC_GROUP_NAME], is_active=True
             ).distinct()
             if saved_forward.exists():
                 self.initial["forward_to"] = list(
@@ -831,9 +836,11 @@ class ExceptionRequestForm(forms.ModelForm):
             self.fields["employee"].initial = owner
         self.initial["user_email"] = email_initial
 
-        # Forward To → Stage 2 reviewers (IS Council group members).
+        # Forward To → show all ISO officers and IS Council members.
         self.fields["forward_to"].queryset = (
-            User.objects.filter(groups__name=ISC_GROUP_NAME, is_active=True)
+            User.objects.filter(
+                groups__name__in=[ISO_GROUP_NAME, ISC_GROUP_NAME], is_active=True
+            )
             .distinct()
             .order_by("first_name", "username")
         )
@@ -860,7 +867,7 @@ class ExceptionRequestForm(forms.ModelForm):
         isc_user_qs = self.fields["forward_to"].queryset
         if self.instance and self.instance.pk:
             saved_forward = self.instance.forward_to.filter(
-                groups__name=ISC_GROUP_NAME, is_active=True
+                groups__name__in=[ISO_GROUP_NAME, ISC_GROUP_NAME], is_active=True
             ).distinct()
             if saved_forward.exists():
                 self.initial["forward_to"] = list(
@@ -1049,9 +1056,11 @@ class AdminAccessRequestForm(forms.ModelForm):
             self.fields["employee"].initial = owner
         self.initial["user_email"] = email_initial
 
-        # Forward To → Stage 2 reviewers (IS Council group members).
+        # Forward To → show all ISO officers and IS Council members.
         self.fields["forward_to"].queryset = (
-            User.objects.filter(groups__name=ISC_GROUP_NAME, is_active=True)
+            User.objects.filter(
+                groups__name__in=[ISO_GROUP_NAME, ISC_GROUP_NAME], is_active=True
+            )
             .distinct()
             .order_by("first_name", "username")
         )
@@ -1075,7 +1084,7 @@ class AdminAccessRequestForm(forms.ModelForm):
         isc_user_qs = self.fields["forward_to"].queryset
         if self.instance and self.instance.pk:
             saved_forward = self.instance.forward_to.filter(
-                groups__name=ISC_GROUP_NAME, is_active=True
+                groups__name__in=[ISO_GROUP_NAME, ISC_GROUP_NAME], is_active=True
             ).distinct()
             if saved_forward.exists():
                 self.initial["forward_to"] = list(
