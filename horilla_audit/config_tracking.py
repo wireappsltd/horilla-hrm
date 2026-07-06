@@ -142,6 +142,10 @@ SALARY_MODELS = [
     ("payroll", "Deduction", _PAYROLL_MODULE, "Deduction"),
     ("payroll", "LoanAccount", _PAYROLL_MODULE, "Loan"),
     ("payroll", "Reimbursement", _PAYROLL_MODULE, "Reimbursement"),
+    # Statutory report metadata (e.g. ETF Monthly Contribution). Records the
+    # create/delete of a report definition; the file export itself is logged
+    # explicitly in download_payroll_report (no DB write happens there).
+    ("payroll", "PayrollReport", _PAYROLL_MODULE, "Payroll Report"),
 ]
 
 # Fields we never include in diffs — internal bookkeeping that flips on every save.

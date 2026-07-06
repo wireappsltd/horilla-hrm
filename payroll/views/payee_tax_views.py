@@ -7,6 +7,7 @@ from django.contrib.auth.decorators import login_required, permission_required
 from payroll.models.tax_models import PayeeTax
 from payroll.forms.payee_tax_import_form import PayeeTaxImportForm
 from django.db import transaction,connection
+from horilla_audit.methods import log_activity
 
 
 CHUNK_SIZE = 1000
@@ -36,6 +37,11 @@ def import_payee_tax(request):
                 return redirect("import-payee-tax")
 
             try:
+
+                # Count what's about to be wiped so the audit entry records how
+                # many rows the import replaced (the import truncates the whole
+                # PAYE tax table before re-inserting).
+                previous_count = PayeeTax.objects.count()
 
                 truncate_table(PayeeTax)
 
@@ -67,6 +73,20 @@ def import_payee_tax(request):
                     with transaction.atomic():
                         PayeeTax.objects.bulk_create(batch, ignore_conflicts=True)
                     count += len(batch)
+
+                # Explicit audit entry: the import wipes + bulk_creates the whole
+                # table (raw TRUNCATE + bulk_create both bypass Django signals),
+                # so signal-based tracking can't see it. Record who replaced the
+                # PAYE tax table, when, and the before/after row counts.
+                log_activity(
+                    request.user,
+                    module="payroll",
+                    action="PAYE Tax table imported",
+                    changes={
+                        "File": csv_file.name,
+                        "Records": {"from": previous_count, "to": count},
+                    },
+                )
 
                 messages.success(request, f"{count} tax records imported successfully")
                 return redirect("view-payee-tax")

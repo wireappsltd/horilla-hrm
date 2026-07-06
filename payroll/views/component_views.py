@@ -1944,23 +1944,27 @@ def delete_reimbursements(request):
     """
     ids = request.GET.getlist("ids")
     reimbursements = Reimbursement.objects.filter(id__in=ids)
+    user = None
+    # Delete per instance (not a queryset bulk delete) so each removal fires the
+    # post_delete signal and gets recorded in the payroll audit log.
     for reimbursement in reimbursements:
         user = reimbursement.employee_id.employee_user_id
         if reimbursement.status == "approved" and reimbursement.type == "reimbursement":
             reimbursement.allowance_id.delete()
-    reimbursements.delete()
+        reimbursement.delete()
     messages.success(request, "Reimbursements deleted")
-    notify.send(
-        request.user.employee_get,
-        recipient=user,
-        verb="Your reimbursement request has been deleted.",
-        verb_ar="تم حذف طلب استرداد نفقاتك.",
-        verb_de="Ihr Rückerstattungsantrag wurde gelöscht.",
-        verb_es="Tu solicitud de reembolso ha sido eliminada.",
-        verb_fr="Votre demande de remboursement a été supprimée.",
-        redirect="/",
-        icon="trash",
-    )
+    if user is not None:
+        notify.send(
+            request.user.employee_get,
+            recipient=user,
+            verb="Your reimbursement request has been deleted.",
+            verb_ar="تم حذف طلب استرداد نفقاتك.",
+            verb_de="Ihr Rückerstattungsantrag wurde gelöscht.",
+            verb_es="Tu solicitud de reembolso ha sido eliminada.",
+            verb_fr="Votre demande de remboursement a été supprimée.",
+            redirect="/",
+            icon="trash",
+        )
 
     return redirect(view_reimbursement)
 
