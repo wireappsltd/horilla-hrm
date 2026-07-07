@@ -15,7 +15,7 @@ from django.apps import apps
 from django.contrib import messages
 from django.core.paginator import Paginator
 from django.db import transaction
-from django.db.models import ProtectedError, Q
+from django.db.models import Case, IntegerField, ProtectedError, Q, Value, When
 from django.http import HttpResponse, HttpResponseBadRequest, HttpResponseRedirect, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -594,6 +594,18 @@ def leave_request_view(request):
         normal_requests = LeaveRequest.objects.filter(id__in=normal_requests).distinct()
 
     queryset = normal_requests | multiple_approvals
+    # Default ordering: keep the latest requests on top (by start date) while
+    # floating the pending "requested" items to the very top so they are the
+    # first thing an approver sees.
+    queryset = queryset.order_by(
+        Case(
+            When(status="requested", then=Value(0)),
+            default=Value(1),
+            output_field=IntegerField(),
+        ),
+        "-start_date",
+        "-id",
+    )
     # Apply sorting on the full dataset (not just the current page) so that a
     # stateful page reload (e.g. after approve/reject) restores the active sort
     # column and direction and paginates from the correct position.
