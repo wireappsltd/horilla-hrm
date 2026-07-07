@@ -330,19 +330,11 @@
         <div class="oh-sticky-table__td" onclick="event.stopPropagation()">
           <div class="oh-btn-group" >
             {% if leave_request.status == 'cancelled' %}
-              {% if leave_request.end_date >= current_date %}
               <a type="submit" data-toggle="oh-modal-toggle"
                   data-target="#rejectModal" hx-get="{% url 'request-cancel' leave_request.id %}" hx-target="#rejectForm"  title="{% trans 'Approve cancellation request' %}"
                   class="oh-btn oh-btn--warning w-100";>
                   <ion-icon class="me-1" name="checkmark-outline"></ion-icon>
               </a>
-              {% else %}
-              <a type="submit" href="#" title="{% trans 'Approve cancellation request' %}"
-                  class="oh-btn oh-btn--secondary oh-btn--disabled
-                  w-100">
-                  <ion-icon class="me-1" name="checkmark-outline"></ion-icon>
-              </a>
-              {% endif %}
             {% else %}
               {% if leave_request.is_approved and leave_request.status == 'requested' and leave_request.end_date >= current_date %}
               <a href="{% url 'request-approve' leave_request.id %}" title="{% trans 'Approve' %}"
