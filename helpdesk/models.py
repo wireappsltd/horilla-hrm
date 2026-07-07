@@ -171,6 +171,53 @@ INCIDENT_REPORT_STATUS_CHOICES = [
     ("CLOSED", "Closed"),
 ]
 
+# ── Change Request (ISO Forms) ───────────────────────────────────────────────
+# System / process change management form. Project deployments are out of scope
+# (handled in Plane). Four-section, multi-actor, multi-stage workflow that is
+# distinct from the other Help Desk / ISO forms.
+
+# Section 1 — Change Categorisation drives whether Stage 3 (ISC) is required.
+CHANGE_CATEGORISATION_CHOICES = [
+    ("standard", "Standard"),
+    ("minor", "Minor"),
+    ("major", "Major"),
+    ("emergency", "Emergency"),
+]
+
+CHANGE_TYPE_CHOICES = [
+    ("permanent", "Permanent"),
+    ("temporary", "Temporary"),
+]
+
+# Generic Yes / No selector reused across Sections 2–4.
+CHANGE_YES_NO_CHOICES = [
+    ("yes", "Yes"),
+    ("no", "No"),
+]
+
+# Categorisations that require the Stage 3 (ISC) approval branch after the ISO
+# Officer approves.
+CHANGE_ISC_REQUIRED_CATEGORISATIONS = ("major", "emergency")
+
+# Full status workflow (Rejected is terminal at any stage):
+#   PENDING
+#     → (Divisional Head / ISC approves) DIVISIONAL_HEAD_APPROVED
+#     → (ISO Officer approves, Standard/Minor) ISO_APPROVED
+#     → (ISO Officer approves, Major/Emergency) ISO_APPROVED_PENDING_ISC
+#         → (ISC approves) FULLY_APPROVED
+#     → (Change Release started) IN_RELEASE
+#     → (all Release fields completed) CLOSED
+CHANGE_REQUEST_STATUS_CHOICES = [
+    ("PENDING", "Pending"),
+    ("DIVISIONAL_HEAD_APPROVED", "Divisional Head Approved"),
+    ("ISO_APPROVED", "ISO Approved"),
+    ("ISO_APPROVED_PENDING_ISC", "ISO Approved — Pending ISC"),
+    ("FULLY_APPROVED", "Fully Approved"),
+    ("IN_RELEASE", "In Release"),
+    ("CLOSED", "Closed"),
+    ("REJECTED", "Rejected"),
+]
+
 
 class DepartmentManager(HorillaModel):
     manager = models.ForeignKey(
@@ -957,6 +1004,341 @@ class IncidentReport(HorillaModel):
                         "Post-Review Classification is required before resolving."
                     )
                 }
+            )
+
+
+class ChangeRequest(HorillaModel):
+    """
+    Stores the extra details for a "Change Request" ticket (ISO Forms
+    category) covering system and process changes (project deployments are out
+    of scope). Linked 1-to-1 with a Ticket via the ``ticket`` field.
+
+    Four sections, filled by different actors at different stages:
+      * Section 1 — Change Requester (filled at submission).
+      * Section 2 — Change Implementer (unlocked after Divisional Head approval).
+      * Stage 2 — ISO Officer evaluation & approval.
+      * Stage 3 — ISC approval (Major / Emergency categorisation only).
+      * Change Release — editable by any ticket participant once approved.
+    """
+
+    SUMMARY_MAX_LENGTH = 1000
+    IMPLEMENTATION_OVERVIEW_MAX_LENGTH = 1000
+    COMMENTS_MAX_LENGTH = 500
+    RELEASE_TEXT_MAX_LENGTH = 1000
+
+    ticket = models.OneToOneField(
+        Ticket,
+        on_delete=models.CASCADE,
+        related_name="change_request",
+    )
+
+    # ── Section 1 — Change Requester (filled at submission) ──
+    user_id = models.EmailField(verbose_name=_("User ID (Email)"))
+    summary = models.TextField(
+        max_length=SUMMARY_MAX_LENGTH,
+        verbose_name=_("Summary of Change Requirement"),
+    )
+    categorisation = models.CharField(
+        max_length=20,
+        choices=CHANGE_CATEGORISATION_CHOICES,
+        verbose_name=_("Change Categorisation"),
+    )
+    categorisation_reason = models.TextField(
+        verbose_name=_("Reason for Change Categorisation"),
+    )
+    change_type = models.CharField(
+        max_length=20,
+        choices=CHANGE_TYPE_CHOICES,
+        verbose_name=_("Change Type"),
+    )
+    expiry_date = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name=_("Expiry Date"),
+    )
+    services_impacted = models.TextField(
+        verbose_name=_("List of Services / Systems Impacted"),
+    )
+    change_required_by = models.DateField(verbose_name=_("Change Required By Date"))
+    change_requested_by = models.DateField(verbose_name=_("Change Requested By Date"))
+
+    # ── Section 2 — Change Implementer (unlocked after DH approval) ──
+    is_self_implementer = models.CharField(
+        max_length=3,
+        choices=CHANGE_YES_NO_CHOICES,
+        null=True,
+        blank=True,
+        verbose_name=_("Are you the Change Implementer?"),
+    )
+    implementer = models.ForeignKey(
+        Employee,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="change_request_implementer",
+        verbose_name=_("Change Implementer"),
+    )
+    implementer_name = models.CharField(
+        max_length=200, blank=True, verbose_name=_("Implementer Name")
+    )
+    implementer_division = models.CharField(
+        max_length=200, blank=True, verbose_name=_("Implementer Division")
+    )
+    implementation_overview = models.TextField(
+        max_length=IMPLEMENTATION_OVERVIEW_MAX_LENGTH,
+        null=True,
+        blank=True,
+        verbose_name=_("Implementation Overview"),
+    )
+    effort_estimate = models.CharField(
+        max_length=250, null=True, blank=True, verbose_name=_("Effort Estimate")
+    )
+    special_support = models.CharField(
+        max_length=3,
+        choices=CHANGE_YES_NO_CHOICES,
+        null=True,
+        blank=True,
+        verbose_name=_("Special Support Required"),
+    )
+    special_support_description = models.TextField(
+        null=True, blank=True, verbose_name=_("Special Support Description")
+    )
+    other_resources = models.TextField(
+        null=True, blank=True, verbose_name=_("Other Resources")
+    )
+    alternatives = models.TextField(
+        null=True, blank=True, verbose_name=_("Alternatives (if any)")
+    )
+    system_outage = models.CharField(
+        max_length=3,
+        choices=CHANGE_YES_NO_CHOICES,
+        null=True,
+        blank=True,
+        verbose_name=_("System Outage Required"),
+    )
+    scheduled_outage_date = models.DateField(
+        null=True, blank=True, verbose_name=_("Scheduled Outage Date")
+    )
+    scheduled_outage_time = models.TimeField(
+        null=True, blank=True, verbose_name=_("Scheduled Outage Time")
+    )
+    business_impact = models.TextField(
+        null=True, blank=True, verbose_name=_("Business Impact")
+    )
+
+    # ── Stage 1 — Divisional Head (fulfilled by the ISC user group) ──
+    dh_reviewed_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="dh_reviewed_change_requests",
+        verbose_name=_("Divisional Head"),
+    )
+    dh_reviewed_at = models.DateTimeField(null=True, blank=True)
+    dh_name = models.CharField(
+        max_length=200, blank=True, verbose_name=_("Divisional Head Name")
+    )
+    dh_division = models.CharField(
+        max_length=200, blank=True, verbose_name=_("Divisional Head Division")
+    )
+
+    # ── Stage 2 — ISO Officer evaluation & approval ──
+    iso_complies = models.CharField(
+        max_length=3,
+        choices=CHANGE_YES_NO_CHOICES,
+        null=True,
+        blank=True,
+        verbose_name=_("Change Complies with Company Policies?"),
+    )
+    iso_impact = models.TextField(
+        null=True, blank=True, verbose_name=_("Impact of Implementing Change")
+    )
+    iso_risk_assessment = models.TextField(
+        null=True, blank=True, verbose_name=_("Risk Assessment on the Change")
+    )
+    iso_approval = models.CharField(
+        max_length=3,
+        choices=CHANGE_YES_NO_CHOICES,
+        null=True,
+        blank=True,
+        verbose_name=_("ISO Approval"),
+    )
+    iso_comments = models.TextField(
+        max_length=COMMENTS_MAX_LENGTH,
+        null=True,
+        blank=True,
+        verbose_name=_("ISO Comments"),
+    )
+    iso_reviewed_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="iso_reviewed_change_requests",
+        verbose_name=_("ISO Officer"),
+    )
+    iso_reviewed_at = models.DateTimeField(null=True, blank=True)
+
+    # ── Stage 3 — ISC approval (Major / Emergency only) ──
+    isc_needed = models.CharField(
+        max_length=3,
+        choices=CHANGE_YES_NO_CHOICES,
+        default="no",
+        verbose_name=_("Is ISC Approval Needed?"),
+    )
+    isc_approval = models.CharField(
+        max_length=3,
+        choices=CHANGE_YES_NO_CHOICES,
+        null=True,
+        blank=True,
+        verbose_name=_("ISC Approval"),
+    )
+    isc_comments = models.TextField(
+        max_length=COMMENTS_MAX_LENGTH,
+        null=True,
+        blank=True,
+        verbose_name=_("ISC Comments"),
+    )
+    isc_reviewed_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="isc_reviewed_change_requests",
+        verbose_name=_("IS Council"),
+    )
+    isc_reviewed_at = models.DateTimeField(null=True, blank=True)
+
+    # ── Change Release ──
+    test_plan = models.TextField(
+        max_length=RELEASE_TEXT_MAX_LENGTH,
+        null=True,
+        blank=True,
+        verbose_name=_("Test Plan"),
+    )
+    test_results = models.TextField(
+        max_length=RELEASE_TEXT_MAX_LENGTH,
+        null=True,
+        blank=True,
+        verbose_name=_("Test Results"),
+    )
+    rollback_plan = models.TextField(
+        max_length=RELEASE_TEXT_MAX_LENGTH,
+        null=True,
+        blank=True,
+        verbose_name=_("Rollback Plan"),
+    )
+    uat_accepted = models.CharField(
+        max_length=3,
+        choices=CHANGE_YES_NO_CHOICES,
+        null=True,
+        blank=True,
+        verbose_name=_("UAT Accepted"),
+    )
+    released_to_production = models.CharField(
+        max_length=3,
+        choices=CHANGE_YES_NO_CHOICES,
+        null=True,
+        blank=True,
+        verbose_name=_("Change Released to Production"),
+    )
+    acceptance_of_completion = models.CharField(
+        max_length=3,
+        choices=CHANGE_YES_NO_CHOICES,
+        null=True,
+        blank=True,
+        verbose_name=_("Acceptance of Change Completion"),
+    )
+
+    forward_to = models.ManyToManyField(
+        User,
+        blank=True,
+        related_name="forwarded_change_requests",
+        verbose_name=_("Forward To"),
+    )
+
+    status = models.CharField(
+        max_length=30,
+        choices=CHANGE_REQUEST_STATUS_CHOICES,
+        default="PENDING",
+        verbose_name=_("Status"),
+    )
+    feedback = models.TextField(blank=True, null=True, verbose_name=_("Feedback"))
+
+    closed_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="closed_change_requests",
+        verbose_name=_("Closed By"),
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True, verbose_name=_("Updated At"))
+
+    class Meta:
+        verbose_name = _("Change Request")
+        verbose_name_plural = _("Change Requests")
+
+    def __str__(self):
+        return f"Change Request – {self.get_categorisation_display()} – {self.ticket}"
+
+    # ── Workflow helpers ──
+    def requires_isc(self):
+        """Return True when the categorisation triggers the Stage 3 (ISC) branch."""
+        return self.categorisation in CHANGE_ISC_REQUIRED_CATEGORISATIONS
+
+    def implementer_section_unlocked(self):
+        """Section 2 becomes editable only once the Divisional Head has approved."""
+        return self.status not in ("PENDING", "REJECTED")
+
+    def iso_section_unlocked(self):
+        """Stage 2 becomes available once Section 2 is saved / submitted."""
+        return self.status in (
+            "DIVISIONAL_HEAD_APPROVED",
+            "ISO_APPROVED",
+            "ISO_APPROVED_PENDING_ISC",
+            "FULLY_APPROVED",
+            "IN_RELEASE",
+            "CLOSED",
+        )
+
+    def release_unlocked(self):
+        """Change Release is editable once all required approvals are complete.
+
+        Standard / Minor unlock at ISO Approved; Major / Emergency unlock at
+        Fully Approved. Once release editing has started (IN_RELEASE) it stays
+        unlocked.
+        """
+        return self.status in ("ISO_APPROVED", "FULLY_APPROVED", "IN_RELEASE")
+
+    def is_terminal(self):
+        return self.status in ("REJECTED", "CLOSED")
+
+    def get_forward_to_users(self):
+        """Return selected forwarding users as a queryset."""
+        return self.forward_to.select_related("employee_get").all()
+
+    def get_forward_to_display(self):
+        """Return a comma-separated list of forwarded-to user display names."""
+        names = []
+        for user in self.get_forward_to_users():
+            try:
+                names.append(user.employee_get.get_full_name())
+            except Exception:
+                names.append(user.get_full_name() or user.username)
+        return ", ".join([name for name in names if name])
+
+    def clean(self, *args, **kwargs):
+        super().clean(*args, **kwargs)
+        if self.change_type == "temporary" and not self.expiry_date:
+            raise ValidationError(
+                {"expiry_date": _("Expiry Date is required for a temporary change.")}
+            )
+        if self.status == "REJECTED" and not self.feedback:
+            raise ValidationError(
+                {"feedback": _("Feedback is required when rejecting a request.")}
             )
 
 

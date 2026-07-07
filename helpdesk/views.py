@@ -43,6 +43,9 @@ from helpdesk.forms import (
     AttachmentForm,
     AccessRequestForm,
     AdminAccessRequestForm,
+    ChangeImplementerForm,
+    ChangeReleaseForm,
+    ChangeRequesterForm,
     CommentForm,
     DepartmentManagerCreateForm,
     ExceptionRequestForm,
@@ -53,6 +56,8 @@ from helpdesk.forms import (
     IncidentTransitionForm,
     ISOAcknowledgementForm,
     ISOCommentTransitionForm,
+    ISOEvaluationForm,
+    ISCApprovalForm,
     ISOReviewForm,
     PasswordResetRequestForm,
     TicketAssigneesForm,
@@ -70,11 +75,13 @@ from helpdesk.models import (
     EXCEPTION_REQUEST_STATUS_CHOICES,
     ADMIN_ACCESS_REQUEST_STATUS_CHOICES,
     INCIDENT_REPORT_STATUS_CHOICES,
+    CHANGE_REQUEST_STATUS_CHOICES,
     ISO_STATUS_CHOICES,
     TICKET_STATUS,
     AccessRequest,
     AdminAccessRequest,
     Attachment,
+    ChangeRequest,
     ClaimRequest,
     Comment,
     DepartmentManager,
@@ -1065,6 +1072,14 @@ def ticket_detail(request, ticket_id, **kwargs):
     is_inc_forward_to_user = (
         has_inc and incident_report.forward_to.filter(pk=request.user.pk).exists()
     )
+    # Change Request visibility: ISO officers (Stage 2) and ISC members
+    # (Stage 1 Divisional Head + Stage 3) drive the workflow; forward_to
+    # recipients must also be able to open the ticket.
+    change_request = getattr(ticket, "change_request", None)
+    has_cr = change_request is not None
+    is_cr_forward_to_user = (
+        has_cr and change_request.forward_to.filter(pk=request.user.pk).exists()
+    )
     # ISO officers and IS Council members can open a ticket only when that
     # ticket carries an ISO workflow request that requires their feedback
     # (e.g. they are the relevant reviewer) or it was explicitly forwarded to
@@ -1088,6 +1103,8 @@ def ticket_detail(request, ticket_id, **kwargs):
         or is_aar_forward_to_user
         or (has_inc and is_isc)
         or is_inc_forward_to_user
+        or (has_cr and (is_iso or is_isc))
+        or is_cr_forward_to_user
     ):
         today = datetime.now().date()
         c_form = CommentForm()
@@ -1229,6 +1246,29 @@ def ticket_detail(request, ticket_id, **kwargs):
             else None
         )
 
+        # Fetch change request if it exists for this ticket. Its four-section,
+        # multi-stage workflow renders section forms inline on the detail view.
+        change_request = getattr(ticket, "change_request", None)
+        change_implementer_form = (
+            ChangeImplementerForm(instance=change_request, request=request)
+            if change_request
+            else None
+        )
+        change_iso_form = (
+            ISOEvaluationForm(instance=change_request) if change_request else None
+        )
+        change_isc_form = (
+            ISCApprovalForm(instance=change_request) if change_request else None
+        )
+        change_release_form = (
+            ChangeReleaseForm(instance=change_request) if change_request else None
+        )
+        change_request_can_edit = (
+            _change_request_has_edit_access(request, change_request)
+            if change_request
+            else False
+        )
+
         context = {
             "ticket": ticket,
             "display_description": _get_ticket_display_description(ticket),
@@ -1241,6 +1281,7 @@ def ticket_detail(request, ticket_id, **kwargs):
             "exception_request_status_choices": EXCEPTION_REQUEST_STATUS_CHOICES,
             "admin_access_request_status_choices": ADMIN_ACCESS_REQUEST_STATUS_CHOICES,
             "incident_report_status_choices": INCIDENT_REPORT_STATUS_CHOICES,
+            "change_request_status_choices": CHANGE_REQUEST_STATUS_CHOICES,
             "tag_form": TicketTagForm(instance=ticket),
             "sorted_activity_list": sorted_activity_list,
             "create_tag_f": TagsForm(),
@@ -1255,6 +1296,12 @@ def ticket_detail(request, ticket_id, **kwargs):
             "admin_access_request": admin_access_request,
             "incident_report": incident_report,
             "incident_post_review_form": incident_post_review_form,
+            "change_request": change_request,
+            "change_implementer_form": change_implementer_form,
+            "change_iso_form": change_iso_form,
+            "change_isc_form": change_isc_form,
+            "change_release_form": change_release_form,
+            "change_request_can_edit": change_request_can_edit,
             "is_iso_officer": request.user.is_superuser or _is_iso_officer(request.user),
             "is_isc_member": request.user.is_superuser
             or _is_isc_member(request.user),
@@ -2765,6 +2812,16 @@ def iso_forms_home(request):
             "target": "incidentReportModalTarget",
             "modal": "incidentReportModal",
         },
+        {
+            "title": _("Change Request"),
+            "description": _(
+                "Request a system or process change through the change workflow."
+            ),
+            "icon": "git-branch-outline",
+            "create_url": reverse("change-request-create"),
+            "target": "changeRequestModalTarget",
+            "modal": "changeRequestModal",
+        },
     ]
 
     # ── Access Requests visible to the current user ──
@@ -2828,12 +2885,31 @@ def iso_forms_home(request):
         else:
             incident_qs = incident_qs.none()
 
+    # ── Change Requests visible to the current user ──
+    # Both ISO officers (Stage 2) and IS Council members (Stage 1 Divisional
+    # Head + Stage 3) have oversight; everyone else sees only their own change
+    # requests, ones forwarded to them, or ones they implement.
+    change_qs = ChangeRequest.objects.select_related(
+        "ticket", "ticket__employee_id"
+    ).order_by("-created_at")
+    if not is_iso and not is_isc:
+        if current_employee:
+            change_qs = change_qs.filter(
+                Q(ticket__employee_id=current_employee)
+                | Q(ticket__assigned_to=current_employee)
+                | Q(forward_to=request.user)
+                | Q(implementer=current_employee)
+            ).distinct()
+        else:
+            change_qs = change_qs.none()
+
     context = {
         "password_reset_requests": queryset,
         "access_requests": access_qs,
         "exception_requests": exception_qs,
         "admin_access_requests": admin_access_qs,
         "incident_reports": incident_qs,
+        "change_requests": change_qs,
         "current_employee": current_employee,
         "is_iso_officer": request.user.is_superuser or _is_iso_officer(request.user),
         "is_isc_member": is_isc,
@@ -3209,7 +3285,7 @@ def iso_review_password_reset(request, pr_id):
                         verb_ar="تم مراجعة طلب إعادة تعيين كلمة المرور.",
                         verb_de="Der Passwort-Zurücksetzungsticket wurde überprüft.",
                         verb_es="La solicitud de restablecimiento de contraseña ha sido revisada.",
-                        verb_fr="La demande de réinitialisation de mot de passe a été examinée.",
+                        verb_fr="Le demande de réinitialisation de mot de passe a été examinée.",
                         icon="key",
                         redirect=reverse("ticket-detail", kwargs={"ticket_id": ticket.id}),
                     )
@@ -3595,10 +3671,22 @@ def access_request_create(request):
             forward_employee_ids, _emps = _get_forward_employee_ids_and_employees(
                 selected_forward_users
             )
-            raised_on = ",".join(forward_employee_ids) or str(selected_employee.id)
+            # Stage 1 reviewers (ISO Officers) must also receive the ticket, so
+            # include their employee IDs in raised_on alongside the Stage 2
+            # (IS Council) recipients chosen in "Forward To".
+            iso_officer_users = _get_iso_officer_users()
+            iso_employee_ids, _iso_emps = _get_forward_employee_ids_and_employees(
+                iso_officer_users
+            )
+            combined_employee_ids = list(
+                dict.fromkeys(iso_employee_ids + forward_employee_ids)
+            )
+            raised_on = ",".join(combined_employee_ids) or str(selected_employee.id)
 
+            unit = (access_request.system_application or "").strip()
+            short_unit = (unit[:24] + "...") if len(unit) > 27 else unit
             ticket = Ticket(
-                title=f"{access_request.get_sub_type_display()} – {access_request.get_domain_display()}",
+                title=f"Access Request – {short_unit}",
                 employee_id=selected_employee,
                 ticket_type=ticket_type,
                 description=_build_access_request_description(
@@ -3674,9 +3762,7 @@ def access_request_update(request, ar_id):
         messages.info(request, _("You don't have permission."))
         if "HTTP_HX_REQUEST" in request.META:
             return render(request, "decorator_404.html")
-        return HttpResponse(
-            f'<script>window.location.href = "{request.META.get("HTTP_REFERER", "/")}"</script>'
-        )
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
 
     if access_request.status != "PENDING":
         messages.info(
@@ -3713,10 +3799,9 @@ def access_request_update(request, ar_id):
             ticket.employee_id = selected_employee
             ticket.priority = form.cleaned_data.get("priority")
             ticket.deadline = form.cleaned_data.get("deadline")
-            ticket.title = (
-                f"{access_request.get_sub_type_display()} – "
-                f"{access_request.get_domain_display()}"
-            )
+            unit = (access_request.system_application or "").strip()
+            short_unit = (unit[:24] + "...") if len(unit) > 27 else unit
+            ticket.title = f"Access Request – {short_unit}"
             ticket.description = _build_access_request_description(
                 access_request, user_display
             )
@@ -4126,10 +4211,10 @@ def exception_request_create(request):
             )
             raised_on = ",".join(combined_employee_ids) or str(selected_employee.id)
 
-            ref = (exception_request.isms_reference or "").strip()
-            short_ref = (ref[:27] + "...") if len(ref) > 30 else ref
+            app = (exception_request.system_application or "").strip()
+            short_app = (app[:27] + "...") if len(app) > 30 else app
             ticket = Ticket(
-                title=f"Exception Request – {short_ref}",
+                title=f"Exception Request – {short_app}",
                 employee_id=selected_employee,
                 ticket_type=ticket_type,
                 description=_build_exception_request_description(
@@ -4252,9 +4337,9 @@ def exception_request_update(request, er_id):
             ticket.employee_id = selected_employee
             ticket.priority = form.cleaned_data.get("priority")
             ticket.deadline = form.cleaned_data.get("deadline")
-            ref = (exception_request.isms_reference or "").strip()
-            short_ref = (ref[:27] + "...") if len(ref) > 30 else ref
-            ticket.title = f"Exception Request – {short_ref}"
+            app = (exception_request.system_application or "").strip()
+            short_app = (app[:27] + "...") if len(app) > 30 else app
+            ticket.title = f"Exception Request – {short_app}"
             ticket.description = _build_exception_request_description(
                 exception_request, user_display
             )
@@ -4573,7 +4658,6 @@ def exception_request_delete(request, er_id):
     return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
 
 
-
 # ── Admin Access Request views ───────────────────────────────────────────────
 
 def _get_admin_access_request_ticket_type():
@@ -4845,7 +4929,9 @@ def iso_review_admin_access_request(request, aar_id):
                 verb = _("Your admin access request has been approved by the ISO Officer and forwarded to the IS Council.")
                 messages.success(request, _("Admin access request approved (Stage 1)."))
                 try:
-                    isc_recipients = list(admin_access_request.forward_to.all()) or _get_isc_users()
+                    isc_recipients = [
+                        u for u in _get_isc_users() if u.pk != request.user.pk
+                    ]
                     if isc_recipients:
                         notify.send(
                             request.user.employee_get,
@@ -5645,3 +5731,754 @@ def incident_report_delete(request, inc_id):
 
     return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
 
+
+# ── CHANGE REQUEST VIEWS ─────────────────────────────────────────────────────
+
+
+def _get_change_request_ticket_type():
+    """Return the TicketType for Change Request tickets, creating it if needed."""
+    ticket_type, _created = TicketType.objects.get_or_create(
+        title="Change Request",
+        defaults={"type": "service_request", "prefix": "CHR"},
+    )
+    return ticket_type
+
+
+def _employee_division(employee):
+    """Return the employee's division (department) name, or empty string."""
+    if not employee:
+        return ""
+    try:
+        department = employee.get_department()
+        return str(department) if department else ""
+    except Exception:
+        return ""
+
+
+def _build_change_request_description(change_request):
+    """Render the Section 1 (Change Requester) summary as ticket description."""
+    parts = [
+        "<b>Change Request Details:</b><br><br>",
+        f"<b>Categorisation:</b> {change_request.get_categorisation_display()}<br>",
+        f"<b>Change Type:</b> {change_request.get_change_type_display()}<br>",
+    ]
+    if change_request.change_type == "temporary" and change_request.expiry_date:
+        parts.append(f"<b>Expiry Date:</b> {change_request.expiry_date}<br>")
+    parts.extend(
+        [
+            f"<b>Services / Systems Impacted:</b> {strip_tags(change_request.services_impacted)}<br>",
+            f"<b>Change Required By:</b> {change_request.change_required_by}<br>",
+            f"<b>Change Requested By:</b> {change_request.change_requested_by}<br>",
+            f"<b>Summary:</b> {strip_tags(change_request.summary)}",
+        ]
+    )
+    return "".join(parts)
+
+
+def _is_change_request_owner(user, change_request):
+    """Return True when the authenticated user owns the change request."""
+    current_employee = getattr(user, "employee_get", None)
+    ticket_employee = getattr(change_request.ticket, "employee_id", None)
+    return bool(
+        current_employee and ticket_employee and current_employee == ticket_employee
+    )
+
+
+def _change_request_has_edit_access(request, change_request):
+    """Return True for any authenticated participant with access to the ticket.
+
+    Used for the Change Implementer (Section 2) and Change Release sections,
+    which are collaboratively editable by ticket participants.
+    """
+    ticket = change_request.ticket
+    current_employee = getattr(request.user, "employee_get", None)
+    return bool(
+        request.user.is_superuser
+        or _is_iso_officer(request.user)
+        or _is_isc_member(request.user)
+        or (current_employee and current_employee == ticket.employee_id)
+        or (current_employee and current_employee in ticket.assigned_to.all())
+        or (
+            current_employee
+            and change_request.implementer_id == getattr(current_employee, "id", None)
+        )
+        or change_request.forward_to.filter(pk=request.user.pk).exists()
+    )
+
+
+@login_required
+@hx_request_required
+def change_request_create(request):
+    """
+    GET  → renders the Change Request modal (Section 1 — Change Requester).
+    POST → creates Ticket + ChangeRequest (status PENDING), routes to the
+           Divisional Head approvers (ISC user group).
+    """
+    form = ChangeRequesterForm(request=request)
+
+    if request.method == "POST":
+        form = ChangeRequesterForm(request.POST, request=request)
+        if form.is_valid():
+            ticket_type = _get_change_request_ticket_type()
+            priority = form.cleaned_data.get("priority", "medium")
+            deadline = form.cleaned_data.get("deadline") or (
+                timezone.now() + timedelta(days=7)
+            ).date()
+
+            selected_employee = form.cleaned_data["employee"]
+            selected_forward_users = list(form.cleaned_data["forward_to"])
+
+            change_request = form.save(commit=False)
+            change_request.status = "PENDING"
+
+            forward_employee_ids, _emps = _get_forward_employee_ids_and_employees(
+                selected_forward_users
+            )
+            # Stage 1 approvers are the ISC user group (Divisional Head role).
+            isc_users = _get_isc_users()
+            isc_employee_ids, _isc_emps = _get_forward_employee_ids_and_employees(
+                isc_users
+            )
+            combined_employee_ids = list(
+                dict.fromkeys(isc_employee_ids + forward_employee_ids)
+            )
+            raised_on = ",".join(combined_employee_ids) or str(selected_employee.id)
+
+            ticket = Ticket(
+                title=f"Change Request – {change_request.get_categorisation_display()}",
+                employee_id=selected_employee,
+                ticket_type=ticket_type,
+                description=_build_change_request_description(change_request),
+                priority=priority,
+                assigning_type="individual",
+                raised_on=raised_on,
+                deadline=deadline,
+                status="new",
+            )
+            ticket.save()
+            ticket.assigned_to.add(selected_employee)
+
+            change_request.ticket = ticket
+            change_request.save()
+            change_request.forward_to.set(selected_forward_users)
+
+            _helpdesk_audit(request, "Change request created", ticket)
+
+            notification_actor = getattr(
+                request.user, "employee_get", selected_employee
+            )
+            try:
+                recipients = [
+                    u for u in (selected_forward_users or isc_users)
+                    if u.pk != request.user.pk
+                ]
+                if recipients:
+                    notify.send(
+                        notification_actor,
+                        recipient=recipients,
+                        verb=(
+                            f"New Change Request submitted by "
+                            f"{selected_employee.get_full_name()} awaiting Divisional Head review."
+                        ),
+                        icon="git-branch",
+                        redirect=reverse(
+                            "ticket-detail", kwargs={"ticket_id": ticket.id}
+                        ),
+                    )
+            except Exception as exc:
+                logger.error("Change request DH notify error: %s", exc)
+
+            messages.success(request, _("Change request submitted successfully."))
+            return HttpResponse("<script>window.location.reload()</script>")
+
+    context = {"form": form}
+    return render(request, "helpdesk/ticket/change_request_form.html", context)
+
+
+@login_required
+@hx_request_required
+def change_request_update(request, cr_id):
+    """Allow the owner / ISC member to edit a PENDING Change Request (Section 1)."""
+    try:
+        change_request = ChangeRequest.objects.get(id=cr_id)
+    except ChangeRequest.DoesNotExist:
+        messages.error(request, _("Change request not found."))
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+    ticket = change_request.ticket
+
+    current_employee = getattr(request.user, "employee_get", None)
+    has_access = (
+        request.user.is_superuser
+        or _is_isc_member(request.user)
+        or current_employee == ticket.employee_id
+    )
+    if not has_access:
+        messages.info(request, _("You don't have permission."))
+        if "HTTP_HX_REQUEST" in request.META:
+            return render(request, "decorator_404.html")
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    if change_request.status != "PENDING":
+        messages.info(
+            request,
+            _("This change request has already been reviewed and cannot be edited."),
+        )
+        return HttpResponse("<script>window.location.reload()</script>")
+
+    form = ChangeRequesterForm(instance=change_request, request=request)
+    if request.method == "POST":
+        change_request.refresh_from_db()
+        if change_request.status != "PENDING":
+            messages.info(
+                request,
+                _("This change request has already been reviewed and cannot be edited."),
+            )
+            return HttpResponse("<script>window.location.reload()</script>")
+        form = ChangeRequesterForm(
+            request.POST, instance=change_request, request=request
+        )
+        if form.is_valid():
+            selected_employee = form.cleaned_data["employee"]
+            selected_forward_users = list(form.cleaned_data["forward_to"])
+
+            change_request = form.save(commit=False)
+            change_request.save()
+            change_request.forward_to.set(selected_forward_users)
+
+            forward_employee_ids, _emps = _get_forward_employee_ids_and_employees(
+                selected_forward_users
+            )
+            isc_users = _get_isc_users()
+            isc_employee_ids, _isc_emps = _get_forward_employee_ids_and_employees(
+                isc_users
+            )
+            combined_employee_ids = list(
+                dict.fromkeys(isc_employee_ids + forward_employee_ids)
+            )
+            ticket = Ticket.objects.get(pk=change_request.ticket_id)
+            ticket.employee_id = selected_employee
+            ticket.priority = form.cleaned_data.get("priority")
+            ticket.deadline = form.cleaned_data.get("deadline")
+            ticket.title = f"Change Request – {change_request.get_categorisation_display()}"
+            ticket.description = _build_change_request_description(change_request)
+            ticket.raised_on = ",".join(combined_employee_ids) or str(
+                selected_employee.id
+            )
+            ticket.save()
+            ticket.assigned_to.clear()
+            ticket.assigned_to.add(selected_employee)
+
+            _helpdesk_audit(request, "Change request updated", ticket)
+            messages.success(request, _("Change request updated successfully."))
+            return HttpResponse("<script>window.location.reload()</script>")
+
+    context = {"form": form, "change_request": change_request}
+    return render(request, "helpdesk/ticket/change_request_form.html", context)
+
+
+@login_required
+def change_request_dh_review(request, cr_id):
+    """
+    Stage 1 — Divisional Head (ISC user group) approves or rejects a PENDING
+    Change Request. Approval unlocks Section 2 (Change Implementer).
+    """
+    if request.method != "POST":
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    if not request.user.is_superuser and not _is_isc_member(request.user):
+        messages.info(
+            request, _("Only a Divisional Head (ISC) can review this request.")
+        )
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    try:
+        change_request = ChangeRequest.objects.get(id=cr_id)
+    except ChangeRequest.DoesNotExist:
+        messages.error(request, _("Change request not found."))
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    if _is_change_request_owner(request.user, change_request):
+        messages.info(request, _("You cannot approve or reject your own request."))
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    if change_request.status != "PENDING":
+        messages.info(request, _("This request is not awaiting Divisional Head review."))
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    review_form = ISOReviewForm(request.POST)
+    if not review_form.is_valid():
+        for error in review_form.errors.values():
+            messages.error(request, error)
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    action = review_form.cleaned_data["action"]
+    feedback = review_form.cleaned_data.get("iso_feedback", "").strip()
+    ticket = change_request.ticket
+    requestor = ticket.employee_id
+
+    change_request.dh_reviewed_by = request.user
+    change_request.dh_reviewed_at = timezone.now()
+    approver_employee = getattr(request.user, "employee_get", None)
+    change_request.dh_name = (
+        approver_employee.get_full_name() if approver_employee else request.user.username
+    )
+    change_request.dh_division = _employee_division(approver_employee)
+
+    if action == "approve":
+        change_request.status = "DIVISIONAL_HEAD_APPROVED"
+        ticket.status = "in_progress"
+        _access_review_comment(
+            ticket,
+            request.user,
+            _("Divisional Head Review – Approved"),
+            _("Divisional Head Approved"),
+            _("Section 2 (Change Implementer) is now unlocked."),
+            feedback,
+        )
+        verb = _("Your change request has been approved by the Divisional Head.")
+        messages.success(request, _("Change request approved (Stage 1)."))
+    else:
+        change_request.status = "REJECTED"
+        change_request.feedback = feedback
+        ticket.status = "canceled"
+        _access_review_comment(
+            ticket,
+            request.user,
+            _("Divisional Head Review – Rejected"),
+            _("Rejected"),
+            _("Your change request has been rejected by the Divisional Head."),
+            feedback,
+        )
+        verb = _("Your change request has been rejected by the Divisional Head.")
+        messages.success(request, _("Change request rejected."))
+
+    change_request.save()
+    ticket.save()
+
+    _helpdesk_audit(
+        request,
+        "Change request Divisional Head review",
+        ticket,
+        {"status": {"to": change_request.status}},
+    )
+
+    try:
+        notify.send(
+            request.user.employee_get,
+            recipient=requestor.employee_user_id,
+            verb=verb,
+            icon="git-branch",
+            redirect=reverse("ticket-detail", kwargs={"ticket_id": ticket.id}),
+        )
+    except Exception as exc:
+        logger.error("Change request DH review notify error: %s", exc)
+
+    return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+
+@login_required
+def change_request_save_implementer(request, cr_id):
+    """
+    Section 2 — Change Implementer. Editable only after Divisional Head approval
+    and before the ISO Officer has approved. On save, the implementer's Name and
+    Division are auto-populated from the resolved implementer's profile.
+    """
+    if request.method != "POST":
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    try:
+        change_request = ChangeRequest.objects.get(id=cr_id)
+    except ChangeRequest.DoesNotExist:
+        messages.error(request, _("Change request not found."))
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    if not _change_request_has_edit_access(request, change_request):
+        messages.info(request, _("You don't have permission."))
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    if change_request.status not in ("DIVISIONAL_HEAD_APPROVED",):
+        messages.info(
+            request,
+            _("Section 2 can only be edited after Divisional Head approval."),
+        )
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    form = ChangeImplementerForm(
+        request.POST, instance=change_request, request=request
+    )
+    if not form.is_valid():
+        for field, errors in form.errors.items():
+            for error in errors:
+                messages.error(request, f"{field}: {error}")
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    change_request = form.save(commit=False)
+    # Resolve the implementer identity and auto-populate Name / Division.
+    if change_request.is_self_implementer == "yes":
+        implementer_employee = getattr(request.user, "employee_get", None)
+        change_request.implementer = implementer_employee
+    else:
+        implementer_employee = form.cleaned_data.get("implementer")
+    if implementer_employee:
+        change_request.implementer_name = implementer_employee.get_full_name()
+        change_request.implementer_division = _employee_division(implementer_employee)
+    change_request.save()
+
+    _access_review_comment(
+        change_request.ticket,
+        request.user,
+        _("Change Implementer – Section Saved"),
+        change_request.get_status_display(),
+        _("The Change Implementer section has been completed and submitted for ISO review."),
+        "",
+    )
+    _helpdesk_audit(request, "Change request implementer section saved", change_request.ticket)
+    messages.success(request, _("Change Implementer section saved."))
+    return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+
+@login_required
+def change_request_iso_review(request, cr_id):
+    """
+    Stage 2 — ISO Officer evaluation & approval. Branches on ISO Approval and
+    the Section 1 categorisation.
+    """
+    if request.method != "POST":
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    if not request.user.is_superuser and not _is_iso_officer(request.user):
+        messages.info(request, _("Only an ISO Officer can evaluate this request."))
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    try:
+        change_request = ChangeRequest.objects.get(id=cr_id)
+    except ChangeRequest.DoesNotExist:
+        messages.error(request, _("Change request not found."))
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    if change_request.status != "DIVISIONAL_HEAD_APPROVED":
+        messages.info(request, _("This request is not awaiting ISO evaluation."))
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    if not change_request.implementation_overview:
+        messages.info(
+            request,
+            _("The Change Implementer section must be completed before ISO evaluation."),
+        )
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    form = ISOEvaluationForm(request.POST, instance=change_request)
+    if not form.is_valid():
+        for field, errors in form.errors.items():
+            for error in errors:
+                messages.error(request, f"{field}: {error}")
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    change_request = form.save(commit=False)
+    change_request.iso_reviewed_by = request.user
+    change_request.iso_reviewed_at = timezone.now()
+    ticket = change_request.ticket
+    requestor = ticket.employee_id
+    iso_comments = (change_request.iso_comments or "").strip()
+
+    if change_request.iso_approval == "no":
+        change_request.status = "REJECTED"
+        change_request.feedback = iso_comments
+        ticket.status = "canceled"
+        change_request.save()
+        ticket.save()
+        _access_review_comment(
+            ticket,
+            request.user,
+            _("ISO Evaluation – Rejected"),
+            _("Rejected"),
+            _("Your change request has been rejected by the ISO Officer."),
+            iso_comments,
+        )
+        verb = _("Your change request has been rejected by the ISO Officer.")
+        messages.success(request, _("Change request rejected."))
+    elif change_request.requires_isc():
+        change_request.status = "ISO_APPROVED_PENDING_ISC"
+        change_request.isc_needed = "yes"
+        ticket.status = "in_progress"
+        change_request.save()
+        ticket.save()
+        _access_review_comment(
+            ticket,
+            request.user,
+            _("ISO Evaluation – Approved"),
+            change_request.get_status_display(),
+            _("Approved by ISO. Forwarded to the IS Council for final approval."),
+            iso_comments,
+        )
+        verb = _(
+            "Your change request has been approved by the ISO Officer and forwarded to the IS Council."
+        )
+        messages.success(request, _("Change request approved – pending ISC."))
+        try:
+            isc_recipients = [
+                u for u in _get_isc_users() if u.pk != request.user.pk
+            ]
+            if isc_recipients:
+                notify.send(
+                    request.user.employee_get,
+                    recipient=isc_recipients,
+                    verb=(
+                        f"Change request by {requestor.get_full_name()} "
+                        f"is awaiting IS Council approval."
+                    ),
+                    icon="git-branch",
+                    redirect=reverse("ticket-detail", kwargs={"ticket_id": ticket.id}),
+                )
+        except Exception as exc:
+            logger.error("Change request ISC notify error: %s", exc)
+    else:
+        change_request.status = "ISO_APPROVED"
+        change_request.isc_needed = "no"
+        ticket.status = "in_progress"
+        change_request.save()
+        ticket.save()
+        _access_review_comment(
+            ticket,
+            request.user,
+            _("ISO Evaluation – Approved"),
+            change_request.get_status_display(),
+            _("Approved by ISO. Proceed directly to Change Release."),
+            iso_comments,
+        )
+        verb = _("Your change request has been approved by the ISO Officer.")
+        messages.success(request, _("Change request approved."))
+
+    _helpdesk_audit(
+        request,
+        "Change request ISO evaluation",
+        ticket,
+        {"status": {"to": change_request.status}},
+    )
+
+    try:
+        notify.send(
+            request.user.employee_get,
+            recipient=requestor.employee_user_id,
+            verb=verb,
+            icon="git-branch",
+            redirect=reverse("ticket-detail", kwargs={"ticket_id": ticket.id}),
+        )
+    except Exception as exc:
+        logger.error("Change request ISO review notify error: %s", exc)
+
+    return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+
+@login_required
+def change_request_isc_review(request, cr_id):
+    """Stage 3 — ISC approval (Major / Emergency categorisation only)."""
+    if request.method != "POST":
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    if not request.user.is_superuser and not _is_isc_member(request.user):
+        messages.info(request, _("Only an IS Council member can approve this request."))
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    try:
+        change_request = ChangeRequest.objects.get(id=cr_id)
+    except ChangeRequest.DoesNotExist:
+        messages.error(request, _("Change request not found."))
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    if change_request.status != "ISO_APPROVED_PENDING_ISC":
+        messages.info(request, _("This request is not awaiting IS Council approval."))
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    form = ISCApprovalForm(request.POST, instance=change_request)
+    if not form.is_valid():
+        for field, errors in form.errors.items():
+            for error in errors:
+                messages.error(request, f"{field}: {error}")
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    change_request = form.save(commit=False)
+    change_request.isc_reviewed_by = request.user
+    change_request.isc_reviewed_at = timezone.now()
+    ticket = change_request.ticket
+    requestor = ticket.employee_id
+    isc_comments = (change_request.isc_comments or "").strip()
+
+    if change_request.isc_approval == "yes":
+        change_request.status = "FULLY_APPROVED"
+        ticket.status = "in_progress"
+        _access_review_comment(
+            ticket,
+            request.user,
+            _("ISC Approval – Approved"),
+            _("Fully Approved"),
+            _("Approved by the IS Council. Change Release is now unlocked."),
+            isc_comments,
+        )
+        verb = _("Your change request has been fully approved by the IS Council.")
+        messages.success(request, _("Change request fully approved."))
+    else:
+        change_request.status = "REJECTED"
+        change_request.feedback = isc_comments
+        ticket.status = "canceled"
+        _access_review_comment(
+            ticket,
+            request.user,
+            _("ISC Approval – Rejected"),
+            _("Rejected"),
+            _("Your change request has been rejected by the IS Council."),
+            isc_comments,
+        )
+        verb = _("Your change request has been rejected by the IS Council.")
+        messages.success(request, _("Change request rejected."))
+
+    change_request.save()
+    ticket.save()
+
+    _helpdesk_audit(
+        request,
+        "Change request ISC approval",
+        ticket,
+        {"status": {"to": change_request.status}},
+    )
+
+    try:
+        notify.send(
+            request.user.employee_get,
+            recipient=requestor.employee_user_id,
+            verb=verb,
+            icon="git-branch",
+            redirect=reverse("ticket-detail", kwargs={"ticket_id": ticket.id}),
+        )
+    except Exception as exc:
+        logger.error("Change request ISC review notify error: %s", exc)
+
+    return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+
+@login_required
+def change_request_save_release(request, cr_id):
+    """
+    Change Release — collaboratively editable by any ticket participant once all
+    required approvals are complete. When all six Release fields are completed,
+    the ticket moves to Closed.
+    """
+    if request.method != "POST":
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    try:
+        change_request = ChangeRequest.objects.get(id=cr_id)
+    except ChangeRequest.DoesNotExist:
+        messages.error(request, _("Change request not found."))
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    if not _change_request_has_edit_access(request, change_request):
+        messages.info(request, _("You don't have permission."))
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    if not change_request.release_unlocked():
+        messages.info(
+            request,
+            _("Change Release is available only once all approvals are complete."),
+        )
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    form = ChangeReleaseForm(request.POST, instance=change_request)
+    if not form.is_valid():
+        for field, errors in form.errors.items():
+            for error in errors:
+                messages.error(request, f"{field}: {error}")
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    change_request = form.save(commit=False)
+    ticket = change_request.ticket
+
+    # All six Release fields are required by the form, so a successful save
+    # means the release is complete → move to Closed.
+    change_request.status = "CLOSED"
+    change_request.closed_by = request.user
+    ticket.status = "resolved"
+    change_request.save()
+    ticket.save()
+
+    _access_review_comment(
+        ticket,
+        request.user,
+        _("Change Release – Completed"),
+        _("Closed"),
+        _("All Change Release fields have been completed. The change is now closed."),
+        "",
+    )
+    _helpdesk_audit(
+        request,
+        "Change request closed",
+        ticket,
+        {"status": {"to": "CLOSED"}},
+    )
+    messages.success(request, _("Change Release completed. The change request is now closed."))
+    return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+
+@login_required
+def change_request_withdraw(request, cr_id):
+    """Allow the owner to withdraw their own PENDING Change Request."""
+    if request.method != "POST":
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    try:
+        change_request = ChangeRequest.objects.get(id=cr_id)
+    except ChangeRequest.DoesNotExist:
+        messages.error(request, _("Change request not found."))
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    ticket = change_request.ticket
+    current_employee = getattr(request.user, "employee_get", None)
+    if current_employee != ticket.employee_id:
+        messages.info(request, _("You don't have permission to withdraw this request."))
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    if change_request.status != "PENDING":
+        messages.info(
+            request,
+            _("This request has already been reviewed and cannot be withdrawn."),
+        )
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    ticket_title = str(ticket)
+    change_request.delete()
+    ticket.delete()
+    messages.success(
+        request,
+        _('Your change request "{}" has been withdrawn successfully.').format(
+            ticket_title
+        ),
+    )
+    return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+
+@login_required
+def change_request_delete(request, cr_id):
+    """IS Council / Superuser deletes a Change Request and its ticket."""
+    if not request.user.is_superuser and not _is_isc_member(request.user):
+        messages.info(request, _("You don't have permission."))
+        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+
+    if request.method == "POST":
+        try:
+            change_request = ChangeRequest.objects.get(id=cr_id)
+            ticket = change_request.ticket
+            ticket_title = str(ticket)
+            change_request.delete()
+            ticket.delete()
+            messages.success(
+                request,
+                _('The change request "{}" has been deleted successfully.').format(
+                    ticket_title
+                ),
+            )
+        except ChangeRequest.DoesNotExist:
+            messages.error(request, _("Change request not found."))
+        except Exception:
+            messages.error(request, _("You cannot delete this change request."))
+
+    return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))

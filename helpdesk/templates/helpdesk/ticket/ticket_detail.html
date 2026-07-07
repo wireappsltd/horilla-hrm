@@ -190,6 +190,16 @@
                                         </option>
                                     {% endfor %}
                                 </select>
+                            {% elif change_request %}
+                                {# Change requests follow the multi-stage change workflow; read-only since transitions go through the action buttons. #}
+                                <select name="change_status_display" title='{% trans "Change Request Status" %}' class="oh-select" disabled
+                                    style="width:260px; align-items: center; border: 1px solid #aaa; border-radius: 2px; background-color: #fff;">
+                                    {% for status in change_request_status_choices %}
+                                        <option value="{{status.0}}" {% if status.0 == change_request.status %}selected{% endif %}>
+                                            {{status.1}}
+                                        </option>
+                                    {% endfor %}
+                                </select>
                             {% elif perms.helpdesk.change_ticket or request.user.employee_get|is_department_manager:ticket or request.user.employee_get in ticket.assigned_to.all or request.user.employee_get == ticket.employee_id %}
                                 <select name="status_update" title='{% trans "Status" %}' class="oh-select"
                                     onchange="updateStatus()"
@@ -379,6 +389,38 @@
                                 title="{% trans 'Close' %}"
                                 onclick="openIncidentCloseModal('{% url 'incident-report-close' incident_report.id %}');">
                                 <ion-icon name="lock-closed-outline" class="me-1"></ion-icon>{% trans "Close" %}
+                            </button>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                    {% if change_request %}
+                    {# ── Change Request workflow action buttons (multi-stage, multi-actor) ── #}
+                    <div class="d-flex align-items-center gap-2 ms-4 iso-action-group">
+                        {% if change_request.status == 'PENDING' and is_isc_member and request.user.employee_get != ticket.employee_id %}
+                            {# Stage 1 — Divisional Head (ISC user group) Approve / Reject. #}
+                            <button type="button" class="oh-btn oh-btn--success iso-action-btn iso-action-btn--equal"
+                                title="{% trans 'Approve' %}"
+                                onclick="openIsoApproveModal('{% url 'change-request-dh-review' change_request.id %}');">
+                                <ion-icon name="checkmark-outline" class="me-1"></ion-icon>{% trans "Approve" %}
+                            </button>
+                            <button type="button" class="oh-btn oh-btn--danger iso-action-btn iso-action-btn--equal"
+                                title="{% trans 'Reject' %}"
+                                onclick="openIsoRejectModal('{% url 'change-request-dh-review' change_request.id %}');">
+                                <ion-icon name="close-outline" class="me-1"></ion-icon>{% trans "Reject" %}
+                            </button>
+                        {% elif change_request.status == 'DIVISIONAL_HEAD_APPROVED' and is_iso_officer and change_request.implementation_overview %}
+                            {# Stage 2 — ISO Officer evaluation (only after Section 2 is completed). #}
+                            <button type="button" class="oh-btn oh-btn--secondary iso-action-btn"
+                                title="{% trans 'ISO Evaluation' %}"
+                                onclick="document.getElementById('changeIsoEvalModal').classList.add('oh-modal--show');">
+                                <ion-icon name="shield-checkmark-outline" class="me-1"></ion-icon>{% trans "ISO Evaluation" %}
+                            </button>
+                        {% elif change_request.status == 'ISO_APPROVED_PENDING_ISC' and is_isc_member %}
+                            {# Stage 3 — ISC approval (Major / Emergency only). #}
+                            <button type="button" class="oh-btn oh-btn--secondary iso-action-btn"
+                                title="{% trans 'ISC Approval' %}"
+                                onclick="document.getElementById('changeIscApprovalModal').classList.add('oh-modal--show');">
+                                <ion-icon name="people-outline" class="me-1"></ion-icon>{% trans "ISC Approval" %}
                             </button>
                         {% endif %}
                     </div>
@@ -1160,6 +1202,344 @@
                 </div>
                 <!-- End of Incident Report Review Status Card -->
                 {% endif %}
+                {% if change_request %}
+                <!-- Change Request Workflow Card -->
+                <div class="oh-helpdesk__card">
+                    <div class="oh-helpdesk__card-header d-flex justify-content-between align-items-center">
+                        <span class="oh-helpdesk__card-title">{% trans "Change Request" %}</span>
+                        {% if change_request.status == 'PENDING' %}
+                            <span class="oh-badge oh-badge--iso-pending">{{ change_request.get_status_display }}</span>
+                        {% elif change_request.status == 'REJECTED' %}
+                            <span class="oh-badge oh-badge--iso-rejected">{{ change_request.get_status_display }}</span>
+                        {% elif change_request.status == 'CLOSED' %}
+                            <span class="oh-badge oh-badge--iso-closed">{{ change_request.get_status_display }}</span>
+                        {% elif change_request.status == 'ISO_APPROVED' or change_request.status == 'FULLY_APPROVED' or change_request.status == 'IN_RELEASE' %}
+                            <span class="oh-badge oh-badge--iso-awaiting">{{ change_request.get_status_display }}</span>
+                        {% else %}
+                            <span class="oh-badge oh-badge--iso-action">{{ change_request.get_status_display }}</span>
+                        {% endif %}
+                    </div>
+                    <div class="oh-helpdesk__card-body">
+                        {# ── Section 1 — Change Requester (read-only) ── #}
+                        <ul class="helpdesk__card-items">
+                            <li class="helpdesk__card-item">
+                                <span class="helpdesk__card-label">{% trans "User ID (Email):" %}</span>
+                                <span class="helpdesk__card-value">{{ change_request.user_id }}</span>
+                            </li>
+                            <li class="helpdesk__card-item">
+                                <span class="helpdesk__card-label">{% trans "Categorisation:" %}</span>
+                                <span class="helpdesk__card-value">{{ change_request.get_categorisation_display }}</span>
+                            </li>
+                            <li class="helpdesk__card-item">
+                                <span class="helpdesk__card-label">{% trans "Change Type:" %}</span>
+                                <span class="helpdesk__card-value">{{ change_request.get_change_type_display }}</span>
+                            </li>
+                            {% if change_request.change_type == 'temporary' %}
+                            <li class="helpdesk__card-item">
+                                <span class="helpdesk__card-label">{% trans "Expiry Date:" %}</span>
+                                <span class="helpdesk__card-value">{{ change_request.expiry_date|default:_("Not set") }}</span>
+                            </li>
+                            {% endif %}
+                            <li class="helpdesk__card-item">
+                                <span class="helpdesk__card-label">{% trans "Change Required By:" %}</span>
+                                <span class="helpdesk__card-value">{{ change_request.change_required_by }}</span>
+                            </li>
+                            <li class="helpdesk__card-item">
+                                <span class="helpdesk__card-label">{% trans "Change Requested By:" %}</span>
+                                <span class="helpdesk__card-value">{{ change_request.change_requested_by }}</span>
+                            </li>
+                        </ul>
+
+                        {# ── Stage 1 — Divisional Head (ISC) review outcome ── #}
+                        {% if change_request.dh_reviewed_by %}
+                        <div class="oh-helpdesk__subcard mt-2">
+                            <div class="oh-helpdesk__subcard-header">
+                                <span class="oh-helpdesk__subcard-title">{% trans "Divisional Head Review" %}</span>
+                            </div>
+                            <div class="oh-helpdesk__subcard-body">
+                                <ul class="helpdesk__card-items">
+                                    <li class="helpdesk__card-item">
+                                        <span class="helpdesk__card-label">{% trans "Name:" %}</span>
+                                        <span class="helpdesk__card-value">{{ change_request.dh_name }}</span>
+                                    </li>
+                                    {% if change_request.dh_division %}
+                                    <li class="helpdesk__card-item">
+                                        <span class="helpdesk__card-label">{% trans "Division:" %}</span>
+                                        <span class="helpdesk__card-value">{{ change_request.dh_division }}</span>
+                                    </li>
+                                    {% endif %}
+                                    <li class="helpdesk__card-item">
+                                        <span class="helpdesk__card-label">{% trans "Reviewed at:" %}</span>
+                                        <span class="helpdesk__card-value">{{ change_request.dh_reviewed_at }}</span>
+                                    </li>
+                                </ul>
+                            </div>
+                        </div>
+                        {% endif %}
+
+                        {# ── Section 2 — Change Implementer ── #}
+                        <div class="oh-helpdesk__subcard mt-2">
+                            <div class="oh-helpdesk__subcard-header">
+                                <span class="oh-helpdesk__subcard-title">{% trans "Change Implementer" %}</span>
+                            </div>
+                            <div class="oh-helpdesk__subcard-body">
+                                {% if not change_request.implementer_section_unlocked %}
+                                    <span class="helpdesk__card-value text-muted">{% trans "Available once the Divisional Head has approved." %}</span>
+                                {% elif change_request.status == 'DIVISIONAL_HEAD_APPROVED' and change_request_can_edit %}
+                                    {# Editable inline form (before ISO evaluation). #}
+                                    <form method="post" action="{% url 'change-request-save-implementer' change_request.id %}">
+                                        {% csrf_token %}
+                                        <div class="oh-form__group">
+                                            <label class="oh-label oh-label--mandatory">{% trans "Are you the Change Implementer?" %}</label>
+                                            {{ change_implementer_form.is_self_implementer }}
+                                        </div>
+                                        <div class="oh-form__group mt-2" id="changeImplementerSelectWrapper">
+                                            <label class="oh-label">{% trans "Change Implementer" %}</label>
+                                            {{ change_implementer_form.implementer }}
+                                        </div>
+                                        <div class="oh-form__group mt-2">
+                                            <label class="oh-label oh-label--mandatory">{% trans "Implementation Overview" %}</label>
+                                            {{ change_implementer_form.implementation_overview }}
+                                        </div>
+                                        <div class="oh-form__group mt-2">
+                                            <label class="oh-label oh-label--mandatory">{% trans "Effort Estimate" %}</label>
+                                            {{ change_implementer_form.effort_estimate }}
+                                        </div>
+                                        <div class="oh-form__group mt-2">
+                                            <label class="oh-label oh-label--mandatory">{% trans "Special Support Required" %}</label>
+                                            {{ change_implementer_form.special_support }}
+                                        </div>
+                                        <div class="oh-form__group mt-2" id="changeSpecialSupportWrapper">
+                                            <label class="oh-label">{% trans "Special Support Description" %}</label>
+                                            {{ change_implementer_form.special_support_description }}
+                                        </div>
+                                        <div class="oh-form__group mt-2">
+                                            <label class="oh-label">{% trans "Other Resources" %}</label>
+                                            {{ change_implementer_form.other_resources }}
+                                        </div>
+                                        <div class="oh-form__group mt-2">
+                                            <label class="oh-label">{% trans "Alternatives (if any)" %}</label>
+                                            {{ change_implementer_form.alternatives }}
+                                        </div>
+                                        <div class="oh-form__group mt-2">
+                                            <label class="oh-label oh-label--mandatory">{% trans "System Outage Required" %}</label>
+                                            {{ change_implementer_form.system_outage }}
+                                        </div>
+                                        <div class="oh-form__group mt-2">
+                                            <label class="oh-label oh-label--mandatory">{% trans "Scheduled Outage Date" %}</label>
+                                            {{ change_implementer_form.scheduled_outage_date }}
+                                        </div>
+                                        <div class="oh-form__group mt-2">
+                                            <label class="oh-label oh-label--mandatory">{% trans "Scheduled Outage Time" %}</label>
+                                            {{ change_implementer_form.scheduled_outage_time }}
+                                        </div>
+                                        <div class="oh-form__group mt-2">
+                                            <label class="oh-label oh-label--mandatory">{% trans "Business Impact" %}</label>
+                                            {{ change_implementer_form.business_impact }}
+                                        </div>
+                                        <div class="d-flex justify-content-end mt-2">
+                                            <button type="submit" class="oh-btn oh-btn--secondary p-2">
+                                                <ion-icon name="save-outline" class="me-1"></ion-icon>{% trans "Save & Submit for ISO Review" %}
+                                            </button>
+                                        </div>
+                                    </form>
+                                {% else %}
+                                    {# Read-only display once submitted / beyond DH-approved. #}
+                                    <ul class="helpdesk__card-items">
+                                        <li class="helpdesk__card-item">
+                                            <span class="helpdesk__card-label">{% trans "Implementer:" %}</span>
+                                            <span class="helpdesk__card-value">{{ change_request.implementer_name|default:_("Not set") }}</span>
+                                        </li>
+                                        {% if change_request.implementer_division %}
+                                        <li class="helpdesk__card-item">
+                                            <span class="helpdesk__card-label">{% trans "Division:" %}</span>
+                                            <span class="helpdesk__card-value">{{ change_request.implementer_division }}</span>
+                                        </li>
+                                        {% endif %}
+                                        <li class="helpdesk__card-item">
+                                            <span class="helpdesk__card-label">{% trans "Overview:" %}</span>
+                                            <span class="helpdesk__card-value">{{ change_request.implementation_overview|default:"—" }}</span>
+                                        </li>
+                                        <li class="helpdesk__card-item">
+                                            <span class="helpdesk__card-label">{% trans "Effort Estimate:" %}</span>
+                                            <span class="helpdesk__card-value">{{ change_request.effort_estimate|default:"—" }}</span>
+                                        </li>
+                                        <li class="helpdesk__card-item">
+                                            <span class="helpdesk__card-label">{% trans "Special Support:" %}</span>
+                                            <span class="helpdesk__card-value">{{ change_request.get_special_support_display|default:"—" }}</span>
+                                        </li>
+                                        {% if change_request.special_support_description %}
+                                        <li class="helpdesk__card-item">
+                                            <span class="helpdesk__card-label">{% trans "Support Detail:" %}</span>
+                                            <span class="helpdesk__card-value">{{ change_request.special_support_description }}</span>
+                                        </li>
+                                        {% endif %}
+                                        <li class="helpdesk__card-item">
+                                            <span class="helpdesk__card-label">{% trans "System Outage:" %}</span>
+                                            <span class="helpdesk__card-value">{{ change_request.get_system_outage_display|default:"—" }}</span>
+                                        </li>
+                                        <li class="helpdesk__card-item">
+                                            <span class="helpdesk__card-label">{% trans "Scheduled Outage:" %}</span>
+                                            <span class="helpdesk__card-value">{{ change_request.scheduled_outage_date|default:"—" }} {{ change_request.scheduled_outage_time|default:"" }}</span>
+                                        </li>
+                                        <li class="helpdesk__card-item">
+                                            <span class="helpdesk__card-label">{% trans "Business Impact:" %}</span>
+                                            <span class="helpdesk__card-value">{{ change_request.business_impact|default:"—" }}</span>
+                                        </li>
+                                    </ul>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        {# ── Stage 2 — ISO Officer evaluation outcome ── #}
+                        {% if change_request.iso_reviewed_by %}
+                        <div class="oh-helpdesk__subcard mt-2">
+                            <div class="oh-helpdesk__subcard-header">
+                                <span class="oh-helpdesk__subcard-title">{% trans "ISO Evaluation" %}</span>
+                            </div>
+                            <div class="oh-helpdesk__subcard-body">
+                                <ul class="helpdesk__card-items">
+                                    <li class="helpdesk__card-item">
+                                        <span class="helpdesk__card-label">{% trans "Complies with Policy:" %}</span>
+                                        <span class="helpdesk__card-value">{{ change_request.get_iso_complies_display|default:"—" }}</span>
+                                    </li>
+                                    <li class="helpdesk__card-item">
+                                        <span class="helpdesk__card-label">{% trans "Impact:" %}</span>
+                                        <span class="helpdesk__card-value">{{ change_request.iso_impact|default:"—" }}</span>
+                                    </li>
+                                    <li class="helpdesk__card-item">
+                                        <span class="helpdesk__card-label">{% trans "Risk Assessment:" %}</span>
+                                        <span class="helpdesk__card-value">{{ change_request.iso_risk_assessment|default:"—" }}</span>
+                                    </li>
+                                    <li class="helpdesk__card-item">
+                                        <span class="helpdesk__card-label">{% trans "ISO Approval:" %}</span>
+                                        <span class="helpdesk__card-value">{{ change_request.get_iso_approval_display|default:"—" }}</span>
+                                    </li>
+                                    {% if change_request.iso_comments %}
+                                    <li class="helpdesk__card-item">
+                                        <span class="helpdesk__card-label">{% trans "ISO Comments:" %}</span>
+                                        <span class="helpdesk__card-value">{{ change_request.iso_comments }}</span>
+                                    </li>
+                                    {% endif %}
+                                </ul>
+                            </div>
+                        </div>
+                        {% endif %}
+
+                        {# ── Stage 3 — ISC approval outcome ── #}
+                        {% if change_request.isc_reviewed_by %}
+                        <div class="oh-helpdesk__subcard mt-2">
+                            <div class="oh-helpdesk__subcard-header">
+                                <span class="oh-helpdesk__subcard-title">{% trans "IS Council Approval" %}</span>
+                            </div>
+                            <div class="oh-helpdesk__subcard-body">
+                                <ul class="helpdesk__card-items">
+                                    <li class="helpdesk__card-item">
+                                        <span class="helpdesk__card-label">{% trans "ISC Approval:" %}</span>
+                                        <span class="helpdesk__card-value">{{ change_request.get_isc_approval_display|default:"—" }}</span>
+                                    </li>
+                                    {% if change_request.isc_comments %}
+                                    <li class="helpdesk__card-item">
+                                        <span class="helpdesk__card-label">{% trans "ISC Comments:" %}</span>
+                                        <span class="helpdesk__card-value">{{ change_request.isc_comments }}</span>
+                                    </li>
+                                    {% endif %}
+                                    <li class="helpdesk__card-item">
+                                        <span class="helpdesk__card-label">{% trans "Reviewed at:" %}</span>
+                                        <span class="helpdesk__card-value">{{ change_request.isc_reviewed_at }}</span>
+                                    </li>
+                                </ul>
+                            </div>
+                        </div>
+                        {% endif %}
+
+                        {# ── Change Release ── #}
+                        <div class="oh-helpdesk__subcard mt-2">
+                            <div class="oh-helpdesk__subcard-header">
+                                <span class="oh-helpdesk__subcard-title">{% trans "Change Release" %}</span>
+                            </div>
+                            <div class="oh-helpdesk__subcard-body">
+                                {% if not change_request.release_unlocked and change_request.status != 'CLOSED' %}
+                                    <span class="helpdesk__card-value text-muted">{% trans "Available once all approvals are complete." %}</span>
+                                {% elif change_request.release_unlocked and change_request_can_edit %}
+                                    {# Editable inline form — collaboratively filled by any participant. #}
+                                    <form method="post" action="{% url 'change-request-save-release' change_request.id %}">
+                                        {% csrf_token %}
+                                        <div class="oh-form__group">
+                                            <label class="oh-label oh-label--mandatory">{% trans "Test Plan" %}</label>
+                                            {{ change_release_form.test_plan }}
+                                        </div>
+                                        <div class="oh-form__group mt-2">
+                                            <label class="oh-label oh-label--mandatory">{% trans "Test Results" %}</label>
+                                            {{ change_release_form.test_results }}
+                                        </div>
+                                        <div class="oh-form__group mt-2">
+                                            <label class="oh-label oh-label--mandatory">{% trans "Rollback Plan" %}</label>
+                                            {{ change_release_form.rollback_plan }}
+                                        </div>
+                                        <div class="oh-form__group mt-2">
+                                            <label class="oh-label oh-label--mandatory">{% trans "UAT Accepted" %}</label>
+                                            {{ change_release_form.uat_accepted }}
+                                        </div>
+                                        <div class="oh-form__group mt-2">
+                                            <label class="oh-label oh-label--mandatory">{% trans "Change Released to Production" %}</label>
+                                            {{ change_release_form.released_to_production }}
+                                        </div>
+                                        <div class="oh-form__group mt-2">
+                                            <label class="oh-label oh-label--mandatory">{% trans "Acceptance of Change Completion" %}</label>
+                                            {{ change_release_form.acceptance_of_completion }}
+                                        </div>
+                                        <div class="d-flex justify-content-end mt-2">
+                                            <button type="submit" class="oh-btn oh-btn--success p-2">
+                                                <ion-icon name="checkmark-done-outline" class="me-1"></ion-icon>{% trans "Complete & Close" %}
+                                            </button>
+                                        </div>
+                                    </form>
+                                {% else %}
+                                    <ul class="helpdesk__card-items">
+                                        <li class="helpdesk__card-item">
+                                            <span class="helpdesk__card-label">{% trans "Test Plan:" %}</span>
+                                            <span class="helpdesk__card-value">{{ change_request.test_plan|default:"—" }}</span>
+                                        </li>
+                                        <li class="helpdesk__card-item">
+                                            <span class="helpdesk__card-label">{% trans "Test Results:" %}</span>
+                                            <span class="helpdesk__card-value">{{ change_request.test_results|default:"—" }}</span>
+                                        </li>
+                                        <li class="helpdesk__card-item">
+                                            <span class="helpdesk__card-label">{% trans "Rollback Plan:" %}</span>
+                                            <span class="helpdesk__card-value">{{ change_request.rollback_plan|default:"—" }}</span>
+                                        </li>
+                                        <li class="helpdesk__card-item">
+                                            <span class="helpdesk__card-label">{% trans "UAT Accepted:" %}</span>
+                                            <span class="helpdesk__card-value">{{ change_request.get_uat_accepted_display|default:"—" }}</span>
+                                        </li>
+                                        <li class="helpdesk__card-item">
+                                            <span class="helpdesk__card-label">{% trans "Released to Production:" %}</span>
+                                            <span class="helpdesk__card-value">{{ change_request.get_released_to_production_display|default:"—" }}</span>
+                                        </li>
+                                        <li class="helpdesk__card-item">
+                                            <span class="helpdesk__card-label">{% trans "Acceptance of Completion:" %}</span>
+                                            <span class="helpdesk__card-value">{{ change_request.get_acceptance_of_completion_display|default:"—" }}</span>
+                                        </li>
+                                    </ul>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        {% if change_request.feedback %}
+                        <div class="oh-helpdesk__subcard mt-2">
+                            <div class="oh-helpdesk__subcard-header">
+                                <span class="oh-helpdesk__subcard-title">{% trans "Rejection Feedback" %}</span>
+                            </div>
+                            <div class="oh-helpdesk__subcard-body">
+                                <span class="helpdesk__card-value">{{ change_request.feedback }}</span>
+                            </div>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+                <!-- End of Change Request Workflow Card -->
+                {% endif %}
                 <!-- Responsibility Card -->
                 <div class="oh-helpdesk__card">
                     <div class="oh-helpdesk__card-header d-flex justify-content-between align-items-center">
@@ -1660,7 +2040,7 @@
 
 <div id="passwordResetModalTarget"></div>
 
-{% if password_reset_request or access_request or exception_request or admin_access_request %}
+{% if password_reset_request or access_request or exception_request or admin_access_request or change_request %}
 {# ── ISO Workflow Modals (detail view) ── #}
 <div class="oh-modal" id="isoApproveModal" role="dialog" aria-hidden="true">
     <div class="oh-modal__dialog">
@@ -1961,7 +2341,105 @@
         var err = document.getElementById('incidentCloseError');
         if (!input.value.trim()) { e.preventDefault(); err.style.display = 'block'; input.focus(); return false; }
         err.style.display = 'none';
-    });
+    </script>
+{% endif %}
+
+{% if change_request %}
+{# ── Change Request Workflow Modals (ISO evaluation, ISC approval) ── #}
+<div class="oh-modal" id="changeIsoEvalModal" role="dialog" aria-hidden="true">
+    <div class="oh-modal__dialog">
+        <div class="oh-modal__dialog-header">
+            <h2 class="oh-modal__dialog-title">{% trans "ISO Evaluation & Approval" %}</h2>
+            <button class="oh-modal__close" aria-label="Close" onclick="document.getElementById('changeIsoEvalModal').classList.remove('oh-modal--show');">
+                <ion-icon name="close-outline"></ion-icon>
+            </button>
+        </div>
+        <div class="oh-modal__dialog-body">
+            <form method="post" action="{% url 'change-request-iso-review' change_request.id %}">
+                {% csrf_token %}
+                <div class="oh-form__group">
+                    <label class="oh-label oh-label--mandatory">{% trans "Change Complies with Company Policies?" %}</label>
+                    {{ change_iso_form.iso_complies }}
+                </div>
+                <div class="oh-form__group mt-2">
+                    <label class="oh-label oh-label--mandatory">{% trans "Impact of Implementing Change" %}</label>
+                    {{ change_iso_form.iso_impact }}
+                </div>
+                <div class="oh-form__group mt-2">
+                    <label class="oh-label oh-label--mandatory">{% trans "Risk Assessment on the Change" %}</label>
+                    {{ change_iso_form.iso_risk_assessment }}
+                </div>
+                <div class="oh-form__group mt-2">
+                    <label class="oh-label oh-label--mandatory">{% trans "ISO Approval" %}</label>
+                    {{ change_iso_form.iso_approval }}
+                </div>
+                <div class="oh-form__group mt-2">
+                    <label class="oh-label">{% trans "ISO Comments" %}</label>
+                    {{ change_iso_form.iso_comments }}
+                </div>
+                <p class="text-muted mt-2" style="font-size:12px;">
+                    {% trans "Approval of a Major / Emergency change is forwarded to the IS Council; Standard / Minor changes proceed directly to Change Release." %}
+                </p>
+                <div class="d-flex justify-content-end mt-3 gap-2">
+                    <button type="button" class="oh-btn oh-btn--light-bkg" onclick="document.getElementById('changeIsoEvalModal').classList.remove('oh-modal--show');">{% trans "Cancel" %}</button>
+                    <button type="submit" class="oh-btn oh-btn--secondary">{% trans "Submit Evaluation" %}</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="oh-modal" id="changeIscApprovalModal" role="dialog" aria-hidden="true">
+    <div class="oh-modal__dialog">
+        <div class="oh-modal__dialog-header">
+            <h2 class="oh-modal__dialog-title">{% trans "IS Council Approval" %}</h2>
+            <button class="oh-modal__close" aria-label="Close" onclick="document.getElementById('changeIscApprovalModal').classList.remove('oh-modal--show');">
+                <ion-icon name="close-outline"></ion-icon>
+            </button>
+        </div>
+        <div class="oh-modal__dialog-body">
+            <form method="post" action="{% url 'change-request-isc-review' change_request.id %}">
+                {% csrf_token %}
+                <div class="oh-form__group">
+                    <label class="oh-label">{% trans "Is ISC Approval Needed?" %}</label>
+                    <input type="text" class="oh-input w-100" value="{% trans 'Yes' %}" readonly />
+                </div>
+                <div class="oh-form__group mt-2">
+                    <label class="oh-label oh-label--mandatory">{% trans "ISC Approval" %}</label>
+                    {{ change_isc_form.isc_approval }}
+                </div>
+                <div class="oh-form__group mt-2">
+                    <label class="oh-label">{% trans "ISC Comments" %}</label>
+                    {{ change_isc_form.isc_comments }}
+                </div>
+                <div class="d-flex justify-content-end mt-3 gap-2">
+                    <button type="button" class="oh-btn oh-btn--light-bkg" onclick="document.getElementById('changeIscApprovalModal').classList.remove('oh-modal--show');">{% trans "Cancel" %}</button>
+                    <button type="submit" class="oh-btn oh-btn--secondary">{% trans "Submit Decision" %}</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Toggle the "Change Implementer" selector based on the Self-Implementer answer.
+    function changeRequestToggleImplementer(selectEl) {
+        var wrapper = document.getElementById("changeImplementerSelectWrapper");
+        if (!wrapper) { return; }
+        wrapper.style.display = (selectEl && selectEl.value === "no") ? "" : "none";
+    }
+    // Toggle the "Special Support Description" based on the Special Support answer.
+    function changeRequestToggleSupport(selectEl) {
+        var wrapper = document.getElementById("changeSpecialSupportWrapper");
+        if (!wrapper) { return; }
+        wrapper.style.display = (selectEl && selectEl.value === "yes") ? "" : "none";
+    }
+    (function () {
+        var selfImplementer = document.getElementById("id_is_self_implementer");
+        if (selfImplementer) { changeRequestToggleImplementer(selfImplementer); }
+        var specialSupport = document.getElementById("id_special_support");
+        if (specialSupport) { changeRequestToggleSupport(specialSupport); }
+    })();
 </script>
 {% endif %}
 
