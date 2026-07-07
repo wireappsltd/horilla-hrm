@@ -41,6 +41,7 @@ from helpdesk.models import (
     PRIORITY,
     ISO_GROUP_NAME,
     ISC_GROUP_NAME,
+    INCIDENT_CLASSIFICATION_CHOICES,
     AccessRequest,
     AdminAccessRequest,
     Attachment,
@@ -48,6 +49,7 @@ from helpdesk.models import (
     DepartmentManager,
     ExceptionRequest,
     FAQCategory,
+    IncidentReport,
     PasswordResetRequest,
     Ticket,
     TicketType,
@@ -1156,6 +1158,346 @@ class AdminAccessRequestForm(forms.ModelForm):
             instance.save()
             instance.forward_to.set(self.cleaned_data.get("forward_to", []))
         return instance
+
+
+class IncidentReportForm(forms.ModelForm):
+    """
+    Reporter section of an "Incident Report" (ISO Forms category), filled by
+    the logged-in user at submission.
+
+      * ``IR Name`` / ``IR Email`` are auto-populated from the logged-in user's
+        profile and are read-only (surfaced like ``User ID`` on other forms).
+      * ``Incident Reporting Date`` is auto-populated with today's date and is
+        read-only.
+      * ``Incident Description`` is capped at 1000 characters.
+    """
+
+    DESCRIPTION_MAX_LENGTH = 1000
+
+    employee = forms.ModelChoiceField(
+        queryset=Employee.objects.none(),
+        widget=forms.HiddenInput(),
+        required=True,
+    )
+    ir_name = forms.CharField(
+        label=_("IR Name"),
+        required=False,
+        widget=forms.TextInput(
+            attrs={"class": "oh-input w-100", "readonly": "readonly"}
+        ),
+    )
+    ir_email = forms.CharField(
+        label=_("IR Email"),
+        required=False,
+        widget=forms.TextInput(
+            attrs={"class": "oh-input w-100", "readonly": "readonly"}
+        ),
+    )
+    reporting_date = forms.DateField(
+        label=_("Incident Reporting Date"),
+        required=False,
+        widget=forms.DateInput(
+            attrs={
+                "class": "oh-input w-100",
+                "type": "date",
+                "readonly": "readonly",
+            }
+        ),
+    )
+    occurrence_time = forms.TimeField(
+        label=_("Incident Occurrence Time"),
+        required=True,
+        widget=forms.TimeInput(
+            attrs={"class": "oh-input w-100", "type": "time"}, format="%H:%M"
+        ),
+    )
+    duration_hours = forms.IntegerField(
+        label=_("Hours"),
+        required=True,
+        min_value=0,
+        widget=forms.NumberInput(
+            attrs={"class": "oh-input w-100", "min": "0", "placeholder": _("Hours")}
+        ),
+    )
+    duration_minutes = forms.IntegerField(
+        label=_("Minutes"),
+        required=True,
+        min_value=0,
+        max_value=59,
+        widget=forms.NumberInput(
+            attrs={
+                "class": "oh-input w-100",
+                "min": "0",
+                "max": "59",
+                "placeholder": _("Minutes"),
+            }
+        ),
+    )
+    priority = forms.ChoiceField(
+        choices=PRIORITY,
+        initial="medium",
+        label=_("Priority"),
+        widget=forms.Select(attrs={"class": "oh-select oh-select-2 w-100"}),
+    )
+    forward_to = forms.ModelMultipleChoiceField(
+        queryset=User.objects.none(),
+        label=_("Forward To"),
+        required=True,
+        widget=forms.SelectMultiple(attrs={"class": "oh-select oh-select-2 w-100"}),
+    )
+    deadline = forms.DateField(
+        required=False,
+        label=_("Due Date"),
+        widget=forms.DateInput(attrs={"class": "oh-input w-100", "type": "date"}),
+    )
+
+    class Meta:
+        model = IncidentReport
+        fields = [
+            "reported_by",
+            "occurrence_date",
+            "business_unit",
+            "location_type",
+            "description",
+            "initial_classification",
+            "forward_to",
+        ]
+        widgets = {
+            "reported_by": forms.Select(
+                attrs={"class": "oh-select oh-select-2 w-100"}
+            ),
+            "occurrence_date": forms.DateInput(
+                attrs={"class": "oh-input w-100", "type": "date"}
+            ),
+            "business_unit": forms.TextInput(
+                attrs={
+                    "class": "oh-input w-100",
+                    "placeholder": _("Business unit or process affected"),
+                }
+            ),
+            "location_type": forms.Select(
+                attrs={"class": "oh-select oh-select-2 w-100"}
+            ),
+            "description": forms.Textarea(
+                attrs={
+                    "class": "oh-input w-100",
+                    "rows": 4,
+                    "placeholder": _("Describe the incident"),
+                }
+            ),
+            "initial_classification": forms.Select(
+                attrs={"class": "oh-select oh-select-2 w-100"}
+            ),
+        }
+        labels = {
+            "reported_by": _("Reported By"),
+            "occurrence_date": _("Incident Occurrence Date"),
+            "business_unit": _("Business Unit / Process Affected"),
+            "location_type": _("Physical / Virtual Location of Incident"),
+            "description": _("Incident Description"),
+            "initial_classification": _("Initial Classification"),
+        }
+
+    def __init__(self, *args, request=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.request = request
+        today = timezone.localdate()
+        self.fields["deadline"].widget.attrs["min"] = today.isoformat()
+
+        # Resolve the logged-in user's Employee (ticket owner / reporter).
+        current_employee = None
+        if request is not None:
+            try:
+                current_employee = request.user.employee_get
+            except Exception:
+                current_employee = None
+
+        if self.instance and self.instance.pk and getattr(self.instance, "ticket", None):
+            owner = getattr(self.instance.ticket, "employee_id", None) or current_employee
+            self.initial["reporting_date"] = self.instance.reporting_date
+            self.initial["occurrence_time"] = self.instance.occurrence_time
+            self.initial["duration_hours"] = self.instance.duration_hours
+            self.initial["duration_minutes"] = self.instance.duration_minutes
+            name_initial = self.instance.ir_name
+            email_initial = self.instance.ir_email
+        else:
+            owner = current_employee
+            self.initial["reporting_date"] = today
+            name_initial = self._employee_name(owner)
+            email_initial = self._employee_email(owner)
+
+        if owner:
+            self.fields["employee"].queryset = Employee.objects.filter(pk=owner.pk)
+            self.initial["employee"] = owner
+            self.fields["employee"].initial = owner
+        self.initial["ir_name"] = name_initial
+        self.initial["ir_email"] = email_initial
+
+        # Forward To → ISC (IS Council) members who drive the workflow.
+        self.fields["forward_to"].queryset = (
+            User.objects.filter(groups__name=ISC_GROUP_NAME, is_active=True)
+            .distinct()
+            .order_by("first_name", "username")
+        )
+        self.fields["forward_to"].label_from_instance = self._forward_to_label
+
+        # Description character cap.
+        description_error_message = _(
+            "Description cannot exceed %(max_length)s characters."
+        ) % {"max_length": self.DESCRIPTION_MAX_LENGTH}
+        description_field = self.fields["description"]
+        description_field.max_length = self.DESCRIPTION_MAX_LENGTH
+        description_field.error_messages["max_length"] = description_error_message
+        description_field.widget.attrs.update(
+            {
+                "data-maxlength": str(self.DESCRIPTION_MAX_LENGTH),
+                "data-maxlength-message": description_error_message,
+                "maxlength": str(self.DESCRIPTION_MAX_LENGTH),
+            }
+        )
+
+        isc_user_qs = self.fields["forward_to"].queryset
+        if self.instance and self.instance.pk:
+            saved_forward = self.instance.forward_to.filter(
+                groups__name=ISC_GROUP_NAME, is_active=True
+            ).distinct()
+            if saved_forward.exists():
+                self.initial["forward_to"] = list(
+                    saved_forward.values_list("pk", flat=True)
+                )
+            else:
+                self.initial["forward_to"] = list(
+                    isc_user_qs.values_list("pk", flat=True)
+                )
+            if hasattr(self.instance, "ticket") and self.instance.ticket:
+                self.fields["priority"].initial = self.instance.ticket.priority
+                self.fields["deadline"].initial = self.instance.ticket.deadline
+        else:
+            self.initial["forward_to"] = list(isc_user_qs.values_list("pk", flat=True))
+
+    @staticmethod
+    def _employee_email(employee):
+        if not employee:
+            return ""
+        for getter in (
+            lambda e: e.employee_work_info.email,
+            lambda e: e.employee_user_id.email,
+            lambda e: e.email,
+        ):
+            try:
+                email = getter(employee) or ""
+                if email:
+                    return email
+            except Exception:
+                continue
+        return ""
+
+    @staticmethod
+    def _employee_name(employee):
+        if not employee:
+            return ""
+        try:
+            return employee.get_full_name() or ""
+        except Exception:
+            return ""
+
+    def _forward_to_label(self, user):
+        try:
+            full_name = user.employee_get.get_full_name()
+            if full_name:
+                return full_name
+        except Exception:
+            pass
+        return user.get_full_name() or user.username
+
+    def clean_description(self):
+        description = (self.cleaned_data.get("description") or "").strip()
+        if not description:
+            raise forms.ValidationError(_("This field is required."))
+        if len(description) > self.DESCRIPTION_MAX_LENGTH:
+            raise forms.ValidationError(
+                _("Description cannot exceed %(max_length)s characters.")
+                % {"max_length": self.DESCRIPTION_MAX_LENGTH}
+            )
+        return description
+
+    def clean_business_unit(self):
+        value = (self.cleaned_data.get("business_unit") or "").strip()
+        if not value:
+            raise forms.ValidationError(_("This field is required."))
+        return value
+
+    def clean_deadline(self):
+        deadline = self.cleaned_data.get("deadline")
+        if deadline is None:
+            return deadline
+        if deadline < timezone.localdate():
+            raise forms.ValidationError(_("Due date cannot be in the past."))
+        return deadline
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        employee = self.cleaned_data.get("employee")
+        # IR Name / IR Email / Reporting Date are auto-populated and read-only.
+        instance.ir_name = self._employee_name(employee)
+        instance.ir_email = self._employee_email(employee)
+        if not instance.reporting_date:
+            instance.reporting_date = timezone.localdate()
+        instance.occurrence_time = self.cleaned_data.get("occurrence_time")
+        instance.duration_hours = self.cleaned_data.get("duration_hours") or 0
+        instance.duration_minutes = self.cleaned_data.get("duration_minutes") or 0
+        if commit:
+            instance.save()
+            instance.forward_to.set(self.cleaned_data.get("forward_to", []))
+        return instance
+
+
+class IncidentPostReviewForm(forms.ModelForm):
+    """ISC-only form to set/edit the Post-Review Classification (Under Review)."""
+
+    class Meta:
+        model = IncidentReport
+        fields = ["post_review_classification"]
+        widgets = {
+            "post_review_classification": forms.Select(
+                attrs={"class": "oh-select oh-select-2 w-100"}
+            ),
+        }
+        labels = {
+            "post_review_classification": _("Post-Review Classification"),
+        }
+
+
+class IncidentTransitionForm(forms.Form):
+    """
+    Single mandatory-comment form used by the ISC-driven Incident Report
+    transitions (Take for Review / Resolve / Close). The ``Resolve`` action
+    additionally captures the Post-Review Classification.
+    """
+
+    comment = forms.CharField(
+        required=True,
+        label=_("Comment"),
+        widget=forms.Textarea(
+            attrs={
+                "class": "oh-input w-100",
+                "rows": 3,
+                "placeholder": _("A comment is required..."),
+            }
+        ),
+    )
+    post_review_classification = forms.ChoiceField(
+        required=False,
+        choices=[("", "---------")] + list(INCIDENT_CLASSIFICATION_CHOICES),
+        label=_("Post-Review Classification"),
+        widget=forms.Select(attrs={"class": "oh-select oh-select-2 w-100"}),
+    )
+
+    def clean_comment(self):
+        comment = (self.cleaned_data.get("comment") or "").strip()
+        if not comment:
+            raise forms.ValidationError(_("A comment is required."))
+        return comment
 
 
 class ISOReviewForm(forms.Form):

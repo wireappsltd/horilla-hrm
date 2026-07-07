@@ -135,6 +135,42 @@ ADMIN_ACCESS_REQUEST_STATUS_CHOICES = [
     ("REJECTED", "Rejected"),
 ]
 
+# ── Incident Report (ISO Forms) ──────────────────────────────────────────────
+# "Reported By" selector on the Reporter section.
+INCIDENT_REPORTED_BY_CHOICES = [
+    ("employee", "Employee"),
+    ("client", "Client"),
+    ("vendor", "Vendor"),
+]
+
+# Physical / Virtual location of the incident.
+INCIDENT_LOCATION_CHOICES = [
+    ("physical", "Physical"),
+    ("virtual", "Virtual"),
+]
+
+# Classification used by both the reporter (Initial Classification) and the
+# ISC (Post-Review Classification).
+INCIDENT_CLASSIFICATION_CHOICES = [
+    ("devastating", "Devastating"),
+    ("high", "High"),
+    ("medium", "Medium"),
+    ("low_event", "Low - Event"),
+]
+
+# ISC-driven lifecycle for Incident Reports (distinct from the two-stage
+# ISO Officer → IS Council workflow used by the other ISO Forms). There is no
+# rejection status for this form type:
+#   PENDING → (ISC takes ownership) UNDER_REVIEW
+#           → (ISC completes Post-Review Classification) RESOLVED
+#           → (ISC confirms closure) CLOSED
+INCIDENT_REPORT_STATUS_CHOICES = [
+    ("PENDING", "Pending"),
+    ("UNDER_REVIEW", "Under Review"),
+    ("RESOLVED", "Resolved"),
+    ("CLOSED", "Closed"),
+]
+
 
 class DepartmentManager(HorillaModel):
     manager = models.ForeignKey(
@@ -763,6 +799,164 @@ class AdminAccessRequest(HorillaModel):
         if self.status == "REJECTED" and not self.feedback:
             raise ValidationError(
                 {"feedback": _("Feedback is required when rejecting a request.")}
+            )
+
+
+class IncidentReport(HorillaModel):
+    """
+    Stores the extra details for an "Incident Report" ticket (ISO Forms
+    category).
+
+    The Reporter section is filled by the logged-in user at submission. The
+    Post-Review Classification section is filled exclusively by IS Council
+    (ISC) members once the report reaches ``UNDER_REVIEW``.
+
+    Unlike the other ISO Forms, the lifecycle is a single-track, ISC-driven
+    workflow (Pending → Under Review → Resolved → Closed) with no rejection
+    state.
+    """
+
+    DESCRIPTION_MAX_LENGTH = 1000
+
+    ticket = models.OneToOneField(
+        Ticket,
+        on_delete=models.CASCADE,
+        related_name="incident_report",
+    )
+
+    # ── Reporter section (filled by the requestor) ──
+    ir_name = models.CharField(max_length=200, verbose_name=_("IR Name"))
+    ir_email = models.EmailField(verbose_name=_("IR Email"))
+    reported_by = models.CharField(
+        max_length=20,
+        choices=INCIDENT_REPORTED_BY_CHOICES,
+        verbose_name=_("Reported By"),
+    )
+    reporting_date = models.DateField(verbose_name=_("Incident Reporting Date"))
+    occurrence_date = models.DateField(verbose_name=_("Incident Occurrence Date"))
+    occurrence_time = models.TimeField(verbose_name=_("Incident Occurrence Time"))
+    business_unit = models.CharField(
+        max_length=250,
+        verbose_name=_("Business Unit / Process Affected"),
+    )
+    location_type = models.CharField(
+        max_length=20,
+        choices=INCIDENT_LOCATION_CHOICES,
+        verbose_name=_("Physical / Virtual Location of Incident"),
+    )
+    duration_hours = models.PositiveIntegerField(
+        default=0, verbose_name=_("Duration of Incident (Hours)")
+    )
+    duration_minutes = models.PositiveIntegerField(
+        default=0, verbose_name=_("Duration of Incident (Minutes)")
+    )
+    description = models.TextField(
+        max_length=DESCRIPTION_MAX_LENGTH,
+        verbose_name=_("Incident Description"),
+    )
+    initial_classification = models.CharField(
+        max_length=20,
+        choices=INCIDENT_CLASSIFICATION_CHOICES,
+        verbose_name=_("Initial Classification"),
+    )
+
+    # ── Post-Review Classification section (ISC only, editable at UNDER_REVIEW) ──
+    post_review_classification = models.CharField(
+        max_length=20,
+        choices=INCIDENT_CLASSIFICATION_CHOICES,
+        null=True,
+        blank=True,
+        verbose_name=_("Post-Review Classification"),
+    )
+
+    forward_to = models.ManyToManyField(
+        User,
+        blank=True,
+        related_name="forwarded_incident_reports",
+        verbose_name=_("Forward To"),
+    )
+
+    status = models.CharField(
+        max_length=20,
+        choices=INCIDENT_REPORT_STATUS_CHOICES,
+        default="PENDING",
+        verbose_name=_("Status"),
+    )
+
+    # ISC member who moved PENDING → UNDER_REVIEW (took ownership).
+    reviewed_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="reviewed_incident_reports",
+        verbose_name=_("Reviewed By"),
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+
+    # ISC member who moved UNDER_REVIEW → RESOLVED.
+    resolved_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="resolved_incident_reports",
+        verbose_name=_("Resolved By"),
+    )
+    resolved_at = models.DateTimeField(null=True, blank=True)
+
+    # ISC member who moved RESOLVED → CLOSED.
+    closed_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="closed_incident_reports",
+        verbose_name=_("Closed By"),
+    )
+    closed_at = models.DateTimeField(null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True, verbose_name=_("Updated At"))
+
+    class Meta:
+        verbose_name = _("Incident Report")
+        verbose_name_plural = _("Incident Reports")
+
+    def __str__(self):
+        return f"Incident Report – {self.business_unit} – {self.ticket}"
+
+    def get_duration_display(self):
+        """Return a human readable duration like '2 hr 30 min'."""
+        hours = self.duration_hours or 0
+        minutes = self.duration_minutes or 0
+        return f"{hours} hr {minutes} min"
+
+    def get_forward_to_users(self):
+        """Return selected forwarding users as a queryset."""
+        return self.forward_to.select_related("employee_get").all()
+
+    def get_forward_to_display(self):
+        """Return a comma-separated list of forwarded-to user display names."""
+        names = []
+        for user in self.get_forward_to_users():
+            try:
+                names.append(user.employee_get.get_full_name())
+            except Exception:
+                names.append(user.get_full_name() or user.username)
+        return ", ".join([name for name in names if name])
+
+    def clean(self, *args, **kwargs):
+        super().clean(*args, **kwargs)
+        # Block the Under Review → Resolved transition until the Post-Review
+        # Classification is filled (required before that transition).
+        if self.status == "RESOLVED" and not self.post_review_classification:
+            raise ValidationError(
+                {
+                    "post_review_classification": _(
+                        "Post-Review Classification is required before resolving."
+                    )
+                }
             )
 
 

@@ -1,0 +1,239 @@
+{% load i18n %}
+
+<div class="oh-modal oh-modal--show" id="incidentReportModal">
+    <div class="oh-modal__dialog">
+        <div class="oh-modal__dialog-header">
+            <h2 class="oh-modal__dialog-title">
+                {% trans "Incident Report" %}
+            </h2>
+            <button
+                class="oh-modal__close"
+                aria-label="Close"
+                onclick="document.getElementById('incidentReportModal').classList.remove('oh-modal--show')"
+            >
+                <ion-icon name="close-outline"></ion-icon>
+            </button>
+        </div>
+
+        <div class="oh-modal__dialog-body">
+            <form
+                method="post"
+                {% if incident_report %}
+                    hx-post="{% url 'incident-report-update' incident_report.id %}"
+                {% else %}
+                    hx-post="{% url 'incident-report-create' %}"
+                {% endif %}
+                hx-target="#incidentReportModalTarget"
+                hx-swap="innerHTML"
+                hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+            >
+                {% csrf_token %}
+                {{ form.employee }}
+
+                <!-- IR Name & IR Email (auto-populated, read-only) -->
+                <div class="oh-layout--row">
+                    <div class="oh-form__group col-md-6">
+                        <label class="oh-label" for="id_ir_name">{% trans "IR Name" %}</label>
+                        {{ form.ir_name }}
+                    </div>
+                    <div class="oh-form__group col-md-6">
+                        <label class="oh-label" for="id_ir_email">{% trans "IR Email" %}</label>
+                        {{ form.ir_email }}
+                    </div>
+                </div>
+
+                <!-- Reported By & Reporting Date -->
+                <div class="oh-layout--row mt-2">
+                    <div class="oh-form__group col-md-6">
+                        <label class="oh-label oh-label--mandatory" for="id_reported_by">
+                            {% trans "Reported By" %} <span style="color: red;">*</span>
+                        </label>
+                        {{ form.reported_by }}
+                        {% if form.reported_by.errors %}
+                            <span class="oh-text--danger" style="font-size:12px;">{{ form.reported_by.errors|join:", " }}</span>
+                        {% endif %}
+                    </div>
+                    <div class="oh-form__group col-md-6">
+                        <label class="oh-label" for="id_reporting_date">{% trans "Incident Reporting Date" %}</label>
+                        {{ form.reporting_date }}
+                    </div>
+                </div>
+
+                <!-- Occurrence Date & Time -->
+                <div class="oh-layout--row mt-2">
+                    <div class="oh-form__group col-md-6">
+                        <label class="oh-label oh-label--mandatory" for="id_occurrence_date">
+                            {% trans "Incident Occurrence Date" %} <span style="color: red;">*</span>
+                        </label>
+                        {{ form.occurrence_date }}
+                        {% if form.occurrence_date.errors %}
+                            <span class="oh-text--danger" style="font-size:12px;">{{ form.occurrence_date.errors|join:", " }}</span>
+                        {% endif %}
+                    </div>
+                    <div class="oh-form__group col-md-6">
+                        <label class="oh-label oh-label--mandatory" for="id_occurrence_time">
+                            {% trans "Incident Occurrence Time" %} <span style="color: red;">*</span>
+                        </label>
+                        {{ form.occurrence_time }}
+                        {% if form.occurrence_time.errors %}
+                            <span class="oh-text--danger" style="font-size:12px;">{{ form.occurrence_time.errors|join:", " }}</span>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Business Unit & Location -->
+                <div class="oh-layout--row mt-2">
+                    <div class="oh-form__group col-md-6">
+                        <label class="oh-label oh-label--mandatory" for="id_business_unit">
+                            {% trans "Business Unit / Process Affected" %} <span style="color: red;">*</span>
+                        </label>
+                        {{ form.business_unit }}
+                        {% if form.business_unit.errors %}
+                            <span class="oh-text--danger" style="font-size:12px;">{{ form.business_unit.errors|join:", " }}</span>
+                        {% endif %}
+                    </div>
+                    <div class="oh-form__group col-md-6">
+                        <label class="oh-label oh-label--mandatory" for="id_location_type">
+                            {% trans "Physical / Virtual Location of Incident" %} <span style="color: red;">*</span>
+                        </label>
+                        {{ form.location_type }}
+                        {% if form.location_type.errors %}
+                            <span class="oh-text--danger" style="font-size:12px;">{{ form.location_type.errors|join:", " }}</span>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Duration of Incident -->
+                <div class="oh-layout--row mt-2">
+                    <div class="oh-form__group col-md-12">
+                        <label class="oh-label oh-label--mandatory">
+                            {% trans "Duration of Incident" %} <span style="color: red;">*</span>
+                        </label>
+                        <div class="d-flex" style="gap: 12px;">
+                            <div style="flex:1;">
+                                <label class="oh-label" for="id_duration_hours">{% trans "Hours" %}</label>
+                                {{ form.duration_hours }}
+                                {% if form.duration_hours.errors %}
+                                    <span class="oh-text--danger" style="font-size:12px;">{{ form.duration_hours.errors|join:", " }}</span>
+                                {% endif %}
+                            </div>
+                            <div style="flex:1;">
+                                <label class="oh-label" for="id_duration_minutes">{% trans "Minutes" %}</label>
+                                {{ form.duration_minutes }}
+                                {% if form.duration_minutes.errors %}
+                                    <span class="oh-text--danger" style="font-size:12px;">{{ form.duration_minutes.errors|join:", " }}</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Initial Classification -->
+                <div class="oh-layout--row mt-2">
+                    <div class="oh-form__group col-md-12">
+                        <label class="oh-label oh-label--mandatory" for="id_initial_classification">
+                            {% trans "Initial Classification" %} <span style="color: red;">*</span>
+                        </label>
+                        {{ form.initial_classification }}
+                        {% if form.initial_classification.errors %}
+                            <span class="oh-text--danger" style="font-size:12px;">{{ form.initial_classification.errors|join:", " }}</span>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Priority & Due Date -->
+                <div class="oh-layout--row mt-2">
+                    <div class="oh-form__group col-md-6">
+                        <label class="oh-label" for="id_priority">{% trans "Priority" %}</label>
+                        {{ form.priority }}
+                    </div>
+                    <div class="oh-form__group col-md-6">
+                        <label class="oh-label" for="id_deadline">{% trans "Due Date" %}</label>
+                        {{ form.deadline }}
+                        {% if form.deadline.errors %}
+                            <span class="oh-text--danger" style="font-size:12px;">{{ form.deadline.errors|join:", " }}</span>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Forward To (IS Council) -->
+                <div class="oh-layout--row mt-2">
+                    <div class="oh-form__group col-md-12">
+                        <label class="oh-label oh-label--mandatory" for="id_forward_to">
+                            {% trans "Forward To" %} <span style="color: red;">*</span>
+                        </label>
+                        {{ form.forward_to }}
+                        {% if form.forward_to.errors %}
+                            <span class="oh-text--danger" style="font-size:12px;">{{ form.forward_to.errors|join:", " }}</span>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Incident Description -->
+                <div class="oh-form__group mt-2">
+                    <label class="oh-label oh-label--mandatory" for="id_description">
+                        {% trans "Incident Description" %} <span style="color: red;">*</span>
+                    </label>
+                    {{ form.description }}
+                    <div class="d-flex justify-content-between mt-1">
+                        <span class="oh-text--muted" style="font-size:12px;">
+                            {% blocktrans with max=form.description.field.max_length %}Max {{ max }} characters{% endblocktrans %}
+                        </span>
+                        <span class="oh-text--muted" id="incidentDescriptionCounter" style="font-size:12px;">
+                            0/{{ form.description.field.max_length }}
+                        </span>
+                    </div>
+                    <span class="oh-text--danger" id="incidentDescriptionClientError" style="font-size:12px; display:none;"></span>
+                    {% if form.description.errors %}
+                        <span class="oh-text--danger" style="font-size:12px;">{{ form.description.errors|join:", " }}</span>
+                    {% endif %}
+                </div>
+
+                {% if form.non_field_errors %}
+                    <div class="oh-alert oh-alert--danger mt-2">{{ form.non_field_errors }}</div>
+                {% endif %}
+
+                <div class="d-flex justify-content-end mt-3">
+                    <button type="submit" class="oh-btn oh-btn--secondary">{% trans "Save" %}</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    (function () {
+        const modal = document.getElementById("incidentReportModal");
+        if (!modal) { return; }
+
+        const form = modal.querySelector("form");
+        const descriptionInput = modal.querySelector("#id_description");
+        const counter = modal.querySelector("#incidentDescriptionCounter");
+        const errorEl = modal.querySelector("#incidentDescriptionClientError");
+
+        if (!form || !descriptionInput || !counter || !errorEl) { return; }
+        const maxLength = parseInt(descriptionInput.dataset.maxlength || "0", 10);
+        if (!maxLength) { return; }
+        const errorMessage = descriptionInput.dataset.maxlengthMessage ||
+            `Description cannot exceed ${maxLength} characters.`;
+
+        const updateState = function () {
+            const currentLength = descriptionInput.value.length;
+            counter.textContent = `${currentLength}/${maxLength}`;
+            const exceedsLimit = currentLength > maxLength;
+            errorEl.style.display = exceedsLimit ? "block" : "none";
+            errorEl.textContent = exceedsLimit ? errorMessage : "";
+            descriptionInput.setCustomValidity(exceedsLimit ? errorMessage : "");
+            return exceedsLimit;
+        };
+        descriptionInput.addEventListener("input", updateState);
+        form.addEventListener("submit", function (event) {
+            if (updateState()) {
+                event.preventDefault();
+                descriptionInput.focus();
+            }
+        });
+        updateState();
+    })();
+</script>
+
