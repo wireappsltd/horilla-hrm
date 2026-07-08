@@ -327,6 +327,7 @@ class Contract(HorillaModel):
                     )
 
     def save(self, *args, **kwargs):
+        self.wage_type = "30days"
         if EmployeeWorkInformation.objects.filter(
             employee_id=self.employee_id
         ).exists():
