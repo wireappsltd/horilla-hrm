@@ -32,6 +32,7 @@ from horilla.decorators import (
     login_required,
     permission_required,
 )
+from horilla_audit.methods import log_activity
 from payroll.forms.component_forms import PayrollReportForm
 from payroll.methods.methods import paginator_qry
 from payroll.models.models import PayrollReport, Payslip
@@ -194,12 +195,33 @@ def download_payroll_report(request, report_id):
     Generate and download the report's ``.xlsx`` file on demand.
     """
     report = get_object_or_404(PayrollReport, id=report_id)
+    if report.report_type not in (
+        PayrollReport.REPORT_ETF_MONTHLY,
+        PayrollReport.REPORT_ETF_BI_ANNUAL,
+    ):
+        messages.error(request, _("Unsupported report type."))
+        return redirect("view-payroll-reports")
+
+    # Log the export of the statutory file — a sensitive-data access event (who
+    # pulled which report for which period). Unlike the report record's
+    # create/delete this involves no DB write to hang a signal on, and it is
+    # logged for every supported report type (ETF monthly and bi-annual).
+    log_activity(
+        request.user,
+        module="payroll",
+        action="Payroll Report exported",
+        target=report,
+        changes={
+            "Report": report.get_report_type_display(),
+            "Period": {
+                "from": str(report.start_date),
+                "to": str(report.end_date),
+            },
+        },
+    )
     if report.report_type == PayrollReport.REPORT_ETF_MONTHLY:
         return _build_etf_monthly_contribution_file(report)
-    if report.report_type == PayrollReport.REPORT_ETF_BI_ANNUAL:
-        return _build_etf_bi_annual_file(report)
-    messages.error(request, _("Unsupported report type."))
-    return redirect("view-payroll-reports")
+    return _build_etf_bi_annual_file(report)
 
 
 def _build_etf_bi_annual_file(report):
