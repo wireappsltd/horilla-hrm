@@ -11,6 +11,7 @@ from django.utils.translation import gettext as _
 
 from horilla import settings
 from horilla.settings import BASE_DIR, TEMPLATES
+from horilla.methods import is_full_page_navigation, session_expired_response
 
 logger = logging.getLogger(__name__)
 
@@ -258,6 +259,9 @@ def login_required(view_func):
             or not employee
             or not employee.is_active
         ):
+
+            if not is_full_page_navigation(request):
+                return session_expired_response(redirect_url)
             return redirect(redirect_url)
         try:
             func = view_func(request, *args, **kwargs)

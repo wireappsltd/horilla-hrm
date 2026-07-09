@@ -150,6 +150,36 @@
                                         </option>
                                     {% endfor %}
                                 </select>
+                            {% elif access_request %}
+                                {# Access requests follow the two-stage approval workflow; read-only since transitions go through the action buttons. #}
+                                <select name="access_status_display" title='{% trans "Access Request Status" %}' class="oh-select" disabled
+                                    style="width:220px; align-items: center; border: 1px solid #aaa; border-radius: 2px; background-color: #fff;">
+                                    {% for status in access_request_status_choices %}
+                                        <option value="{{status.0}}" {% if status.0 == access_request.status %}selected{% endif %}>
+                                            {{status.1}}
+                                        </option>
+                                    {% endfor %}
+                                </select>
+                            {% elif exception_request %}
+                                {# Exception requests follow the two-stage approval workflow; read-only since transitions go through the action buttons. #}
+                                <select name="exception_status_display" title='{% trans "Exception Request Status" %}' class="oh-select" disabled
+                                    style="width:220px; align-items: center; border: 1px solid #aaa; border-radius: 2px; background-color: #fff;">
+                                    {% for status in exception_request_status_choices %}
+                                        <option value="{{status.0}}" {% if status.0 == exception_request.status %}selected{% endif %}>
+                                            {{status.1}}
+                                        </option>
+                                    {% endfor %}
+                                </select>
+                            {% elif admin_access_request %}
+                                {# Admin access requests follow the two-stage approval workflow; read-only since transitions go through the action buttons. #}
+                                <select name="admin_access_status_display" title='{% trans "Admin Access Request Status" %}' class="oh-select" disabled
+                                    style="width:220px; align-items: center; border: 1px solid #aaa; border-radius: 2px; background-color: #fff;">
+                                    {% for status in admin_access_request_status_choices %}
+                                        <option value="{{status.0}}" {% if status.0 == admin_access_request.status %}selected{% endif %}>
+                                            {{status.1}}
+                                        </option>
+                                    {% endfor %}
+                                </select>
                             {% elif perms.helpdesk.change_ticket or request.user.employee_get|is_department_manager:ticket or request.user.employee_get in ticket.assigned_to.all or request.user.employee_get == ticket.employee_id %}
                                 <select name="status_update" title='{% trans "Status" %}' class="oh-select"
                                     onchange="updateStatus()"
@@ -205,6 +235,117 @@
                         {% endif %}
                     </div>
                     {% endif %}
+                    {% if access_request %}
+                    {# ── Access request workflow action buttons (two-stage approval) ── #}
+                    <div class="d-flex align-items-center gap-2 ms-4 iso-action-group">
+                        {% if access_request.status == 'PENDING' and is_iso_officer and request.user.employee_get != ticket.employee_id %}
+                            {# Stage 1 — ISO Officer Approve / Reject. #}
+                            <button type="button" class="oh-btn oh-btn--success iso-action-btn iso-action-btn--equal"
+                                title="{% trans 'Approve' %}"
+                                onclick="openIsoApproveModal('{% url 'access-request-iso-review' access_request.id %}');">
+                                <ion-icon name="checkmark-outline" class="me-1"></ion-icon>{% trans "Approve" %}
+                            </button>
+                            <button type="button" class="oh-btn oh-btn--danger iso-action-btn iso-action-btn--equal"
+                                title="{% trans 'Reject' %}"
+                                onclick="openIsoRejectModal('{% url 'access-request-iso-review' access_request.id %}');">
+                                <ion-icon name="close-outline" class="me-1"></ion-icon>{% trans "Reject" %}
+                            </button>
+                        {% elif access_request.status == 'ISO_APPROVED' and is_isc_member and request.user.employee_get != ticket.employee_id %}
+                            {# Stage 2 — IS Council Approve / Reject. #}
+                            <button type="button" class="oh-btn oh-btn--success iso-action-btn iso-action-btn--equal"
+                                title="{% trans 'Approve' %}"
+                                onclick="openIsoApproveModal('{% url 'access-request-isc-review' access_request.id %}');">
+                                <ion-icon name="checkmark-outline" class="me-1"></ion-icon>{% trans "Approve" %}
+                            </button>
+                            <button type="button" class="oh-btn oh-btn--danger iso-action-btn iso-action-btn--equal"
+                                title="{% trans 'Reject' %}"
+                                onclick="openIsoRejectModal('{% url 'access-request-isc-review' access_request.id %}');">
+                                <ion-icon name="close-outline" class="me-1"></ion-icon>{% trans "Reject" %}
+                            </button>
+                        {% elif access_request.status == 'COMPLETED' and request.user.employee_get == ticket.employee_id %}
+                            {# Requestor acknowledgement — original requestor only (confirm = close). #}
+                            <button type="button" class="oh-btn oh-btn--success iso-action-btn"
+                                title="{% trans 'Yes – Fulfilled' %}"
+                                onclick="openIsoAcknowledgeModal('{% url 'access-request-acknowledge' access_request.id %}');">
+                                <ion-icon name="checkmark-done-outline" class="me-1"></ion-icon>{% trans "Yes" %}
+                            </button>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                    {% if exception_request %}
+                    {# ── Exception request workflow action buttons (two-stage approval) ── #}
+                    <div class="d-flex align-items-center gap-2 ms-4 iso-action-group">
+                        {% if exception_request.status == 'PENDING' and is_iso_officer and request.user.employee_get != ticket.employee_id %}
+                            {# Stage 1 — ISO Officer Approve / Reject. #}
+                            <button type="button" class="oh-btn oh-btn--success iso-action-btn iso-action-btn--equal"
+                                title="{% trans 'Approve' %}"
+                                onclick="openIsoApproveModal('{% url 'exception-request-iso-review' exception_request.id %}');">
+                                <ion-icon name="checkmark-outline" class="me-1"></ion-icon>{% trans "Approve" %}
+                            </button>
+                            <button type="button" class="oh-btn oh-btn--danger iso-action-btn iso-action-btn--equal"
+                                title="{% trans 'Reject' %}"
+                                onclick="openIsoRejectModal('{% url 'exception-request-iso-review' exception_request.id %}');">
+                                <ion-icon name="close-outline" class="me-1"></ion-icon>{% trans "Reject" %}
+                            </button>
+                        {% elif exception_request.status == 'ISO_APPROVED' and is_isc_member and request.user.employee_get != ticket.employee_id %}
+                            {# Stage 2 — IS Council Approve / Reject. #}
+                            <button type="button" class="oh-btn oh-btn--success iso-action-btn iso-action-btn--equal"
+                                title="{% trans 'Approve' %}"
+                                onclick="openIsoApproveModal('{% url 'exception-request-isc-review' exception_request.id %}');">
+                                <ion-icon name="checkmark-outline" class="me-1"></ion-icon>{% trans "Approve" %}
+                            </button>
+                            <button type="button" class="oh-btn oh-btn--danger iso-action-btn iso-action-btn--equal"
+                                title="{% trans 'Reject' %}"
+                                onclick="openIsoRejectModal('{% url 'exception-request-isc-review' exception_request.id %}');">
+                                <ion-icon name="close-outline" class="me-1"></ion-icon>{% trans "Reject" %}
+                            </button>
+                        {% elif exception_request.status == 'COMPLETED' and request.user.employee_get == ticket.employee_id %}
+                            {# Requestor acknowledgement — original requestor only (confirm = close). #}
+                            <button type="button" class="oh-btn oh-btn--success iso-action-btn"
+                                title="{% trans 'Yes – Fulfilled' %}"
+                                onclick="openIsoAcknowledgeModal('{% url 'exception-request-acknowledge' exception_request.id %}');">
+                                <ion-icon name="checkmark-done-outline" class="me-1"></ion-icon>{% trans "Yes" %}
+                            </button>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                    {% if admin_access_request %}
+                    {# ── Admin access request workflow action buttons (two-stage approval) ── #}
+                    <div class="d-flex align-items-center gap-2 ms-4 iso-action-group">
+                        {% if admin_access_request.status == 'PENDING' and is_iso_officer and request.user.employee_get != ticket.employee_id %}
+                            {# Stage 1 — ISO Officer Approve / Reject. #}
+                            <button type="button" class="oh-btn oh-btn--success iso-action-btn iso-action-btn--equal"
+                                title="{% trans 'Approve' %}"
+                                onclick="openIsoApproveModal('{% url 'admin-access-request-iso-review' admin_access_request.id %}');">
+                                <ion-icon name="checkmark-outline" class="me-1"></ion-icon>{% trans "Approve" %}
+                            </button>
+                            <button type="button" class="oh-btn oh-btn--danger iso-action-btn iso-action-btn--equal"
+                                title="{% trans 'Reject' %}"
+                                onclick="openIsoRejectModal('{% url 'admin-access-request-iso-review' admin_access_request.id %}');">
+                                <ion-icon name="close-outline" class="me-1"></ion-icon>{% trans "Reject" %}
+                            </button>
+                        {% elif admin_access_request.status == 'ISO_APPROVED' and is_isc_member and request.user.employee_get != ticket.employee_id %}
+                            {# Stage 2 — IS Council Approve / Reject. #}
+                            <button type="button" class="oh-btn oh-btn--success iso-action-btn iso-action-btn--equal"
+                                title="{% trans 'Approve' %}"
+                                onclick="openIsoApproveModal('{% url 'admin-access-request-isc-review' admin_access_request.id %}');">
+                                <ion-icon name="checkmark-outline" class="me-1"></ion-icon>{% trans "Approve" %}
+                            </button>
+                            <button type="button" class="oh-btn oh-btn--danger iso-action-btn iso-action-btn--equal"
+                                title="{% trans 'Reject' %}"
+                                onclick="openIsoRejectModal('{% url 'admin-access-request-isc-review' admin_access_request.id %}');">
+                                <ion-icon name="close-outline" class="me-1"></ion-icon>{% trans "Reject" %}
+                            </button>
+                        {% elif admin_access_request.status == 'COMPLETED' and request.user.employee_get == ticket.employee_id %}
+                            {# Requestor acknowledgement — original requestor only (confirm = close). #}
+                            <button type="button" class="oh-btn oh-btn--success iso-action-btn"
+                                title="{% trans 'Yes – Fulfilled' %}"
+                                onclick="openIsoAcknowledgeModal('{% url 'admin-access-request-acknowledge' admin_access_request.id %}');">
+                                <ion-icon name="checkmark-done-outline" class="me-1"></ion-icon>{% trans "Yes" %}
+                            </button>
+                        {% endif %}
+                    </div>
+                    {% endif %}
                     </div>
                 </div>
                 </div>
@@ -224,7 +365,7 @@
                             <span class="oh-helpdesk__bubble-timestamp">{{ticket.created_date}}</span>
                         </div>
                         <div class="oh-helpdesk__bubble-body">
-                            <p>{{ticket.description|safe}}</p>
+                            <p>{{display_description|safe}}</p>
                         </div>
                     </div>
 
@@ -377,20 +518,20 @@
                     {% elif item.type == 'history' %}
                     {% if item.history.type == 'Ticket created' or item.history.type == 'Password reset request created' %}
                     <div class="oh-helpdesk__chat-update">
-                        <span><strong>{{item.history.updated_by}}</strong> {% trans "Created the ticket " %}</span>
+                        <span><strong>{{item.history.updated_by}}</strong>{% if item.history.updated_by.get_department or item.history.updated_by.get_job_position %} <span class="text-muted small">({% if item.history.updated_by.get_department %}{% trans "Division" %}: {{item.history.updated_by.get_department}}{% endif %}{% if item.history.updated_by.get_job_position %}{% if item.history.updated_by.get_department %} · {% endif %}{% trans "Designation" %}: {{item.history.updated_by.get_job_position}}{% endif %})</span>{% endif %} {% trans "Created the ticket " %}</span>
                     </div>
                     {% else %}
                     {% for change in item.history.changes %}
                     {% if change.is_fk == True %}
                     <div class="oh-helpdesk__chat-update">
-                        <span>{{item.history.updated_by}} {% trans "changed the ticket " %}{{change.field|safe}} {% trans " from" %}
+                        <span>{{item.history.updated_by}}{% if item.history.updated_by.get_department or item.history.updated_by.get_job_position %} <span class="text-muted small">({% if item.history.updated_by.get_department %}{% trans "Division" %}: {{item.history.updated_by.get_department}}{% endif %}{% if item.history.updated_by.get_job_position %}{% if item.history.updated_by.get_department %} · {% endif %}{% trans "Designation" %}: {{item.history.updated_by.get_job_position}}{% endif %})</span>{% endif %} {% trans "changed the ticket " %}{{change.field|safe}} {% trans " from" %}
                             <strong>{{item.history.pair.1|fk_history:change|safe}}</strong> {% trans "to" %}
                             <strong>{{item.history.pair.0|fk_history:change|safe}}</strong></span>
                         <span>{{ item.history.pair.0.history_date}}</span>
                     </div>
                     {% else %}
                     <div class="oh-helpdesk__chat-update">
-                        <span>{{item.history.updated_by}} {% trans "changed the ticket " %}{{change.field|safe}} {% trans " from" %}
+                        <span>{{item.history.updated_by}}{% if item.history.updated_by.get_department or item.history.updated_by.get_job_position %} <span class="text-muted small">({% if item.history.updated_by.get_department %}{% trans "Division" %}: {{item.history.updated_by.get_department}}{% endif %}{% if item.history.updated_by.get_job_position %}{% if item.history.updated_by.get_department %} · {% endif %}{% trans "Designation" %}: {{item.history.updated_by.get_job_position}}{% endif %})</span>{% endif %} {% trans "changed the ticket " %}{{change.field|safe}} {% trans " from" %}
                             <strong>{{change.old|safe}}</strong>
                             <br><br>
                             {% trans "to" %}
@@ -635,6 +776,234 @@
                     </div>
                 </div>
                 <!-- End of ISO Review Status Card -->
+                {% endif %}
+                {% if access_request %}
+                <!-- Access Request Review Status Card -->
+                <div class="oh-helpdesk__card">
+                    <div class="oh-helpdesk__card-header d-flex justify-content-between align-items-center">
+                        <span class="oh-helpdesk__card-title">{% trans "Access Request Review" %}</span>
+                        {% if access_request.status == 'PENDING' %}
+                            <span class="oh-badge oh-badge--iso-pending">{{ access_request.get_status_display }}</span>
+                        {% elif access_request.status == 'ISO_APPROVED' %}
+                            <span class="oh-badge oh-badge--iso-action">{{ access_request.get_status_display }}</span>
+                        {% elif access_request.status == 'COMPLETED' %}
+                            <span class="oh-badge oh-badge--iso-awaiting">{{ access_request.get_status_display }}</span>
+                        {% elif access_request.status == 'CLOSED' %}
+                            <span class="oh-badge oh-badge--iso-closed">{{ access_request.get_status_display }}</span>
+                        {% elif access_request.status == 'REJECTED' %}
+                            <span class="oh-badge oh-badge--iso-rejected">{{ access_request.get_status_display }}</span>
+                        {% else %}
+                            <span class="oh-badge oh-badge--iso-default">{{ access_request.get_status_display }}</span>
+                        {% endif %}
+                    </div>
+                    <div class="oh-helpdesk__card-body">
+                        <ul class="helpdesk__card-items">
+                            <li class="helpdesk__card-item">
+                                <span class="helpdesk__card-label">{% trans "Sub Type:" %}</span>
+                                <span class="helpdesk__card-value">{{ access_request.get_sub_type_display }}</span>
+                            </li>
+                            <li class="helpdesk__card-item">
+                                <span class="helpdesk__card-label">{% trans "Domain:" %}</span>
+                                <span class="helpdesk__card-value">{{ access_request.get_domain_display }}</span>
+                            </li>
+                            {% if access_request.effective_date %}
+                            <li class="helpdesk__card-item">
+                                <span class="helpdesk__card-label">{% trans "Effective Date:" %}</span>
+                                <span class="helpdesk__card-value">{{ access_request.effective_date }}</span>
+                            </li>
+                            {% endif %}
+                            <li class="helpdesk__card-item">
+                                <span class="helpdesk__card-label">{% trans "User:" %}</span>
+                                <span class="helpdesk__card-value">{{ ticket.employee_id.get_full_name|default:access_request.user_id }}</span>
+                            </li>
+                            {% if access_request.iso_reviewed_by %}
+                            <li class="helpdesk__card-item">
+                                <span class="helpdesk__card-label">{% trans "ISO Officer:" %}</span>
+                                <span class="helpdesk__card-value">{{ access_request.iso_reviewed_by.employee_get.get_full_name|default:access_request.iso_reviewed_by.username }}</span>
+                            </li>
+                            {% endif %}
+                            {% if access_request.iso_reviewed_at %}
+                            <li class="helpdesk__card-item">
+                                <span class="helpdesk__card-label">{% trans "ISO reviewed at:" %}</span>
+                                <span class="helpdesk__card-value">{{ access_request.iso_reviewed_at }}</span>
+                            </li>
+                            {% endif %}
+                            {% if access_request.isc_reviewed_by %}
+                            <li class="helpdesk__card-item">
+                                <span class="helpdesk__card-label">{% trans "IS Council:" %}</span>
+                                <span class="helpdesk__card-value">{{ access_request.isc_reviewed_by.employee_get.get_full_name|default:access_request.isc_reviewed_by.username }}</span>
+                            </li>
+                            {% endif %}
+                            {% if access_request.isc_reviewed_at %}
+                            <li class="helpdesk__card-item">
+                                <span class="helpdesk__card-label">{% trans "ISC reviewed at:" %}</span>
+                                <span class="helpdesk__card-value">{{ access_request.isc_reviewed_at }}</span>
+                            </li>
+                            {% endif %}
+                            {% if access_request.closed_by %}
+                            <li class="helpdesk__card-item">
+                                <span class="helpdesk__card-label">{% trans "Closed by:" %}</span>
+                                <span class="helpdesk__card-value">{{ access_request.closed_by.employee_get.get_full_name|default:access_request.closed_by.username }}</span>
+                            </li>
+                            {% endif %}
+                            {% if access_request.feedback %}
+                            <li class="helpdesk__card-item">
+                                <span class="helpdesk__card-label">{% trans "Feedback:" %}</span>
+                                <span class="helpdesk__card-value">{{ access_request.feedback }}</span>
+                            </li>
+                            {% endif %}
+                        </ul>
+                    </div>
+                </div>
+                <!-- End of Access Request Review Status Card -->
+                {% endif %}
+                {% if exception_request %}
+                <!-- Exception Request Review Status Card -->
+                <div class="oh-helpdesk__card">
+                    <div class="oh-helpdesk__card-header d-flex justify-content-between align-items-center">
+                        <span class="oh-helpdesk__card-title">{% trans "Exception Request Review" %}</span>
+                        {% if exception_request.status == 'PENDING' %}
+                            <span class="oh-badge oh-badge--iso-pending">{{ exception_request.get_status_display }}</span>
+                        {% elif exception_request.status == 'ISO_APPROVED' %}
+                            <span class="oh-badge oh-badge--iso-action">{{ exception_request.get_status_display }}</span>
+                        {% elif exception_request.status == 'COMPLETED' %}
+                            <span class="oh-badge oh-badge--iso-awaiting">{{ exception_request.get_status_display }}</span>
+                        {% elif exception_request.status == 'CLOSED' %}
+                            <span class="oh-badge oh-badge--iso-closed">{{ exception_request.get_status_display }}</span>
+                        {% elif exception_request.status == 'REJECTED' %}
+                            <span class="oh-badge oh-badge--iso-rejected">{{ exception_request.get_status_display }}</span>
+                        {% else %}
+                            <span class="oh-badge oh-badge--iso-default">{{ exception_request.get_status_display }}</span>
+                        {% endif %}
+                    </div>
+                    <div class="oh-helpdesk__card-body">
+                        <ul class="helpdesk__card-items">
+                            <li class="helpdesk__card-item">
+                                <span class="helpdesk__card-label">{% trans "ISMS Reference:" %}</span>
+                                <span class="helpdesk__card-value">{{ exception_request.isms_reference }}</span>
+                            </li>
+                            <li class="helpdesk__card-item">
+                                <span class="helpdesk__card-label">{% trans "User:" %}</span>
+                                <span class="helpdesk__card-value">{{ ticket.employee_id.get_full_name|default:exception_request.user_id }}</span>
+                            </li>
+                            {% if exception_request.iso_reviewed_by %}
+                            <li class="helpdesk__card-item">
+                                <span class="helpdesk__card-label">{% trans "ISO Officer:" %}</span>
+                                <span class="helpdesk__card-value">{{ exception_request.iso_reviewed_by.employee_get.get_full_name|default:exception_request.iso_reviewed_by.username }}</span>
+                            </li>
+                            {% endif %}
+                            {% if exception_request.iso_reviewed_at %}
+                            <li class="helpdesk__card-item">
+                                <span class="helpdesk__card-label">{% trans "ISO reviewed at:" %}</span>
+                                <span class="helpdesk__card-value">{{ exception_request.iso_reviewed_at }}</span>
+                            </li>
+                            {% endif %}
+                            {% if exception_request.isc_reviewed_by %}
+                            <li class="helpdesk__card-item">
+                                <span class="helpdesk__card-label">{% trans "IS Council:" %}</span>
+                                <span class="helpdesk__card-value">{{ exception_request.isc_reviewed_by.employee_get.get_full_name|default:exception_request.isc_reviewed_by.username }}</span>
+                            </li>
+                            {% endif %}
+                            {% if exception_request.isc_reviewed_at %}
+                            <li class="helpdesk__card-item">
+                                <span class="helpdesk__card-label">{% trans "ISC reviewed at:" %}</span>
+                                <span class="helpdesk__card-value">{{ exception_request.isc_reviewed_at }}</span>
+                            </li>
+                            {% endif %}
+                            {% if exception_request.closed_by %}
+                            <li class="helpdesk__card-item">
+                                <span class="helpdesk__card-label">{% trans "Closed by:" %}</span>
+                                <span class="helpdesk__card-value">{{ exception_request.closed_by.employee_get.get_full_name|default:exception_request.closed_by.username }}</span>
+                            </li>
+                            {% endif %}
+                            {% if exception_request.feedback %}
+                            <li class="helpdesk__card-item">
+                                <span class="helpdesk__card-label">{% trans "Feedback:" %}</span>
+                                <span class="helpdesk__card-value">{{ exception_request.feedback }}</span>
+                            </li>
+                            {% endif %}
+                        </ul>
+                    </div>
+                </div>
+                <!-- End of Exception Request Review Status Card -->
+                {% endif %}
+                {% if admin_access_request %}
+                <!-- Admin Access Request Review Status Card -->
+                <div class="oh-helpdesk__card">
+                    <div class="oh-helpdesk__card-header d-flex justify-content-between align-items-center">
+                        <span class="oh-helpdesk__card-title">{% trans "Admin Access Request Review" %}</span>
+                        {% if admin_access_request.status == 'PENDING' %}
+                            <span class="oh-badge oh-badge--iso-pending">{{ admin_access_request.get_status_display }}</span>
+                        {% elif admin_access_request.status == 'ISO_APPROVED' %}
+                            <span class="oh-badge oh-badge--iso-action">{{ admin_access_request.get_status_display }}</span>
+                        {% elif admin_access_request.status == 'COMPLETED' %}
+                            <span class="oh-badge oh-badge--iso-awaiting">{{ admin_access_request.get_status_display }}</span>
+                        {% elif admin_access_request.status == 'CLOSED' %}
+                            <span class="oh-badge oh-badge--iso-closed">{{ admin_access_request.get_status_display }}</span>
+                        {% elif admin_access_request.status == 'REJECTED' %}
+                            <span class="oh-badge oh-badge--iso-rejected">{{ admin_access_request.get_status_display }}</span>
+                        {% else %}
+                            <span class="oh-badge oh-badge--iso-default">{{ admin_access_request.get_status_display }}</span>
+                        {% endif %}
+                    </div>
+                    <div class="oh-helpdesk__card-body">
+                        <ul class="helpdesk__card-items">
+                            <li class="helpdesk__card-item">
+                                <span class="helpdesk__card-label">{% trans "Admin User Type:" %}</span>
+                                <span class="helpdesk__card-value">{{ admin_access_request.get_admin_user_type_display }}</span>
+                            </li>
+                            <li class="helpdesk__card-item">
+                                <span class="helpdesk__card-label">{% trans "System / Application:" %}</span>
+                                <span class="helpdesk__card-value">{{ admin_access_request.system_application }}</span>
+                            </li>
+                            <li class="helpdesk__card-item">
+                                <span class="helpdesk__card-label">{% trans "Privilege Level:" %}</span>
+                                <span class="helpdesk__card-value">{{ admin_access_request.privilege_level }}</span>
+                            </li>
+                            <li class="helpdesk__card-item">
+                                <span class="helpdesk__card-label">{% trans "User:" %}</span>
+                                <span class="helpdesk__card-value">{{ ticket.employee_id.get_full_name|default:admin_access_request.user_id }}</span>
+                            </li>
+                            {% if admin_access_request.iso_reviewed_by %}
+                            <li class="helpdesk__card-item">
+                                <span class="helpdesk__card-label">{% trans "ISO Officer:" %}</span>
+                                <span class="helpdesk__card-value">{{ admin_access_request.iso_reviewed_by.employee_get.get_full_name|default:admin_access_request.iso_reviewed_by.username }}</span>
+                            </li>
+                            {% endif %}
+                            {% if admin_access_request.iso_reviewed_at %}
+                            <li class="helpdesk__card-item">
+                                <span class="helpdesk__card-label">{% trans "ISO reviewed at:" %}</span>
+                                <span class="helpdesk__card-value">{{ admin_access_request.iso_reviewed_at }}</span>
+                            </li>
+                            {% endif %}
+                            {% if admin_access_request.isc_reviewed_by %}
+                            <li class="helpdesk__card-item">
+                                <span class="helpdesk__card-label">{% trans "IS Council:" %}</span>
+                                <span class="helpdesk__card-value">{{ admin_access_request.isc_reviewed_by.employee_get.get_full_name|default:admin_access_request.isc_reviewed_by.username }}</span>
+                            </li>
+                            {% endif %}
+                            {% if admin_access_request.isc_reviewed_at %}
+                            <li class="helpdesk__card-item">
+                                <span class="helpdesk__card-label">{% trans "ISC reviewed at:" %}</span>
+                                <span class="helpdesk__card-value">{{ admin_access_request.isc_reviewed_at }}</span>
+                            </li>
+                            {% endif %}
+                            {% if admin_access_request.closed_by %}
+                            <li class="helpdesk__card-item">
+                                <span class="helpdesk__card-label">{% trans "Closed by:" %}</span>
+                                <span class="helpdesk__card-value">{{ admin_access_request.closed_by.employee_get.get_full_name|default:admin_access_request.closed_by.username }}</span>
+                            </li>
+                            {% endif %}
+                            {% if admin_access_request.feedback %}
+                            <li class="helpdesk__card-item">
+                                <span class="helpdesk__card-label">{% trans "Feedback:" %}</span>
+                                <span class="helpdesk__card-value">{{ admin_access_request.feedback }}</span>
+                            </li>
+                            {% endif %}
+                        </ul>
+                    </div>
+                </div>
+                <!-- End of Admin Access Request Review Status Card -->
                 {% endif %}
                 <!-- Responsibility Card -->
                 <div class="oh-helpdesk__card">
@@ -1083,7 +1452,6 @@
     }
 
     $(document).ready(function () {
-        // Initialize summernote on the edit comment editor (hidden until modal opens)
         try {
             $('#editCommentTextarea').summernote(noteProperties());
         } catch (e) { /* summernote may already be initialized via data-summernote */ }
@@ -1137,7 +1505,7 @@
 
 <div id="passwordResetModalTarget"></div>
 
-{% if password_reset_request %}
+{% if password_reset_request or access_request or exception_request or admin_access_request %}
 {# ── ISO Workflow Modals (detail view) ── #}
 <div class="oh-modal" id="isoApproveModal" role="dialog" aria-hidden="true">
     <div class="oh-modal__dialog">

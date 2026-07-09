@@ -469,7 +469,7 @@ class RequiredFieldConfig(HorillaModel):
         help_text=_("When enabled, manual time entry is disabled."),
     )
     idle_timeout_minutes = models.PositiveIntegerField(
-        default=10,
+        default=60,
         verbose_name=_("Idle Timeout (minutes)"),
         help_text=_("Minutes of inactivity before the idle prompt appears."),
     )

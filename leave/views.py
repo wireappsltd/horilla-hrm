@@ -594,6 +594,11 @@ def leave_request_view(request):
         normal_requests = LeaveRequest.objects.filter(id__in=normal_requests).distinct()
 
     queryset = normal_requests | multiple_approvals
+    # Apply sorting on the full dataset (not just the current page) so that a
+    # stateful page reload (e.g. after approve/reject) restores the active sort
+    # column and direction and paginates from the correct position.
+    if request.GET.get("sortby"):
+        queryset = sortby(request, queryset, "sortby")
     page_number = request.GET.get("page")
     page_obj = paginator_qry(queryset, page_number)
     leave_request_filter = LeaveRequestFilter()
@@ -1150,8 +1155,18 @@ def leave_request_approve(request, id, emp_id=None):
     if emp_id is not None:
         employee_id = emp_id
         return redirect(f"/employee/employee-view/{employee_id}/")
+    # Preserve the table state (page, sort column/direction and filters) when the
+    # approval was triggered from the leave request list. The list partial is
+    # loaded over htmx, so the browser referer does not carry that state; instead
+    # the approve link forwards the current query string ("pd") which we use to
+    # rebuild a stateful redirect back to the list.
+    query = request.GET.urlencode()
+    if query:
+        redirect_url = f"{reverse('request-view')}?{query}"
+    else:
+        redirect_url = request.META.get("HTTP_REFERER", "/")
     return _trigger_leave_stats_refresh(
-        HttpResponseRedirect(request.META.get("HTTP_REFERER", "/")),
+        HttpResponseRedirect(redirect_url),
         request,
     )
 
@@ -1313,11 +1328,23 @@ def leave_request_cancel(request, id, emp_id=None):
             if emp_id is not None:
                 employee_id = emp_id
                 return redirect(f"/employee/employee-view/{employee_id}/")
+            # Preserve the table state (page, sort column/direction and filters).
+            # The reject form posts back with the current query string ("pd"),
+            # which we use to rebuild a stateful redirect to the list. Since this
+            # is an htmx request, ``_trigger_leave_stats_refresh`` converts the
+            # redirect into an ``HX-Redirect`` so the browser performs a full
+            # navigation to the stateful URL.
+            query = request.GET.urlencode()
+            redirect_url = reverse("request-view")
+            if query:
+                redirect_url = f"{redirect_url}?{query}"
             return _trigger_leave_stats_refresh(
-                HttpResponse("<script>location.reload();</script>")
+                HttpResponseRedirect(redirect_url), request
             )
     return render(
-        request, "leave/leave_request/cancel_form.html", {"form": form, "id": id}
+        request,
+        "leave/leave_request/cancel_form.html",
+        {"form": form, "id": id, "pd": request.GET.urlencode()},
     )
 
 

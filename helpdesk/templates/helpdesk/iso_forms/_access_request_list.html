@@ -1,0 +1,158 @@
+{% load i18n %}
+
+{% if access_requests %}
+    <div class="oh-table_sticky--wrapper">
+        <div id="access-request-table" data-table-name="access_request_table">
+            <div class="oh-sticky-table">
+                <div class="oh-sticky-table__table">
+                    <div class="oh-sticky-table__thead">
+                        <div class="oh-sticky-table__tr">
+                            <div class="oh-sticky-table__th iso-col--ticket">{% trans "Ticket ID" %}</div>
+                            <div class="oh-sticky-table__th iso-col--type">{% trans "Sub Type" %}</div>
+                            <div class="oh-sticky-table__th iso-col--platform">{% trans "Domain" %}</div>
+                            <div class="oh-sticky-table__th iso-col--user">{% trans "User" %}</div>
+                            <div class="oh-sticky-table__th iso-col--status">{% trans "Status" %}</div>
+                            <div class="oh-sticky-table__th iso-col--updated">{% trans "Updated" %}</div>
+                            <div class="oh-sticky-table__th oh-sticky-table__right iso-col--actions">{% trans "Actions" %}</div>
+                        </div>
+                    </div>
+                    <div class="oh-sticky-table__tbody">
+                        {% for ar in access_requests %}
+                            <div class="oh-sticky-table__tr"
+                                onclick="window.location.href = '{% url 'ticket-detail' ar.ticket.id %}'"
+                                style="cursor:pointer;"
+                            >
+                                <div class="oh-sticky-table__sd iso-col--ticket
+                                    {% if ar.status == 'PENDING' %}row-status--blue
+                                    {% elif ar.status == 'ISO_APPROVED' %}row-status--orange
+                                    {% elif ar.status == 'COMPLETED' %}row-status--yellowgreen
+                                    {% elif ar.status == 'CLOSED' %}row-status--grey
+                                    {% elif ar.status == 'REJECTED' %}row-status--red{% endif %}"
+                                >
+                                    <span class="d-flex justify-content-between align-items-center">
+                                        {{ ar.ticket.ticket_type.prefix }}{{ ar.ticket.id|stringformat:"03d" }}
+                                    </span>
+                                </div>
+                                <div class="oh-sticky-table__td iso-col--type">
+                                    <span class="oh-badge oh-badge--light">{{ ar.get_sub_type_display }}</span>
+                                </div>
+                                <div class="oh-sticky-table__td iso-col--platform">{{ ar.get_domain_display }}</div>
+                                <div class="oh-sticky-table__td iso-col--user">
+                                    <span class="iso-ellipsis" title="{{ ar.ticket.employee_id.get_full_name|default:ar.user_id }}">
+                                        {{ ar.ticket.employee_id.get_full_name|default:ar.user_id }}
+                                    </span>
+                                </div>
+                                <div class="oh-sticky-table__td iso-col--status">
+                                    {% if ar.status == 'PENDING' %}
+                                        <span class="oh-badge oh-badge--iso-pending">{{ ar.get_status_display }}</span>
+                                    {% elif ar.status == 'ISO_APPROVED' %}
+                                        <span class="oh-badge oh-badge--iso-action">{{ ar.get_status_display }}</span>
+                                    {% elif ar.status == 'COMPLETED' %}
+                                        <span class="oh-badge oh-badge--iso-awaiting">{{ ar.get_status_display }}</span>
+                                    {% elif ar.status == 'CLOSED' %}
+                                        <span class="oh-badge oh-badge--iso-closed">{{ ar.get_status_display }}</span>
+                                    {% elif ar.status == 'REJECTED' %}
+                                        <span class="oh-badge oh-badge--iso-rejected">{{ ar.get_status_display }}</span>
+                                    {% else %}
+                                        <span class="oh-badge oh-badge--iso-default">{{ ar.get_status_display }}</span>
+                                    {% endif %}
+                                </div>
+                                <div class="oh-sticky-table__td iso-col--updated">{{ ar.updated_at|date:"M d, Y H:i" }}</div>
+                                <div class="oh-sticky-table__td oh-sticky-table__right iso-col--actions" onclick="event.stopPropagation()">
+                                    <div class="oh-btn-group">
+
+                                        {# ── Edit / Withdraw (only PENDING, owner) ── #}
+                                        {% if ar.status == 'PENDING' %}
+                                            {% if is_iso_officer or current_employee == ar.ticket.employee_id %}
+                                                <button
+                                                    class="oh-btn oh-btn--light-bkg p-3 w-50"
+                                                    title="{% trans 'Edit' %}"
+                                                    hx-get="{% url 'access-request-update' ar.id %}"
+                                                    hx-target="#accessRequestModalTarget"
+                                                    hx-swap="innerHTML"
+                                                    data-toggle="oh-modal-toggle"
+                                                    data-target="#accessRequestModal"
+                                                >
+                                                    <ion-icon name="create-outline"></ion-icon>
+                                                </button>
+                                            {% endif %}
+                                            {% if current_employee == ar.ticket.employee_id %}
+                                                <form
+                                                    action="{% url 'access-request-withdraw' ar.id %}"
+                                                    class="w-50"
+                                                    onsubmit="return confirm('{% trans "Withdraw this access request?" %}');"
+                                                    method="post"
+                                                    onclick="event.stopPropagation()"
+                                                    style="display:contents;"
+                                                >
+                                                    {% csrf_token %}
+                                                    <button type="submit" class="oh-btn oh-btn--warning-outline oh-btn--light-bkg p-3 w-100" title="{% trans 'Withdraw' %}">
+                                                        <ion-icon name="close-circle-outline"></ion-icon>
+                                                    </button>
+                                                </form>
+                                            {% endif %}
+                                        {% endif %}
+
+                                        {# ── Stage 1: ISO Officer approve / reject (PENDING) ── #}
+                                        {% if ar.status == 'PENDING' and is_iso_officer and current_employee != ar.ticket.employee_id %}
+                                            <button type="button" class="oh-btn oh-btn--light-bkg p-3 w-50" title="{% trans 'Approve (ISO Officer)' %}"
+                                                onclick="event.stopPropagation(); openApproveModal('{% url 'access-request-iso-review' ar.id %}', '{{ ar.ticket.ticket_type.prefix }}{{ ar.ticket.id|stringformat:"03d" }}');"
+                                                style="color: green;">
+                                                <ion-icon name="checkmark-outline"></ion-icon>
+                                            </button>
+                                            <button type="button" class="oh-btn oh-btn--danger-outline oh-btn--light-bkg p-3 w-50" title="{% trans 'Reject (ISO Officer)' %}"
+                                                onclick="event.stopPropagation(); openRejectModal('{% url 'access-request-iso-review' ar.id %}', '{{ ar.ticket.ticket_type.prefix }}{{ ar.ticket.id|stringformat:"03d" }}');">
+                                                <ion-icon name="close-outline"></ion-icon>
+                                            </button>
+                                        {% endif %}
+
+                                        {# ── Stage 2: IS Council approve / reject (ISO_APPROVED) ── #}
+                                        {% if ar.status == 'ISO_APPROVED' and is_isc_member and current_employee != ar.ticket.employee_id %}
+                                            <button type="button" class="oh-btn oh-btn--light-bkg p-3 w-50" title="{% trans 'Approve (IS Council)' %}"
+                                                onclick="event.stopPropagation(); openApproveModal('{% url 'access-request-isc-review' ar.id %}', '{{ ar.ticket.ticket_type.prefix }}{{ ar.ticket.id|stringformat:"03d" }}');"
+                                                style="color: green;">
+                                                <ion-icon name="shield-checkmark-outline"></ion-icon>
+                                            </button>
+                                            <button type="button" class="oh-btn oh-btn--danger-outline oh-btn--light-bkg p-3 w-50" title="{% trans 'Reject (IS Council)' %}"
+                                                onclick="event.stopPropagation(); openRejectModal('{% url 'access-request-isc-review' ar.id %}', '{{ ar.ticket.ticket_type.prefix }}{{ ar.ticket.id|stringformat:"03d" }}');">
+                                                <ion-icon name="close-outline"></ion-icon>
+                                            </button>
+                                        {% endif %}
+
+                                        {# ── Acknowledge / Close (COMPLETED, requestor) ── #}
+                                        {% if ar.status == 'COMPLETED' and current_employee == ar.ticket.employee_id %}
+                                            <button type="button" class="oh-btn oh-btn--light-bkg p-3" title="{% trans 'Confirm & Close' %}"
+                                                onclick="event.stopPropagation(); openAcknowledgeModal('{% url 'access-request-acknowledge' ar.id %}', '{{ ar.ticket.ticket_type.prefix }}{{ ar.ticket.id|stringformat:"03d" }}');"
+                                                style="color: green;">
+                                                <ion-icon name="checkmark-done-outline"></ion-icon>
+                                            </button>
+                                        {% endif %}
+
+                                        {# ── Delete (ISO officer / superuser) ── #}
+                                        {% if is_iso_officer %}
+                                            <form action="{% url 'access-request-delete' ar.id %}" class="w-50"
+                                                onsubmit="return confirm('{% trans "Delete this access request?" %}');"
+                                                method="post" onclick="event.stopPropagation()" style="display:contents;">
+                                                {% csrf_token %}
+                                                <button type="submit" class="oh-btn oh-btn--danger-outline oh-btn--light-bkg p-3 w-100" title="{% trans 'Delete' %}">
+                                                    <ion-icon name="trash-outline"></ion-icon>
+                                                </button>
+                                            </form>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+{% else %}
+    <div class="py-5 d-flex flex-column align-items-center text-center text-muted">
+        <ion-icon name="shield-outline" style="font-size:42px;"></ion-icon>
+        <p class="mt-2 mb-0">{% trans "No access requests found." %}</p>
+        <small>{% trans "Click Create above to submit a new request." %}</small>
+    </div>
+{% endif %}
+

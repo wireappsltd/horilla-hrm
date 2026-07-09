@@ -556,7 +556,7 @@ class TrackerPageView(TemplateView):
 
         # Idle timeout config
         config = RequiredFieldConfig.objects.first()
-        idle_timeout = config.idle_timeout_minutes if config else 10
+        idle_timeout = config.idle_timeout_minutes if config else 60
 
         # Favourites for this employee
         from time_tracker.models import Favourite
