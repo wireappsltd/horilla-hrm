@@ -84,7 +84,7 @@
         </div>
         {% if perms.employee.view_employee %}
         <div class="oh-sticky-table__th" data-cell-index="1" data-cell-title='{% trans "Email" %}'>{% trans "Email" %}</div>
-        <div class="oh-sticky-table__th" data-cell-index="2" data-cell-title='{% trans "Phone" %}'>{% trans "Phone" %}</div>
+        <div class="oh-sticky-table__th" data-cell-index="2" data-cell-title='{% trans "Mobile Number" %}'>{% trans "Mobile Number" %}</div>
         {% endif %}
         <div
           class="oh-sticky-table__th {% if request.sort_option.order == '-badge_id' %}arrow-up {% elif request.sort_option.order == 'badge_id' %}arrow-down {% else %}arrow-up-down {% endif %}" data-cell-index="3" data-cell-title='{% trans "Badge Id" %}'

@@ -291,6 +291,7 @@ class EmployeeForm(ModelForm):
         super().clean()
         email = self.cleaned_data.get("email")
         phone = self.cleaned_data.get("phone")
+        nic = self.cleaned_data.get("nic")
         dob = self.cleaned_data.get("dob")
         country = self.cleaned_data.get("country")
         query = Employee.objects.entire().filter(email=email)
@@ -389,6 +390,16 @@ class EmployeeForm(ModelForm):
                 self.add_error(
                     "phone",
                     _("Enter a valid mobile number (e.g. 07XXXXXXXX).")
+                )
+
+        if nic:
+            nic_qs = Employee.objects.entire().filter(nic=nic)
+            if self.instance and self.instance.pk:
+                nic_qs = nic_qs.exclude(pk=self.instance.pk)
+            if nic_qs.exists():
+                self.add_error(
+                    "nic",
+                    _("An Employee with this NIC already exists.")
                 )
 
         contact_name = self.cleaned_data.get("emergency_contact_name")
@@ -921,7 +932,7 @@ excel_columns = [
     ("employee_first_name", trans("Preferred Name")),
     ("employee_last_name", trans("Last Name")),
     ("email", trans("Email")),
-    ("phone", trans("Phone")),
+    ("phone", trans("Mobile Number")),
     ("nic", trans("NIC")),
     ("experience", trans("Experience")),
     ("gender", trans("Gender")),
@@ -936,7 +947,7 @@ excel_columns = [
     ("is_active", trans("Is active")),
     ("emergency_contact", trans("Emergency Contact")),
     ("emergency_contact_name", trans("Emergency Contact Name")),
-    ("emergency_contact_relation", trans("Emergency Contact Relation")),
+    ("emergency_contact_relation", trans("Relationship to Emergency Contact")),
     ("employee_work_info__email", trans("Work Email")),
     ("employee_work_info__mobile", trans("Work Phone")),
     ("employee_work_info__department_id", trans("Department")),
