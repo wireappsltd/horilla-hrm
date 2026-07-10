@@ -1628,6 +1628,7 @@ class Reimbursement(HorillaModel):
 
     reimbursement_types = [
         ("reimbursement", _("Reimbursement")),
+        ("bonus", _("Bonus")),
         ("bonus_encashment", _("Bonus Point Encashment")),
     ]
 
@@ -1702,7 +1703,7 @@ class Reimbursement(HorillaModel):
         ordering = ["-id"]
 
     def clean(self):
-        if self.amount and self.amount < 0 and self.type == "reimbursement":
+        if self.amount and self.amount < 0 and self.type in ("reimbursement", "bonus"):
             raise ValidationError({"amount": _("Amount must be greater than zero.")})
 
 
@@ -1748,6 +1749,8 @@ class Reimbursement(HorillaModel):
             super().save(*args, **kwargs)
             if self.status == "approved" and self.allowance_id is None:
                 if self.type == "reimbursement":
+                    proceed = True
+                elif self.type == "bonus":
                     proceed = True
                 elif self.type == "bonus_encashment":
                     proceed = False
@@ -1827,6 +1830,8 @@ class Reimbursement(HorillaModel):
                         assigned_leave.save()
                     self.allowance_id.delete()
                 if self.type == "reimbursement" and self.allowance_id is not None:
+                    self.allowance_id.delete()
+                if self.type == "bonus" and self.allowance_id is not None:
                     self.allowance_id.delete()
 
     def delete(self, *args, **kwargs):

@@ -130,6 +130,19 @@
                 </div>
             </div>
             <!-- end of leave encashment details -->
+        {% elif reimbursement.type == 'bonus' %}
+            <!-- start of bonus details -->
+            <div class="oh-timeoff-modal__stats-container mb-3">
+                <div class="oh-timeoff-modal__stat">
+                    <span class="oh-timeoff-modal__stat-title">{% trans "Date" %}</span>
+                    <span class="oh-timeoff-modal__stat-count dateformat_changer">{{reimbursement.created_at|date:"F j, Y"}}</span>
+                </div>
+                <div class="oh-timeoff-modal__stat" style="margin-left: 20px;">
+                    <span class="oh-timeoff-modal__stat-title">{% trans "Description" %}</span>
+                    <span class="oh-timeoff-modal__stat-count">{{reimbursement.description}}</span>
+                </div>
+            </div>
+            <!-- end of bonus details -->
         {% else %}
             <!-- start of bonous encashment details -->
             <div class="oh-timeoff-modal__stats-container mb-3">
