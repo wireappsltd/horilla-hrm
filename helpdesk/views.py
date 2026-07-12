@@ -5761,6 +5761,7 @@ def _build_change_request_description(change_request):
         "<b>Change Request Details:</b><br><br>",
         f"<b>Summary:</b> {strip_tags(change_request.summary)}<br>",
         f"<b>Categorisation:</b> {change_request.get_categorisation_display()}<br>",
+        f"<b>Reason for Change Categorisation:</b> {strip_tags(change_request.categorisation_reason)}<br>",
         f"<b>Change Type:</b> {change_request.get_change_type_display()}<br>",
     ]
     if change_request.change_type == "temporary" and change_request.expiry_date:
