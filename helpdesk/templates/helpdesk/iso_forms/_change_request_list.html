@@ -89,6 +89,19 @@
                                             {% endif %}
                                         {% endif %}
 
+                                        {# ── Stage 1: Divisional Head (IS Council) approve / reject (PENDING) ── #}
+                                        {% if cr.status == 'PENDING' and is_isc_member and current_employee != cr.ticket.employee_id %}
+                                            <button type="button" class="oh-btn oh-btn--light-bkg p-3 w-50" title="{% trans 'Approve (Divisional Head)' %}"
+                                                onclick="event.stopPropagation(); openApproveModal('{% url 'change-request-dh-review' cr.id %}', '{{ cr.ticket.ticket_type.prefix }}{{ cr.ticket.id|stringformat:"03d" }}');"
+                                                style="color: green;">
+                                                <ion-icon name="checkmark-outline"></ion-icon>
+                                            </button>
+                                            <button type="button" class="oh-btn oh-btn--danger-outline oh-btn--light-bkg p-3 w-50" title="{% trans 'Reject (Divisional Head)' %}"
+                                                onclick="event.stopPropagation(); openRejectModal('{% url 'change-request-dh-review' cr.id %}', '{{ cr.ticket.ticket_type.prefix }}{{ cr.ticket.id|stringformat:"03d" }}');">
+                                                <ion-icon name="close-outline"></ion-icon>
+                                            </button>
+                                        {% endif %}
+
                                         {# ── Open to review (any non-terminal, non-pending stage) ── #}
                                         {% if cr.status != 'PENDING' and cr.status != 'CLOSED' and cr.status != 'REJECTED' %}
                                             <a class="oh-btn oh-btn--light-bkg p-3 w-50"
