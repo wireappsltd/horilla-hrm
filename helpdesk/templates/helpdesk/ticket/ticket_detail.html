@@ -1604,6 +1604,16 @@
                                         {% empty %}
                                             <li class="oh-helpdesk__subcard-item">—</li>
                                         {% endfor %}
+                                    {% elif change_request or access_request or exception_request or admin_access_request or incident_report %}
+                                        {% with iso_form_request=change_request|default:access_request|default:exception_request|default:admin_access_request|default:incident_report %}
+                                        {% for officer_user in iso_form_request.forward_to.all %}
+                                            <li class="oh-helpdesk__subcard-item">
+                                                {{ officer_user.employee_get.get_full_name|default:officer_user.get_full_name|default:officer_user.username }}
+                                            </li>
+                                        {% empty %}
+                                            <li class="oh-helpdesk__subcard-item">—</li>
+                                        {% endfor %}
+                                        {% endwith %}
                                     {% else %}
                                         {% for obj in ticket.get_raised_on_objects %}
                                             <li class="oh-helpdesk__subcard-item">{{ obj }}</li>
