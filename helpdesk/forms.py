@@ -1664,6 +1664,7 @@ class ChangeRequesterForm(forms.ModelForm):
 
         # Expiry Date is conditionally required (validated in clean()).
         self.fields["expiry_date"].required = False
+        self.fields["expiry_date"].widget.attrs["min"] = timezone.localdate().isoformat()
 
         summary_error_message = _(
             "Summary cannot exceed %(max_length)s characters."
@@ -1754,6 +1755,14 @@ class ChangeRequesterForm(forms.ModelForm):
         if deadline < timezone.localdate():
             raise forms.ValidationError(_("Due date cannot be in the past."))
         return deadline
+
+    def clean_expiry_date(self):
+        expiry_date = self.cleaned_data.get("expiry_date")
+        if expiry_date is None:
+            return expiry_date
+        if expiry_date < timezone.localdate():
+            raise forms.ValidationError(_("Expiry date cannot be in the past."))
+        return expiry_date
 
     def clean(self):
         cleaned_data = super().clean()
