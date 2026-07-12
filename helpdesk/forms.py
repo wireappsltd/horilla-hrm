@@ -1822,7 +1822,7 @@ class ChangeImplementerForm(forms.ModelForm):
         widgets = {
             "is_self_implementer": forms.Select(
                 attrs={
-                    "class": "oh-select oh-select-2 w-100",
+                    "class": "oh-select w-100",
                     "onchange": "changeRequestToggleImplementer(this)",
                 }
             ),
@@ -1832,7 +1832,7 @@ class ChangeImplementerForm(forms.ModelForm):
             "effort_estimate": forms.TextInput(attrs={"class": "oh-input w-100"}),
             "special_support": forms.Select(
                 attrs={
-                    "class": "oh-select oh-select-2 w-100",
+                    "class": "oh-select w-100",
                     "onchange": "changeRequestToggleSupport(this)",
                 }
             ),
@@ -1846,7 +1846,7 @@ class ChangeImplementerForm(forms.ModelForm):
                 attrs={"class": "oh-input w-100", "rows": 2}
             ),
             "system_outage": forms.Select(
-                attrs={"class": "oh-select oh-select-2 w-100"}
+                attrs={"class": "oh-select w-100"}
             ),
             "scheduled_outage_date": forms.DateInput(
                 attrs={"class": "oh-input w-100", "type": "date"}

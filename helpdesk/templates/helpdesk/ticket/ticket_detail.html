@@ -25,6 +25,26 @@
         margin-right: 16px;
     }
 
+    @media screen and (min-width: 992px) {
+        .oh-helpdesk {
+            height: calc(100vh - 65px);
+            overflow: hidden;
+        }
+
+        .oh-helpdesk__left {
+            display: flex;
+            flex-direction: column;
+            height: calc(100vh - 65px);
+            overflow: hidden;
+        }
+
+        .oh-helpdesk__body {
+            height: auto;
+            flex: 1 1 auto;
+            min-height: 0;
+        }
+    }
+
     .oh-profile__avatar-limit-height {
         height: 30px !important;
     }
@@ -1749,7 +1769,6 @@
 
     </div>
 </div>
-</div>
 
 <!-- start of create tag modal. -->
 
@@ -2432,11 +2451,28 @@
 </div>
 
 <script>
-    // Toggle the "Change Implementer" selector based on the Self-Implementer answer.
     function changeRequestToggleImplementer(selectEl) {
         var wrapper = document.getElementById("changeImplementerSelectWrapper");
         if (!wrapper) { return; }
-        wrapper.style.display = (selectEl && selectEl.value === "no") ? "" : "none";
+        var show = (selectEl && selectEl.value === "no");
+        wrapper.style.display = show ? "" : "none";
+        if (window.jQuery) {
+            var $ = window.jQuery;
+            var $select = $(wrapper).find("select.oh-select-2, select#id_implementer");
+            if ($select.length) {
+                try {
+                    if ($select.hasClass("select2-hidden-accessible")) {
+                        $select.select2("destroy");
+                    }
+                } catch (e) { /* not yet initialised */ }
+                if (show) {
+                    $select.select2({
+                        width: "100%",
+                        dropdownParent: $(wrapper),
+                    });
+                }
+            }
+        }
     }
     // Toggle the "Special Support Description" based on the Special Support answer.
     function changeRequestToggleSupport(selectEl) {
