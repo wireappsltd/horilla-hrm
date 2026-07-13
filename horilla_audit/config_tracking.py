@@ -26,6 +26,14 @@ logger = logging.getLogger(__name__)
 # compliance reviewers can scan them together rather than walking every domain tab.
 _CONFIG_MODULE = "configuration"
 
+# Asset lookups route to the "Assets" audit tab so they sit beside the asset
+# lifecycle events instead of the generic Configuration tab.
+_ASSET_MODULE = "asset"
+
+# Offboarding lookups/settings route to the "Offboarding" audit tab beside the
+# offboarding lifecycle events instead of the generic Configuration tab.
+_OFFBOARDING_MODULE = "offboarding"
+
 # (app_label, model_name, module_slug, friendly_label)
 CONFIG_MODELS = [
     # Leave settings
@@ -119,6 +127,23 @@ CONFIG_MODELS = [
     ("time_tracker", "Tag", _CONFIG_MODULE, "Time Tracker Tag"),
     # Accessibility settings
     ("accessibility", "DefaultAccessibility", _CONFIG_MODULE, "Accessibility Setting"),
+    # Asset lookups — categories and batches/lots. These land in the dedicated
+    # "Assets" tab (not Configuration) alongside the asset lifecycle events that
+    # asset/views.py logs explicitly. create/update/delete + company_id M2M are
+    # tracked automatically here.
+    ("asset", "AssetCategory", _ASSET_MODULE, "Asset Category"),
+    ("asset", "AssetLot", _ASSET_MODULE, "Asset Batch/Lot"),
+    # Offboarding lookups/settings — resignation-reason table and the resignation
+    # feature toggle. These land in the "Offboarding" tab alongside the lifecycle
+    # events that offboarding/views.py logs explicitly. Signal tracking covers all
+    # CRUD paths (create/edit/delete views + the enable/disable settings toggle).
+    ("offboarding", "ExitReason", _OFFBOARDING_MODULE, "Resignation Reason"),
+    (
+        "offboarding",
+        "OffboardingGeneralSetting",
+        _OFFBOARDING_MODULE,
+        "Offboarding Setting",
+    ),
 ]
 
 
