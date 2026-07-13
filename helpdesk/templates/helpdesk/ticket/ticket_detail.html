@@ -278,8 +278,8 @@
                     {% if access_request %}
                     {# ── Access request workflow action buttons (two-stage approval) ── #}
                     <div class="d-flex align-items-center gap-2 ms-4 iso-action-group">
-                        {% if access_request.status == 'PENDING' and is_iso_officer and request.user.employee_get != ticket.employee_id %}
-                            {# Stage 1 — ISO Officer Approve / Reject. #}
+                        {% if access_request.status == 'PENDING' and is_isc_member and request.user.employee_get != ticket.employee_id %}
+                            {# Stage 1 — Divisional Head (IS Council) Approve / Reject. #}
                             <button type="button" class="oh-btn oh-btn--success iso-action-btn iso-action-btn--equal"
                                 title="{% trans 'Approve' %}"
                                 onclick="openIsoApproveModal('{% url 'access-request-iso-review' access_request.id %}');">
@@ -290,8 +290,8 @@
                                 onclick="openIsoRejectModal('{% url 'access-request-iso-review' access_request.id %}');">
                                 <ion-icon name="close-outline" class="me-1"></ion-icon>{% trans "Reject" %}
                             </button>
-                        {% elif access_request.status == 'ISO_APPROVED' and is_isc_member and request.user.employee_get != ticket.employee_id %}
-                            {# Stage 2 — IS Council Approve / Reject. #}
+                        {% elif access_request.status == 'ISO_APPROVED' and is_iso_officer and request.user.employee_get != ticket.employee_id %}
+                            {# Stage 2 — ISO Officer Approve / Reject. #}
                             <button type="button" class="oh-btn oh-btn--success iso-action-btn iso-action-btn--equal"
                                 title="{% trans 'Approve' %}"
                                 onclick="openIsoApproveModal('{% url 'access-request-isc-review' access_request.id %}');">
@@ -915,6 +915,18 @@
                                 <span class="helpdesk__card-label">{% trans "User:" %}</span>
                                 <span class="helpdesk__card-value">{{ ticket.employee_id.get_full_name|default:access_request.user_id }}</span>
                             </li>
+                            {% if access_request.isc_reviewed_by %}
+                            <li class="helpdesk__card-item">
+                                <span class="helpdesk__card-label">{% trans "Divisional Head:" %}</span>
+                                <span class="helpdesk__card-value">{{ access_request.isc_reviewed_by.employee_get.get_full_name|default:access_request.isc_reviewed_by.username }}</span>
+                            </li>
+                            {% endif %}
+                            {% if access_request.isc_reviewed_at %}
+                            <li class="helpdesk__card-item">
+                                <span class="helpdesk__card-label">{% trans "Divisional Head reviewed at:" %}</span>
+                                <span class="helpdesk__card-value">{{ access_request.isc_reviewed_at }}</span>
+                            </li>
+                            {% endif %}
                             {% if access_request.iso_reviewed_by %}
                             <li class="helpdesk__card-item">
                                 <span class="helpdesk__card-label">{% trans "ISO Officer:" %}</span>
@@ -925,18 +937,6 @@
                             <li class="helpdesk__card-item">
                                 <span class="helpdesk__card-label">{% trans "ISO reviewed at:" %}</span>
                                 <span class="helpdesk__card-value">{{ access_request.iso_reviewed_at }}</span>
-                            </li>
-                            {% endif %}
-                            {% if access_request.isc_reviewed_by %}
-                            <li class="helpdesk__card-item">
-                                <span class="helpdesk__card-label">{% trans "IS Council:" %}</span>
-                                <span class="helpdesk__card-value">{{ access_request.isc_reviewed_by.employee_get.get_full_name|default:access_request.isc_reviewed_by.username }}</span>
-                            </li>
-                            {% endif %}
-                            {% if access_request.isc_reviewed_at %}
-                            <li class="helpdesk__card-item">
-                                <span class="helpdesk__card-label">{% trans "ISC reviewed at:" %}</span>
-                                <span class="helpdesk__card-value">{{ access_request.isc_reviewed_at }}</span>
                             </li>
                             {% endif %}
                             {% if access_request.closed_by %}
