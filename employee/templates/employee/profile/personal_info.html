@@ -1,6 +1,51 @@
 {% load i18n %}
 {% load widget_tweaks %}
 
+<style>
+  /* Phone number row: keep the country-code selector snug to its content
+     and let the number input fill the rest of the row. */
+  #phoneInputGroup {
+    align-items: stretch;
+  }
+
+  /* Native <select> country code: strip OS styling so it honours the box
+     model and stretches to the same height as the .oh-input number field */
+  #phoneCountryCode {
+    width: auto !important;
+    flex: 0 0 auto !important;
+    box-sizing: border-box !important;
+    height: auto !important;
+    align-self: stretch !important;
+    padding: 0.8rem 28px 0.8rem 8px !important;
+    border: 1px solid hsl(213, 22%, 84%) !important;
+    -webkit-appearance: none !important;
+    -moz-appearance: none !important;
+    appearance: none !important;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%23667085' d='M0 0l5 6 5-6z'/%3E%3C/svg%3E") !important;
+    background-repeat: no-repeat !important;
+    background-position: right 10px center !important;
+  }
+
+  /* If select2 ever wraps it, keep the same compact behaviour */
+  #phoneCountryCode + .select2-container {
+    width: auto !important;
+    flex: 0 0 auto !important;
+  }
+  #phoneCountryCode + .select2-container .select2-selection__rendered {
+    padding-left: 6px;
+    padding-right: 18px;
+  }
+
+  /* Force the number input to grow and fill the remaining width,
+     overriding the .w-100 (width:100%) utility class. */
+  #phoneInputGroup > input,
+  #phoneInputGroup > .oh-input {
+    flex: 1 1 auto !important;
+    width: auto !important;
+    min-width: 0 !important;
+  }
+</style>
+
 <div>
     <div class="oh-general__tab-target oh-profile-section mb-4" id="personal" data-select2-id="select2-data-personal">
         <div class="oh-profile-section__card" data-select2-id="select2-data-48-0df8">
@@ -75,7 +120,50 @@
                     </div>
                     <div class="col-12 col-sm-12 col-md-12 col-lg-6">
                         <label class="oh-label" for="phone">{% trans "Mobile Number *" %}</label>
-                        {{ form.phone }}
+                        <div class="d-flex" style="gap: 6px;" id="phoneInputGroup">
+                            <select name="phone_country_code" id="phoneCountryCode" class="oh-select"
+                                style="padding-left: 8px; padding-right: 8px;">
+                                <option value="+94" selected>+94 LKA</option>
+                                <option value="+91">+91 IND</option>
+                                <option value="+1">+1 USA</option>
+                                <option value="+44">+44 GBR</option>
+                                <option value="+61">+61 AUS</option>
+                                <option value="+971">+971 ARE</option>
+                                <option value="+966">+966 SAU</option>
+                                <option value="+974">+974 QAT</option>
+                                <option value="+965">+965 KWT</option>
+                                <option value="+973">+973 BHR</option>
+                                <option value="+968">+968 OMN</option>
+                                <option value="+65">+65 SGP</option>
+                                <option value="+60">+60 MYS</option>
+                                <option value="+880">+880 BGD</option>
+                                <option value="+92">+92 PAK</option>
+                                <option value="+977">+977 NPL</option>
+                                <option value="+960">+960 MDV</option>
+                                <option value="+86">+86 CHN</option>
+                                <option value="+81">+81 JPN</option>
+                                <option value="+49">+49 DEU</option>
+                                <option value="+33">+33 FRA</option>
+                                <option value="+39">+39 ITA</option>
+                                <option value="+34">+34 ESP</option>
+                                <option value="+31">+31 NLD</option>
+                                <option value="+41">+41 CHE</option>
+                                <option value="+46">+46 SWE</option>
+                                <option value="+47">+47 NOR</option>
+                                <option value="+64">+64 NZL</option>
+                                <option value="+27">+27 ZAF</option>
+                                <option value="+7">+7 RUS</option>
+                                <option value="+90">+90 TUR</option>
+                                <option value="+62">+62 IDN</option>
+                                <option value="+63">+63 PHL</option>
+                                <option value="+66">+66 THA</option>
+                                <option value="+84">+84 VNM</option>
+                                <option value="+20">+20 EGY</option>
+                                <option value="+234">+234 NGA</option>
+                                <option value="+254">+254 KEN</option>
+                            </select>
+                            {{ form.phone }}
+                        </div>
                         {{ form.phone.errors }}
                     </div>
                 </div>
@@ -137,20 +225,20 @@
                 </div>
                 <div class="row">
                     <div class="col-12 col-sm-12 col-md-12 col-lg-6">
+                        <label class="oh-label d-block" for="emergencyContactName">{% trans "Emergency Contact Name" %}</label>
+                        {{ form.emergency_contact_name }}
+                        {{ form.emergency_contact_name.errors }}
+                    </div>
+                    <div class="col-12 col-sm-12 col-md-12 col-lg-6">
                         <label class="oh-label d-block" for="state">{% trans "Emergency Contact" %}</label>
                         {{ form.emergency_contact }}
                         {{ form.emergency_contact.errors }}
-                    </div>
-                    <div class="col-12 col-sm-12 col-md-12 col-lg-6">
-                        <label class="oh-label d-block" for="emergencyContactName">{% trans "Contact Name" %}</label>
-                        {{ form.emergency_contact_name }}
-                        {{ form.emergency_contact_name.errors }}
                     </div>
                 </div>
                 <div class="row">
                     <div class="col-12 col-sm-12 col-md-12 col-lg-6">
                         <label class="oh-label d-block" for="emergencyContactRelation">
-                            {% trans "Emergency Contact Relation" %}
+                            {% trans "Relationship to Emergency Contact" %}
                         </label>
                         {{ form.emergency_contact_relation }}
                         {{ form.emergency_contact_relation.errors }}
@@ -210,6 +298,29 @@
             </div>
         </div>
         <div id="personalMessage"></div>
+        <script>
+            // Split a stored international phone number (e.g. +94771234567) into the
+            // country-code selector and the national number input on page load.
+            (function () {
+                var codeSelect = document.getElementById("phoneCountryCode");
+                var phoneInput = document.querySelector('input[name="phone"]');
+                if (!codeSelect || !phoneInput) return;
+                var val = (phoneInput.value || "").trim();
+                if (val.charAt(0) === "+") {
+                    var codes = Array.prototype.map.call(codeSelect.options, function (o) {
+                        return o.value;
+                    }).filter(function (c) {
+                        return val.indexOf(c) === 0;
+                    }).sort(function (a, b) {
+                        return b.length - a.length;
+                    });
+                    if (codes.length) {
+                        codeSelect.value = codes[0];
+                        phoneInput.value = val.slice(codes[0].length);
+                    }
+                }
+            })();
+        </script>
         <script>
             $(document).ready(function () {
                 $("#id_employee_profile").change(function (e) {

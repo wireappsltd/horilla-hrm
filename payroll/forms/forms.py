@@ -43,6 +43,7 @@ class ContractForm(ModelForm):
             "filing_status",
             "pay_frequency",
             "shift",
+            "wage_type",
         ]
         model = Contract
 

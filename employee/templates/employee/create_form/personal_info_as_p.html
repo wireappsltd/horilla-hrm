@@ -18,6 +18,46 @@
     border-color: #d92d20 !important;
     box-shadow: none !important;
   }
+
+  /* Keep the phone country-code selector compact and match input height.
+     Strip OS styling so the native select honours height/padding. */
+  #phoneCountryCode {
+    width: auto !important;
+    flex: 0 0 auto !important;
+    box-sizing: border-box !important;
+    height: auto !important;
+    align-self: stretch !important;
+    padding: 0.8rem 28px 0.8rem 8px !important;
+    border: 1px solid hsl(213, 22%, 84%) !important;
+    -webkit-appearance: none !important;
+    -moz-appearance: none !important;
+    appearance: none !important;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%23667085' d='M0 0l5 6 5-6z'/%3E%3C/svg%3E") !important;
+    background-repeat: no-repeat !important;
+    background-position: right 10px center !important;
+  }
+
+  #phoneCountryCode + .select2-container {
+    width: auto !important;
+    flex: 0 0 auto !important;
+  }
+
+  #phoneCountryCode + .select2-container .select2-selection__rendered {
+    padding-left: 6px;
+    padding-right: 18px;
+  }
+
+  /* Let the phone number input fill the remaining space next to the code */
+  #phoneInputGroup {
+    align-items: stretch;
+  }
+
+  #phoneInputGroup > input,
+  #phoneInputGroup > .form-control {
+    flex: 1 1 auto !important;
+    width: auto !important;
+    min-width: 0 !important;
+  }
 </style>
 
 <div class="row">
@@ -35,6 +75,55 @@
           {% if field.field.widget.input_type == 'checkbox' %}
             <div class="oh-switch" style="width: 30px;">
               {{ field|add_class:'oh-switch__checkbox' }}
+            </div>
+          {% elif field.name == 'phone' %}
+            <div class="d-flex" style="gap: 6px;" id="phoneInputGroup">
+              <select name="phone_country_code" id="phoneCountryCode" class="form-control"
+                      style="padding-left: 8px; padding-right: 8px;">
+                <option value="+94" selected>+94 LKA</option>
+                <option value="+91">+91 IND</option>
+                <option value="+1">+1 USA</option>
+                <option value="+44">+44 GBR</option>
+                <option value="+61">+61 AUS</option>
+                <option value="+971">+971 ARE</option>
+                <option value="+966">+966 SAU</option>
+                <option value="+974">+974 QAT</option>
+                <option value="+965">+965 KWT</option>
+                <option value="+973">+973 BHR</option>
+                <option value="+968">+968 OMN</option>
+                <option value="+65">+65 SGP</option>
+                <option value="+60">+60 MYS</option>
+                <option value="+880">+880 BGD</option>
+                <option value="+92">+92 PAK</option>
+                <option value="+977">+977 NPL</option>
+                <option value="+960">+960 MDV</option>
+                <option value="+86">+86 CHN</option>
+                <option value="+81">+81 JPN</option>
+                <option value="+49">+49 DEU</option>
+                <option value="+33">+33 FRA</option>
+                <option value="+39">+39 ITA</option>
+                <option value="+34">+34 ESP</option>
+                <option value="+31">+31 NLD</option>
+                <option value="+41">+41 CHE</option>
+                <option value="+46">+46 SWE</option>
+                <option value="+47">+47 NOR</option>
+                <option value="+64">+64 NZL</option>
+                <option value="+27">+27 ZAF</option>
+                <option value="+7">+7 RUS</option>
+                <option value="+90">+90 TUR</option>
+                <option value="+62">+62 IDN</option>
+                <option value="+63">+63 PHL</option>
+                <option value="+66">+66 THA</option>
+                <option value="+84">+84 VNM</option>
+                <option value="+20">+20 EGY</option>
+                <option value="+234">+234 NGA</option>
+                <option value="+254">+254 KEN</option>
+              </select>
+              {% if field.errors %}
+                {{ field|add_class:'form-control is-invalid' }}
+              {% else %}
+                {{ field|add_class:'form-control' }}
+              {% endif %}
             </div>
           {% else %}
             {% if field.errors %}
@@ -130,6 +219,30 @@
 </div>
 
 <script>
+  // Split a stored international phone number (e.g. +94771234567) into the
+  // country-code selector and the national number input.
+  (function () {
+    var codeSelect = document.getElementById("phoneCountryCode");
+    var phoneInput = document.querySelector('input[name="phone"]');
+    if (!codeSelect || !phoneInput) return;
+    var val = (phoneInput.value || "").trim();
+    if (val.charAt(0) === "+") {
+      var codes = Array.prototype.map.call(codeSelect.options, function (o) {
+        return o.value;
+      }).filter(function (c) {
+        return val.indexOf(c) === 0;
+      }).sort(function (a, b) {
+        return b.length - a.length;
+      });
+      if (codes.length) {
+        codeSelect.value = codes[0];
+        phoneInput.value = val.slice(codes[0].length);
+      }
+    }
+  })();
+</script>
+
+<script>
   (function () {
     const input = document.getElementById("id_qualification");
     const counter = document.getElementById("qualificationCounter");
@@ -182,6 +295,13 @@
       }
       $targets.toggle(show);
 
+      if (show) {
+        const $currency = $scope.find("#id_salary_currency");
+        if ($currency.hasClass("select2-hidden-accessible")) {
+          $currency.trigger("change.select2");
+        }
+      }
+
       // Probation end date is hidden for interns and shown otherwise.
       let $nonInternTargets = $scope.find(".non-intern-fields");
       if (!$nonInternTargets.length) {
@@ -212,6 +332,33 @@
             toggleForSelect(this);
           }
         );
+    }
+
+
+    if (window.jQuery && !window.__currencyPickerFocusBound) {
+      window.__currencyPickerFocusBound = true;
+
+      function bringCurrencyIntoView() {
+        const el = document.getElementById("id_salary_currency");
+        if (el) {
+          el.scrollIntoView({ block: "center", behavior: "smooth" });
+        }
+      }
+
+      window
+        .jQuery(document)
+        .on("select2:open", "#id_salary_currency", function () {
+          bringCurrencyIntoView();
+          window.setTimeout(function () {
+            const search = document.querySelector(
+              ".select2-container--open .select2-search__field"
+            );
+            if (search) {
+              search.focus();
+            }
+          }, 0);
+        })
+        .on("focus mousedown", "#id_salary_currency", bringCurrencyIntoView);
     }
 
     if (document.readyState === "loading") {

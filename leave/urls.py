@@ -293,6 +293,11 @@ urlpatterns = [
         name="employee-available-leave-count",
     ),
     path(
+        "employee-leave-count",
+        views.employee_leave_count,
+        name="employee-leave-count",
+    ),
+    path(
         "leave-request-add-comment/<int:leave_id>/",
         views.create_leaverequest_comment,
         name="leave-request-add-comment",

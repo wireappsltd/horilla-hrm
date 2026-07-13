@@ -183,6 +183,32 @@ function toggleReimbursmentType(element) {
             .parent()
             .hide()
             .attr("required", false);
+    } else if (element.val() == "bonus") {
+        $("#objectCreateModalTarget [name=attachment]").parent().hide();
+        $("#objectCreateModalTarget [name=attachment]").attr("required", false);
+        $("#objectCreateModalTarget [name=leave_type_id]")
+            .parent()
+            .hide()
+            .attr("required", false);
+        $("#objectCreateModalTarget [name=cfd_to_encash]")
+            .parent()
+            .hide()
+            .attr("required", false);
+        $("#objectCreateModalTarget [name=ad_to_encash]")
+            .parent()
+            .hide()
+            .attr("required", false);
+        $("#objectCreateModalTarget [name=amount]")
+            .parent()
+            .show()
+            .attr("required", true);
+        $("#objectCreateModalTarget #availableTable")
+            .hide()
+            .attr("required", false);
+        $("#objectCreateModalTarget [name=bonus_to_encash]")
+            .parent()
+            .hide()
+            .attr("required", false);
     } else if (element.val() == "leave_encashment") {
         $("#objectCreateModalTarget [name=attachment]").parent().hide();
         $("#objectCreateModalTarget [name=attachment]").attr("required", false);

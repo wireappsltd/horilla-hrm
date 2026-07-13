@@ -203,24 +203,56 @@
             {% endif %}
         </div>
 
-        {% if page_obj.paginator.num_pages > 1 %}
-        <div class="d-flex justify-content-center align-items-center mt-3 mb-2">
-            {% if page_obj.has_previous %}
-            <a href="?module={{ active_module }}{% if is_login_log and status_filter %}&status={{ status_filter }}{% endif %}&page={{ page_obj.previous_page_number }}"
-               class="oh-btn oh-btn--secondary mx-1">
-                &laquo; {% trans "Prev" %}
-            </a>
-            {% endif %}
-            <span class="mx-3 small text-muted">
-                {% trans "Page" %} <strong>{{ page_obj.number }}</strong>
-                {% trans "of" %} {{ page_obj.paginator.num_pages }}
+        {% if page_obj.paginator.count %}
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mt-3 mb-2 px-2">
+
+            {# Record range + total, e.g. "Showing 1–20 of 5,432 records" #}
+            <span class="small text-muted">
+                {% trans "Showing" %}
+                <strong>{{ page_obj.start_index }}</strong>&ndash;<strong>{{ page_obj.end_index }}</strong>
+                {% trans "of" %} <strong>{{ page_obj.paginator.count }}</strong> {% trans "records" %}
             </span>
-            {% if page_obj.has_next %}
-            <a href="?module={{ active_module }}{% if is_login_log and status_filter %}&status={{ status_filter }}{% endif %}&page={{ page_obj.next_page_number }}"
-               class="oh-btn oh-btn--secondary mx-1">
-                {% trans "Next" %} &raquo;
-            </a>
+
+            {# Numbered navigation (only when more than one page) #}
+            {% if page_obj.paginator.num_pages > 1 %}
+            <nav class="d-flex flex-wrap align-items-center" aria-label="{% trans 'Audit log pagination' %}">
+                {% if page_obj.has_previous %}
+                <a href="?module={{ active_module }}{% if is_login_log and status_filter %}&status={{ status_filter }}{% endif %}&per_page={{ page_size }}&page={{ page_obj.previous_page_number }}"
+                   class="oh-btn oh-btn--secondary oh-btn--sm mx-1">&laquo; {% trans "Prev" %}</a>
+                {% else %}
+                <span class="oh-btn oh-btn--secondary oh-btn--sm mx-1" style="opacity:.45;pointer-events:none;" aria-disabled="true">&laquo; {% trans "Prev" %}</span>
+                {% endif %}
+
+                {% for num in page_range %}
+                    {% if num == page_obj.paginator.ELLIPSIS %}
+                    <span class="mx-1 text-muted">{{ num }}</span>
+                    {% elif num == page_obj.number %}
+                    <span class="oh-btn oh-btn--primary oh-btn--sm mx-1" aria-current="page">{{ num }}</span>
+                    {% else %}
+                    <a href="?module={{ active_module }}{% if is_login_log and status_filter %}&status={{ status_filter }}{% endif %}&per_page={{ page_size }}&page={{ num }}"
+                       class="oh-btn oh-btn--secondary oh-btn--sm mx-1">{{ num }}</a>
+                    {% endif %}
+                {% endfor %}
+
+                {% if page_obj.has_next %}
+                <a href="?module={{ active_module }}{% if is_login_log and status_filter %}&status={{ status_filter }}{% endif %}&per_page={{ page_size }}&page={{ page_obj.next_page_number }}"
+                   class="oh-btn oh-btn--secondary oh-btn--sm mx-1">{% trans "Next" %} &raquo;</a>
+                {% else %}
+                <span class="oh-btn oh-btn--secondary oh-btn--sm mx-1" style="opacity:.45;pointer-events:none;" aria-disabled="true">{% trans "Next" %} &raquo;</span>
+                {% endif %}
+            </nav>
             {% endif %}
+
+            {# Page-size selector — preserves module/status filter, resets to page 1 #}
+            <div class="d-flex align-items-center gap-2">
+                <label class="small text-muted m-0" for="auditPerPage">{% trans "Per page" %}</label>
+                <select id="auditPerPage" class="form-select form-select-sm" style="width:auto;"
+                        onchange="window.location.href='?module={{ active_module }}{% if is_login_log and status_filter %}&status={{ status_filter }}{% endif %}&per_page=' + this.value;">
+                    {% for size in page_size_options %}
+                    <option value="{{ size }}"{% if size == page_size %} selected{% endif %}>{{ size }}</option>
+                    {% endfor %}
+                </select>
+            </div>
         </div>
         {% endif %}
     </div>

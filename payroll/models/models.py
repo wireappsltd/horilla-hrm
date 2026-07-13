@@ -140,10 +140,10 @@ class Contract(HorillaModel):
         ("30days", _("30-Days")),
     ]
 
-    # CONTRACT_TYPE_CHOICES = (
-    #     ("sri_lanka", _("Sri Lankan Contract")),
-    #     ("uk", _("UK Contract")),
-    # )
+    CONTRACT_TYPE_CHOICES = (
+        ("sri_lanka", _("Sri Lankan Contract")),
+        ("uk", _("UK Contract")),
+    )
 
     if apps.is_installed("attendance"):
         WAGE_CHOICES.append(("hourly", _("Hourly")))
@@ -172,11 +172,12 @@ class Contract(HorillaModel):
         related_name="contract_set",
         verbose_name=_("Employee"),
     )
-    # contract_type = models.CharField(
-    #     choices=CONTRACT_TYPE_CHOICES,
-    #     default="sri_lanka",
-    #     verbose_name=_("Contract Type"),
-    # )
+    contract_type = models.CharField(
+        max_length=50,
+        choices=CONTRACT_TYPE_CHOICES,
+        default="sri_lanka",
+        verbose_name=_("Contract Type"),
+    )
     contract_start_date = models.DateField(verbose_name=_("Start Date"))
     contract_end_date = models.DateField(
         null=True, blank=True, verbose_name=_("End Date")
@@ -327,6 +328,7 @@ class Contract(HorillaModel):
                     )
 
     def save(self, *args, **kwargs):
+        self.wage_type = "30days"
         if EmployeeWorkInformation.objects.filter(
             employee_id=self.employee_id
         ).exists():
@@ -1626,6 +1628,7 @@ class Reimbursement(HorillaModel):
 
     reimbursement_types = [
         ("reimbursement", _("Reimbursement")),
+        ("bonus", _("Bonus")),
         ("bonus_encashment", _("Bonus Point Encashment")),
     ]
 
@@ -1700,7 +1703,7 @@ class Reimbursement(HorillaModel):
         ordering = ["-id"]
 
     def clean(self):
-        if self.amount and self.amount < 0 and self.type == "reimbursement":
+        if self.amount and self.amount < 0 and self.type in ("reimbursement", "bonus"):
             raise ValidationError({"amount": _("Amount must be greater than zero.")})
 
 
@@ -1746,6 +1749,8 @@ class Reimbursement(HorillaModel):
             super().save(*args, **kwargs)
             if self.status == "approved" and self.allowance_id is None:
                 if self.type == "reimbursement":
+                    proceed = True
+                elif self.type == "bonus":
                     proceed = True
                 elif self.type == "bonus_encashment":
                     proceed = False
@@ -1825,6 +1830,8 @@ class Reimbursement(HorillaModel):
                         assigned_leave.save()
                     self.allowance_id.delete()
                 if self.type == "reimbursement" and self.allowance_id is not None:
+                    self.allowance_id.delete()
+                if self.type == "bonus" and self.allowance_id is not None:
                     self.allowance_id.delete()
 
     def delete(self, *args, **kwargs):
