@@ -1195,6 +1195,7 @@ class IncidentReportForm(forms.ModelForm):
     """
 
     DESCRIPTION_MAX_LENGTH = 1000
+    BUSINESS_UNIT_MAX_LENGTH = 250
 
     employee = forms.ModelChoiceField(
         queryset=Employee.objects.none(),
@@ -1378,6 +1379,21 @@ class IncidentReportForm(forms.ModelForm):
             }
         )
 
+        # Business Unit / Process Affected character cap.
+        business_unit_error_message = _(
+            "Business Unit / Process Affected cannot exceed %(max_length)s characters."
+        ) % {"max_length": self.BUSINESS_UNIT_MAX_LENGTH}
+        business_unit_field = self.fields["business_unit"]
+        business_unit_field.max_length = self.BUSINESS_UNIT_MAX_LENGTH
+        business_unit_field.error_messages["max_length"] = business_unit_error_message
+        business_unit_field.widget.attrs.update(
+            {
+                "data-maxlength": str(self.BUSINESS_UNIT_MAX_LENGTH),
+                "data-maxlength-message": business_unit_error_message,
+                "maxlength": str(self.BUSINESS_UNIT_MAX_LENGTH),
+            }
+        )
+
         isc_user_qs = self.fields["forward_to"].queryset
         if self.instance and self.instance.pk:
             saved_forward = self.instance.forward_to.filter(
@@ -1447,6 +1463,11 @@ class IncidentReportForm(forms.ModelForm):
         value = (self.cleaned_data.get("business_unit") or "").strip()
         if not value:
             raise forms.ValidationError(_("This field is required."))
+        if len(value) > self.BUSINESS_UNIT_MAX_LENGTH:
+            raise forms.ValidationError(
+                _("Business Unit / Process Affected cannot exceed %(max_length)s characters.")
+                % {"max_length": self.BUSINESS_UNIT_MAX_LENGTH}
+            )
         return value
 
     def clean_deadline(self):
