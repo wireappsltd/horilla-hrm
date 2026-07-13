@@ -3683,7 +3683,7 @@ def access_request_create(request):
             )
             raised_on = ",".join(combined_employee_ids) or str(selected_employee.id)
 
-            unit = (access_request.system_application or "").strip()
+            unit = (access_request.get_domain_display() or "").strip()
             short_unit = (unit[:24] + "...") if len(unit) > 27 else unit
             ticket = Ticket(
                 title=f"Access Request – {short_unit}",
@@ -4211,7 +4211,7 @@ def exception_request_create(request):
             )
             raised_on = ",".join(combined_employee_ids) or str(selected_employee.id)
 
-            app = (exception_request.system_application or "").strip()
+            app = (exception_request.isms_reference or "").strip()
             short_app = (app[:27] + "...") if len(app) > 30 else app
             ticket = Ticket(
                 title=f"Exception Request – {short_app}",
