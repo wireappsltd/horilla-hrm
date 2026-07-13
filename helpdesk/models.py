@@ -100,12 +100,15 @@ ACCESS_DOMAIN_CHOICES = [
 ]
 
 # Two-stage approval lifecycle for Access Requests:
-#   PENDING → (ISO Officer approves) ISO_APPROVED → (IS Council approves)
-#           COMPLETED → (requestor acknowledges) CLOSED
+#   PENDING → (Divisional Head / IS Council approves) ISO_APPROVED
+#           → (ISO Officer approves) COMPLETED
+#           → (requestor acknowledges) CLOSED
 # Rejection at either stage is terminal → REJECTED.
+# NOTE: The intermediate status value remains "ISO_APPROVED" for backwards
+# compatibility, but it now represents Divisional Head (Stage 1) approval.
 ACCESS_REQUEST_STATUS_CHOICES = [
     ("PENDING", "Pending"),
-    ("ISO_APPROVED", "ISO Approved"),
+    ("ISO_APPROVED", "Divisional Head Approved"),
     ("COMPLETED", "Completed"),
     ("CLOSED", "Closed"),
     ("REJECTED", "Rejected"),

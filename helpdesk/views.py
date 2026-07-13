@@ -3671,15 +3671,16 @@ def access_request_create(request):
             forward_employee_ids, _emps = _get_forward_employee_ids_and_employees(
                 selected_forward_users
             )
-            # Stage 1 reviewers (ISO Officers) must also receive the ticket, so
-            # include their employee IDs in raised_on alongside the Stage 2
-            # (IS Council) recipients chosen in "Forward To".
-            iso_officer_users = _get_iso_officer_users()
-            iso_employee_ids, _iso_emps = _get_forward_employee_ids_and_employees(
-                iso_officer_users
+            # Stage 1 reviewers (Divisional Heads / IS Council) and Stage 2
+            # reviewers (ISO Officers) must all be able to see the ticket, so
+            # include their employee IDs in raised_on alongside the recipients
+            # chosen in "Forward To".
+            reviewer_users = _get_isc_users() + _get_iso_officer_users()
+            reviewer_employee_ids, _rev_emps = _get_forward_employee_ids_and_employees(
+                reviewer_users
             )
             combined_employee_ids = list(
-                dict.fromkeys(iso_employee_ids + forward_employee_ids)
+                dict.fromkeys(reviewer_employee_ids + forward_employee_ids)
             )
             raised_on = ",".join(combined_employee_ids) or str(selected_employee.id)
 
@@ -3709,17 +3710,17 @@ def access_request_create(request):
                 request.user, "employee_get", selected_employee
             )
 
-            # Stage 1: notify ISO Officers that a review is required.
+            # Stage 1: notify Divisional Heads (IS Council) that a review is required.
             try:
-                iso_users = [
+                stage1_users = [
                     u
-                    for u in _get_iso_officer_users()
+                    for u in _get_isc_users()
                     if u.pk != request.user.pk
                 ]
-                if iso_users:
+                if stage1_users:
                     notify.send(
                         notification_actor,
-                        recipient=iso_users,
+                        recipient=stage1_users,
                         verb=(
                             f"New Access Request submitted by "
                             f"{selected_employee.get_full_name()} awaiting your approval."
@@ -3736,7 +3737,7 @@ def access_request_create(request):
                 request,
                 _(
                     "Your access request has been submitted and is pending "
-                    "ISO Officer approval."
+                    "Divisional Head (IS Council) approval."
                 ),
             )
             return HttpResponse("<script>window.location.reload()</script>")
@@ -3849,11 +3850,15 @@ def _access_review_comment(ticket, actor_user, heading, status_label, body, feed
 @login_required
 def iso_review_access_request(request, ar_id):
     """
-    Stage 1 — ISO Officer approves or rejects a PENDING Access Request.
-    Approval advances the request to Stage 2 (IS Council review).
+    Stage 1 — Divisional Head (IS Council group) approves or rejects a PENDING
+    Access Request. Approval advances the request to Stage 2 (ISO Officer
+    review).
     """
-    if not request.user.is_superuser and not _is_iso_officer(request.user):
-        messages.info(request, _("Only an ISO Officer can review this request."))
+    if not request.user.is_superuser and not _is_isc_member(request.user):
+        messages.info(
+            request,
+            _("Only a Divisional Head (IS Council) can review this request."),
+        )
         return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
 
     access_request = AccessRequest.objects.get(id=ar_id)
@@ -3863,7 +3868,9 @@ def iso_review_access_request(request, ar_id):
         return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
 
     if access_request.status != "PENDING":
-        messages.info(request, _("This request is not awaiting ISO Officer review."))
+        messages.info(
+            request, _("This request is not awaiting Divisional Head review.")
+        )
         return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
 
     if request.method == "POST":
@@ -3872,8 +3879,8 @@ def iso_review_access_request(request, ar_id):
             action = review_form.cleaned_data["action"]
             feedback = review_form.cleaned_data.get("iso_feedback", "").strip()
 
-            access_request.iso_reviewed_by = request.user
-            access_request.iso_reviewed_at = timezone.now()
+            access_request.isc_reviewed_by = request.user
+            access_request.isc_reviewed_at = timezone.now()
             access_request.feedback = feedback
             ticket = access_request.ticket
             requestor = ticket.employee_id
@@ -3884,25 +3891,25 @@ def iso_review_access_request(request, ar_id):
                 _access_review_comment(
                     ticket,
                     request.user,
-                    _("ISO Review – Approved"),
-                    _("ISO Approved"),
-                    _("Forwarded to the IS Council for final approval."),
+                    _("Divisional Head Review – Approved"),
+                    _("Divisional Head Approved"),
+                    _("Forwarded to the ISO Officer for evaluation."),
                     feedback,
                 )
-                verb = _("Your access request has been approved by the ISO Officer and forwarded to the IS Council.")
+                verb = _("Your access request has been approved by the Divisional Head and forwarded to the ISO Officer.")
                 messages.success(request, _("Access request approved (Stage 1)."))
-                # Notify Stage 2 reviewers (IS Council members).
+                # Notify Stage 2 reviewers (ISO Officers).
                 try:
-                    isc_recipients = list(access_request.forward_to.all()) or [
-                        u for u in _get_isc_users()
+                    iso_recipients = [
+                        u for u in _get_iso_officer_users() if u.pk != request.user.pk
                     ]
-                    if isc_recipients:
+                    if iso_recipients:
                         notify.send(
                             request.user.employee_get,
-                            recipient=isc_recipients,
+                            recipient=iso_recipients,
                             verb=(
                                 f"Access request by {requestor.get_full_name()} "
-                                f"is awaiting IS Council approval."
+                                f"is awaiting ISO Officer approval."
                             ),
                             icon="shield-checkmark",
                             redirect=reverse(
@@ -3910,19 +3917,19 @@ def iso_review_access_request(request, ar_id):
                             ),
                         )
                 except Exception as exc:
-                    logger.error("Access request ISC notify error: %s", exc)
+                    logger.error("Access request ISO notify error: %s", exc)
             else:
                 access_request.status = "REJECTED"
                 ticket.status = "canceled"
                 _access_review_comment(
                     ticket,
                     request.user,
-                    _("ISO Review – Rejected"),
+                    _("Divisional Head Review – Rejected"),
                     _("Rejected"),
-                    _("Your access request has been rejected by the ISO Officer."),
+                    _("Your access request has been rejected by the Divisional Head."),
                     feedback,
                 )
-                verb = _("Your access request has been rejected by the ISO Officer.")
+                verb = _("Your access request has been rejected by the Divisional Head.")
                 messages.success(request, _("Access request rejected."))
 
             access_request.save()
@@ -3950,11 +3957,12 @@ def iso_review_access_request(request, ar_id):
 @login_required
 def isc_review_access_request(request, ar_id):
     """
-    Stage 2 — IS Council approves or rejects an Access Request that has
-    already cleared Stage 1 (ISO Officer). Approval completes the request.
+    Stage 2 — ISO Officer approves or rejects an Access Request that has
+    already cleared Stage 1 (Divisional Head / IS Council). Approval completes
+    the request.
     """
-    if not request.user.is_superuser and not _is_isc_member(request.user):
-        messages.info(request, _("Only an IS Council member can review this request."))
+    if not request.user.is_superuser and not _is_iso_officer(request.user):
+        messages.info(request, _("Only an ISO Officer can review this request."))
         return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
 
     access_request = AccessRequest.objects.get(id=ar_id)
@@ -3966,7 +3974,7 @@ def isc_review_access_request(request, ar_id):
     if access_request.status != "ISO_APPROVED":
         messages.info(
             request,
-            _("This request must be approved by the ISO Officer before IS Council review."),
+            _("This request must be approved by the Divisional Head before ISO Officer review."),
         )
         return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
 
@@ -3976,8 +3984,8 @@ def isc_review_access_request(request, ar_id):
             action = review_form.cleaned_data["action"]
             feedback = review_form.cleaned_data.get("iso_feedback", "").strip()
 
-            access_request.isc_reviewed_by = request.user
-            access_request.isc_reviewed_at = timezone.now()
+            access_request.iso_reviewed_by = request.user
+            access_request.iso_reviewed_at = timezone.now()
             access_request.feedback = feedback
             ticket = access_request.ticket
             requestor = ticket.employee_id
@@ -3988,12 +3996,12 @@ def isc_review_access_request(request, ar_id):
                 _access_review_comment(
                     ticket,
                     request.user,
-                    _("IS Council Review – Approved"),
+                    _("ISO Officer Review – Approved"),
                     _("Completed"),
-                    _("Your access request has been approved by the IS Council."),
+                    _("Your access request has been approved by the ISO Officer."),
                     feedback,
                 )
-                verb = _("Your access request has been approved by the IS Council and completed.")
+                verb = _("Your access request has been approved by the ISO Officer and completed.")
                 messages.success(request, _("Access request approved (Stage 2)."))
             else:
                 access_request.status = "REJECTED"
@@ -4001,12 +4009,12 @@ def isc_review_access_request(request, ar_id):
                 _access_review_comment(
                     ticket,
                     request.user,
-                    _("IS Council Review – Rejected"),
+                    _("ISO Officer Review – Rejected"),
                     _("Rejected"),
-                    _("Your access request has been rejected by the IS Council."),
+                    _("Your access request has been rejected by the ISO Officer."),
                     feedback,
                 )
-                verb = _("Your access request has been rejected by the IS Council.")
+                verb = _("Your access request has been rejected by the ISO Officer.")
                 messages.success(request, _("Access request rejected."))
 
             access_request.save()
