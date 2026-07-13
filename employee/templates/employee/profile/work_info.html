@@ -111,10 +111,42 @@
     </div>
 <script>
 $(document).ready(function () {
+    var $currency = $("#id_salary_currency");
+
+    // Ensure the currency picker is scrolled into view when it is focused or
+    // its dropdown is opened. Fixes the "focus not repositioned" bug where the
+    // Select2 dropdown could open partially off-screen.
+    function bringCurrencyIntoView() {
+        var el = document.getElementById("id_salary_currency");
+        if (el) {
+            el.scrollIntoView({ block: "center", behavior: "smooth" });
+        }
+    }
+
+    // Select2-enhanced currency picker: when it opens, reposition the page and
+    // focus the search box so it is immediately usable.
+    $(document).on("select2:open", "#id_salary_currency", function () {
+        bringCurrencyIntoView();
+        window.setTimeout(function () {
+            var search = document.querySelector(
+                ".select2-container--open .select2-search__field"
+            );
+            if (search) {
+                search.focus();
+            }
+        }, 0);
+    });
+
+    // Native <select> fallback (when Select2 is not applied).
+    $currency.on("focus mousedown", bringCurrencyIntoView);
+
     function toggleSalaryFields() {
         var selectedText = $("#id_employee_type_id option:selected").text().trim().toLowerCase();
         if (selectedText === "intern") {
             $(".intern-salary-fields").show();
+            if ($currency.hasClass("select2-hidden-accessible")) {
+                $currency.trigger("change.select2");
+            }
         } else {
             $(".intern-salary-fields").hide();
         }

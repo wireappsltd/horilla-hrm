@@ -271,6 +271,18 @@ class EmployeeForm(ModelForm):
             if _field_name in self.fields:
                 self.fields[_field_name].widget.attrs["onwheel"] = "this.blur()"
 
+        # Emergency contact order should be: Name -> Contact -> Relationship.
+        if (
+            "emergency_contact_name" in self.fields
+            and "emergency_contact" in self.fields
+        ):
+            ordered = list(self.fields.keys())
+            ordered.remove("emergency_contact_name")
+            ordered.insert(
+                ordered.index("emergency_contact"), "emergency_contact_name"
+            )
+            self.order_fields(ordered)
+
         if instance := kwargs.get("instance"):
             # ----
             # django forms not showing value inside the date, time html element.
@@ -386,11 +398,28 @@ class EmployeeForm(ModelForm):
 
 
         if phone:
-            if not re.fullmatch(r"07\d{8}", str(phone)):
-                self.add_error(
-                    "phone",
-                    _("Enter a valid mobile number (e.g. 07XXXXXXXX).")
-                )
+            # Country dial code selected next to the phone field. Defaults to Sri
+            # Lanka (+94) but any valid country code can be chosen.
+            dial_code = (self.data.get("phone_country_code") or "+94").strip()
+            national = re.sub(r"\D", "", str(phone)).lstrip("0")
+            if dial_code == "+94":
+                # Sri Lankan mobile: 9 digits starting with 7 (leading 0 optional).
+                if not re.fullmatch(r"7\d{8}", national):
+                    self.add_error(
+                        "phone",
+                        _("Enter a valid Sri Lankan mobile number (e.g. 07XXXXXXXX)."),
+                    )
+                else:
+                    self.cleaned_data["phone"] = f"{dial_code}{national}"
+            else:
+                # Generic international validation for any other country code.
+                if not re.fullmatch(r"\d{6,14}", national):
+                    self.add_error(
+                        "phone",
+                        _("Enter a valid mobile number for the selected country code."),
+                    )
+                else:
+                    self.cleaned_data["phone"] = f"{dial_code}{national}"
 
         if nic:
             nic_qs = Employee.objects.entire().filter(nic=nic)
