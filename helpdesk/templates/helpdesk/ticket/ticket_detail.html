@@ -2341,7 +2341,8 @@
         var err = document.getElementById('incidentCloseError');
         if (!input.value.trim()) { e.preventDefault(); err.style.display = 'block'; input.focus(); return false; }
         err.style.display = 'none';
-    </script>
+    });
+</script>
 {% endif %}
 
 {% if change_request %}
