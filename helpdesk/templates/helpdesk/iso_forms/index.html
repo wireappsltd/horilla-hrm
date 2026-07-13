@@ -24,6 +24,15 @@
         border-radius: 5px;
     }
 
+    .iso-col--actions { text-align: right; }
+    .iso-col--actions .oh-btn-group {
+        display: inline-flex;
+        align-items: center;
+        justify-content: flex-end;
+        flex-wrap: nowrap;
+        white-space: nowrap;
+    }
+
     #password-reset-table .oh-sticky-table__th,
     #password-reset-table .oh-sticky-table__td,
     #password-reset-table .oh-sticky-table__sd {
@@ -65,6 +74,7 @@
     #password-reset-table .iso-col--actions {
         width: 176px;
         min-width: 176px;
+        text-align: right;
     }
     #password-reset-table .iso-ellipsis {
         display: block;
@@ -113,7 +123,7 @@
     #access-request-table .iso-col--status { width: 200px; min-width: 200px; }
     #access-request-table .iso-col--status .oh-badge { white-space: nowrap; }
     #access-request-table .iso-col--updated { width: 155px; min-width: 155px; }
-    #access-request-table .iso-col--actions { width: 176px; min-width: 176px; }
+    #access-request-table .iso-col--actions { width: 176px; min-width: 176px; text-align: right; }
     #access-request-table .iso-ellipsis {
         display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
@@ -124,6 +134,27 @@
     #access-request-table .iso-col--actions .w-50,
     #access-request-table .iso-col--actions .w-100 { width: auto !important; flex: 0 0 auto; }
     #access-request-table .iso-col--actions .oh-btn { min-width: 34px; }
+
+    #change-request-table .oh-sticky-table__th,
+    #change-request-table .oh-sticky-table__td,
+    #change-request-table .oh-sticky-table__sd { width: auto; }
+    #change-request-table .iso-col--ticket { width: 105px; min-width: 105px; }
+    #change-request-table .iso-col--platform { width: 140px; min-width: 140px; }
+    #change-request-table .iso-col--user { width: 200px; min-width: 200px; }
+    #change-request-table .iso-col--status { width: 200px; min-width: 200px; }
+    #change-request-table .iso-col--status .oh-badge { white-space: nowrap; }
+    #change-request-table .iso-col--updated { width: 155px; min-width: 155px; }
+    #change-request-table .iso-col--actions { width: 200px; min-width: 200px; text-align: right; }
+    #change-request-table .iso-ellipsis {
+        display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    #change-request-table .iso-col--actions .oh-btn-group {
+        display: inline-flex; align-items: center; justify-content: flex-end;
+        flex-wrap: nowrap; white-space: nowrap; gap: 0;
+    }
+    #change-request-table .iso-col--actions .w-50,
+    #change-request-table .iso-col--actions .w-100 { width: auto !important; flex: 0 0 auto; }
+    #change-request-table .iso-col--actions .oh-btn { min-width: 34px; }
 </style>
 
 <section class="oh-wrapper oh-main__topbar">

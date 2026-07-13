@@ -25,6 +25,26 @@
         margin-right: 16px;
     }
 
+    @media screen and (min-width: 992px) {
+        .oh-helpdesk {
+            height: calc(100vh - 65px);
+            overflow: hidden;
+        }
+
+        .oh-helpdesk__left {
+            display: flex;
+            flex-direction: column;
+            height: calc(100vh - 65px);
+            overflow: hidden;
+        }
+
+        .oh-helpdesk__body {
+            height: auto;
+            flex: 1 1 auto;
+            min-height: 0;
+        }
+    }
+
     .oh-profile__avatar-limit-height {
         height: 30px !important;
     }
@@ -1604,6 +1624,16 @@
                                         {% empty %}
                                             <li class="oh-helpdesk__subcard-item">—</li>
                                         {% endfor %}
+                                    {% elif change_request or access_request or exception_request or admin_access_request or incident_report %}
+                                        {% with iso_form_request=change_request|default:access_request|default:exception_request|default:admin_access_request|default:incident_report %}
+                                        {% for officer_user in iso_form_request.forward_to.all %}
+                                            <li class="oh-helpdesk__subcard-item">
+                                                {{ officer_user.employee_get.get_full_name|default:officer_user.get_full_name|default:officer_user.username }}
+                                            </li>
+                                        {% empty %}
+                                            <li class="oh-helpdesk__subcard-item">—</li>
+                                        {% endfor %}
+                                        {% endwith %}
                                     {% else %}
                                         {% for obj in ticket.get_raised_on_objects %}
                                             <li class="oh-helpdesk__subcard-item">{{ obj }}</li>
@@ -1738,7 +1768,6 @@
         <!-- end of right side contents. -->
 
     </div>
-</div>
 </div>
 
 <!-- start of create tag modal. -->
@@ -2422,11 +2451,28 @@
 </div>
 
 <script>
-    // Toggle the "Change Implementer" selector based on the Self-Implementer answer.
     function changeRequestToggleImplementer(selectEl) {
         var wrapper = document.getElementById("changeImplementerSelectWrapper");
         if (!wrapper) { return; }
-        wrapper.style.display = (selectEl && selectEl.value === "no") ? "" : "none";
+        var show = (selectEl && selectEl.value === "no");
+        wrapper.style.display = show ? "" : "none";
+        if (window.jQuery) {
+            var $ = window.jQuery;
+            var $select = $(wrapper).find("select.oh-select-2, select#id_implementer");
+            if ($select.length) {
+                try {
+                    if ($select.hasClass("select2-hidden-accessible")) {
+                        $select.select2("destroy");
+                    }
+                } catch (e) { /* not yet initialised */ }
+                if (show) {
+                    $select.select2({
+                        width: "100%",
+                        dropdownParent: $(wrapper),
+                    });
+                }
+            }
+        }
     }
     // Toggle the "Special Support Description" based on the Special Support answer.
     function changeRequestToggleSupport(selectEl) {

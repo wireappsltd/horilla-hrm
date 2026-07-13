@@ -5759,7 +5759,9 @@ def _build_change_request_description(change_request):
     """Render the Section 1 (Change Requester) summary as ticket description."""
     parts = [
         "<b>Change Request Details:</b><br><br>",
+        f"<b>Summary:</b> {strip_tags(change_request.summary)}<br>",
         f"<b>Categorisation:</b> {change_request.get_categorisation_display()}<br>",
+        f"<b>Reason for Change Categorisation:</b> {strip_tags(change_request.categorisation_reason)}<br>",
         f"<b>Change Type:</b> {change_request.get_change_type_display()}<br>",
     ]
     if change_request.change_type == "temporary" and change_request.expiry_date:
@@ -5768,8 +5770,7 @@ def _build_change_request_description(change_request):
         [
             f"<b>Services / Systems Impacted:</b> {strip_tags(change_request.services_impacted)}<br>",
             f"<b>Change Required By:</b> {change_request.change_required_by}<br>",
-            f"<b>Change Requested By:</b> {change_request.change_requested_by}<br>",
-            f"<b>Summary:</b> {strip_tags(change_request.summary)}",
+            f"<b>Change Requested By:</b> {change_request.change_requested_by}",
         ]
     )
     return "".join(parts)

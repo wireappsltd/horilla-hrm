@@ -1664,6 +1664,7 @@ class ChangeRequesterForm(forms.ModelForm):
 
         # Expiry Date is conditionally required (validated in clean()).
         self.fields["expiry_date"].required = False
+        self.fields["expiry_date"].widget.attrs["min"] = timezone.localdate().isoformat()
 
         summary_error_message = _(
             "Summary cannot exceed %(max_length)s characters."
@@ -1755,6 +1756,14 @@ class ChangeRequesterForm(forms.ModelForm):
             raise forms.ValidationError(_("Due date cannot be in the past."))
         return deadline
 
+    def clean_expiry_date(self):
+        expiry_date = self.cleaned_data.get("expiry_date")
+        if expiry_date is None:
+            return expiry_date
+        if expiry_date < timezone.localdate():
+            raise forms.ValidationError(_("Expiry date cannot be in the past."))
+        return expiry_date
+
     def clean(self):
         cleaned_data = super().clean()
         change_type = cleaned_data.get("change_type")
@@ -1813,7 +1822,7 @@ class ChangeImplementerForm(forms.ModelForm):
         widgets = {
             "is_self_implementer": forms.Select(
                 attrs={
-                    "class": "oh-select oh-select-2 w-100",
+                    "class": "oh-select w-100",
                     "onchange": "changeRequestToggleImplementer(this)",
                 }
             ),
@@ -1823,7 +1832,7 @@ class ChangeImplementerForm(forms.ModelForm):
             "effort_estimate": forms.TextInput(attrs={"class": "oh-input w-100"}),
             "special_support": forms.Select(
                 attrs={
-                    "class": "oh-select oh-select-2 w-100",
+                    "class": "oh-select w-100",
                     "onchange": "changeRequestToggleSupport(this)",
                 }
             ),
@@ -1837,7 +1846,7 @@ class ChangeImplementerForm(forms.ModelForm):
                 attrs={"class": "oh-input w-100", "rows": 2}
             ),
             "system_outage": forms.Select(
-                attrs={"class": "oh-select oh-select-2 w-100"}
+                attrs={"class": "oh-select w-100"}
             ),
             "scheduled_outage_date": forms.DateInput(
                 attrs={"class": "oh-input w-100", "type": "date"}
