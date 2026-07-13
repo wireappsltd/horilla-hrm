@@ -889,6 +889,15 @@ def leave_request_filter(request):
 
     queryset = queryset | multiple_approvals
     leave_request_filter = LeaveRequestFilter(request.GET, queryset).qs
+    leave_request_filter = leave_request_filter.order_by(
+        Case(
+            When(status="requested", then=Value(0)),
+            default=Value(1),
+            output_field=IntegerField(),
+        ),
+        "-start_date",
+        "-id",
+    )
     page_number = request.GET.get("page")
     template = ("leave/leave_request/leave_requests.html",)
     if request.GET.get("sortby"):
