@@ -3799,7 +3799,7 @@ def access_request_update(request, ar_id):
             ticket.employee_id = selected_employee
             ticket.priority = form.cleaned_data.get("priority")
             ticket.deadline = form.cleaned_data.get("deadline")
-            unit = (access_request.system_application or "").strip()
+            unit = (access_request.get_domain_display() or "").strip()
             short_unit = (unit[:24] + "...") if len(unit) > 27 else unit
             ticket.title = f"Access Request – {short_unit}"
             ticket.description = _build_access_request_description(
@@ -4337,7 +4337,7 @@ def exception_request_update(request, er_id):
             ticket.employee_id = selected_employee
             ticket.priority = form.cleaned_data.get("priority")
             ticket.deadline = form.cleaned_data.get("deadline")
-            app = (exception_request.system_application or "").strip()
+            app = (exception_request.isms_reference or "").strip()
             short_app = (app[:27] + "...") if len(app) > 30 else app
             ticket.title = f"Exception Request – {short_app}"
             ticket.description = _build_exception_request_description(
