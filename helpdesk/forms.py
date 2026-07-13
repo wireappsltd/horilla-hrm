@@ -1503,7 +1503,7 @@ class IncidentPostReviewForm(forms.ModelForm):
         fields = ["post_review_classification"]
         widgets = {
             "post_review_classification": forms.Select(
-                attrs={"class": "oh-select oh-select-2 w-100"}
+                attrs={"class": "oh-select w-100"}
             ),
         }
         labels = {
@@ -1981,9 +1981,7 @@ class ISCApprovalForm(forms.ModelForm):
         model = ChangeRequest
         fields = ["isc_approval", "isc_comments"]
         widgets = {
-            "isc_approval": forms.Select(
-                attrs={"class": "oh-select oh-select-2 w-100"}
-            ),
+            "isc_approval": forms.Select(attrs={"class": "oh-select w-100"}),
             "isc_comments": forms.Textarea(
                 attrs={"class": "oh-input w-100", "rows": 2}
             ),
@@ -2024,14 +2022,12 @@ class ChangeReleaseForm(forms.ModelForm):
             "rollback_plan": forms.Textarea(
                 attrs={"class": "oh-input w-100", "rows": 3}
             ),
-            "uat_accepted": forms.Select(
-                attrs={"class": "oh-select oh-select-2 w-100"}
-            ),
+            "uat_accepted": forms.Select(attrs={"class": "oh-select w-100"}),
             "released_to_production": forms.Select(
-                attrs={"class": "oh-select oh-select-2 w-100"}
+                attrs={"class": "oh-select w-100"}
             ),
             "acceptance_of_completion": forms.Select(
-                attrs={"class": "oh-select oh-select-2 w-100"}
+                attrs={"class": "oh-select w-100"}
             ),
         }
 

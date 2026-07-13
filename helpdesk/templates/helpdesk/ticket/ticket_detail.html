@@ -2274,7 +2274,7 @@
                 {% csrf_token %}
                 <div class="oh-form__group">
                     <label class="oh-label oh-label--mandatory">{% trans "Post-Review Classification" %}</label>
-                    <select name="post_review_classification" id="incidentResolveClassification" class="oh-select oh-select-2 w-100">
+                    <select name="post_review_classification" id="incidentResolveClassification" class="oh-select w-100">
                         {% for choice in incident_post_review_form.fields.post_review_classification.choices %}
                             <option value="{{ choice.0 }}" {% if choice.0 == incident_report.post_review_classification %}selected{% endif %}>{{ choice.1 }}</option>
                         {% endfor %}
