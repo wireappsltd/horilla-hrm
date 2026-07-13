@@ -20,6 +20,7 @@ from django.http import HttpResponse, HttpResponseBadRequest, HttpResponseRedire
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.encoding import force_str
+from django.utils.html import format_html
 from django.utils.translation import gettext as __
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_http_methods
@@ -63,7 +64,7 @@ from leave.methods import (
 
 )
 from leave.models import *
-from leave.models import leave_requested_dates
+from leave.models import cal_effective_requested_days, leave_requested_dates
 from leave.threading import LeaveMailSendThread
 from notifications.signals import notify
 from openpyxl import Workbook
@@ -4321,9 +4322,56 @@ def employee_available_leave_count(request):
     )
 
 
-
 @login_required
 @hx_request_required
+def employee_leave_count(request):
+    """
+    Returns the read-only leave count the employee is applying for, computed
+    from the selected start/end dates, the start/end date breakdowns (half-day
+    selections) and the leave type).
+    """
+    leave_type_id = request.GET.get("leave_type_id")
+    start_date_str = request.GET.get("start_date")
+    end_date_str = request.GET.get("end_date")
+    start_date_breakdown = request.GET.get("start_date_breakdown") or "full_day"
+    end_date_breakdown = request.GET.get("end_date_breakdown") or "full_day"
+
+    try:
+        start_date = datetime.strptime(start_date_str, "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        start_date = None
+    try:
+        end_date = datetime.strptime(end_date_str, "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        end_date = None
+
+    leave_count = None
+    if start_date:
+        # Fall back to a single-day request when no (or an invalid) end date is
+        # chosen; ignore ranges where the end date precedes the start date.
+        if end_date is None:
+            end_date = start_date
+        if end_date >= start_date:
+            leave_count = calculate_requested_days(
+                start_date, end_date, start_date_breakdown, end_date_breakdown
+            )
+            leave_type = LeaveType.objects.filter(id=leave_type_id).first()
+            if leave_type:
+                leave_count = cal_effective_requested_days(
+                    start_date, end_date, leave_type, leave_count
+                )
+
+    if leave_count is None:
+        return HttpResponse(
+            format_html(
+                '<span class="text-muted">{}</span>',
+                _("Select dates to calculate"),
+            )
+        )
+    return HttpResponse(leave_count)
+
+
+@login_required
 @manager_can_enter("base.add_penaltyaccounts")
 def cut_available_leave(request, instance_id):
     """

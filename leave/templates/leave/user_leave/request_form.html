@@ -45,6 +45,25 @@
                 {% endif %}
             {% endfor %}
         </div>
+        <div class="row">
+            <div class="col-12 col-md-6">
+                <div class="form-group oh-form-group">
+                    <label class="oh-label">
+                        {% trans "Leave Count" %}
+                    </label>
+                    <div id="leaveCountWrapper"
+                         class="form-control oh-input w-100 d-flex align-items-center"
+                         style="background-color:#f3f4f6; cursor:not-allowed; min-height:38px;"
+                         hx-get="{% url 'employee-leave-count' %}"
+                         hx-include="#userLeaveForm"
+                         hx-target="#leaveCountWrapper"
+                         hx-swap="innerHTML"
+                         hx-trigger="change from:#id_leave_type_id, change from:#id_start_date, change from:#id_end_date, change from:#id_start_date_breakdown, change from:#id_end_date_breakdown">
+                        <span class="text-muted">{% trans "Select dates to calculate" %}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
         <div class="row" style="margin-top: 10px;">
             <div class="col-12">
                 <div id="attachmentLabelWrapper">
