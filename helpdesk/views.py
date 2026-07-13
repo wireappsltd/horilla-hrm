@@ -809,11 +809,19 @@ def change_ticket_status(request, ticket_id):
                 status_action = "Ticket reopened"
             else:
                 status_action = "Ticket status changed"
+            status_changes = {"status": {"from": pre_status, "to": cur_status_display}}
+            # SLA impact: when resolving/closing, record the deadline and flag a
+            # breach if the ticket is being closed out after its deadline.
+            if status in ("resolved", "closed") and ticket.deadline:
+                resolved_on = datetime.now().date()
+                status_changes["sla_deadline"] = str(ticket.deadline)
+                status_changes["resolved_on"] = str(resolved_on)
+                status_changes["sla_breached"] = resolved_on > ticket.deadline
             _helpdesk_audit(
                 request,
                 status_action,
                 ticket,
-                {"status": {"from": pre_status, "to": cur_status_display}},
+                status_changes,
             )
             time = datetime.now()
             time = time.strftime("%b. %d, %Y, %I:%M %p")
@@ -1584,6 +1592,7 @@ def create_tag(request):
 
         if form.is_valid():
             instance = form.save()
+            _helpdesk_audit(request, "Ticket tag created", None, {"tag": instance.title})
             response = {
                 "errors": "no_error",
                 "tag_id": instance.id,
@@ -1608,6 +1617,7 @@ def remove_tag(request):
         ticket = Ticket.objects.get(id=ticket_id)
         tag = Tags.objects.get(id=tag_id)
         ticket.tags.remove(tag)
+        _helpdesk_audit(request, "Ticket tag removed", ticket, {"tag": tag.title})
         # message = messages.success(request,_("Success"))
         message = _("success")
         type = "success"
@@ -2014,13 +2024,12 @@ def approve_claim_request(request, req_id):
     claim_request.is_approved = approve
     claim_request.is_rejected = not approve
     claim_request.save()
-    if approve:
-        _helpdesk_audit(
-            request,
-            "Ticket claim approved",
-            ticket,
-            {"claimed_by": employee.get_full_name()},
-        )
+    _helpdesk_audit(
+        request,
+        "Ticket claim approved" if approve else "Ticket claim rejected",
+        ticket,
+        {"claimed_by": employee.get_full_name()},
+    )
     html = render_to_string(
         "helpdesk/ticket/ticket_claim_requests.html",
         {"claim_requests": ticket.claimrequest_set.all(), "refresh": refresh},
@@ -2892,6 +2901,17 @@ def password_reset_request_create(request):
             # tracked normally.
             PasswordResetRequestForm._consolidate_create_history(pr_request)
 
+            _helpdesk_audit(
+                request,
+                "Password reset request created",
+                ticket,
+                {
+                    "platform": platform,
+                    "forward_to": pr_request.get_forward_to_display() or None,
+                    "status": pr_request.get_iso_status_display(),
+                },
+            )
+
             notification_actor = getattr(request.user, "employee_get", selected_employee)
 
             # In-app notification to selected ISO officers/admins (forward recipients)
@@ -3027,6 +3047,14 @@ def password_reset_request_update(request, pr_id):
             # selected_forward_users are already User objects.
             pr_request.forward_to.set(selected_forward_users)
 
+            log_form_changes(
+                request.user,
+                "helpdesk",
+                "Password reset request updated",
+                form,
+                target=ticket,
+            )
+
             messages.success(request, _("Password reset request updated successfully."))
             return HttpResponse("<script>window.location.reload()</script>")
 
@@ -3063,12 +3091,15 @@ def iso_review_password_reset(request, pr_id):
             action = review_form.cleaned_data["action"]
             feedback = review_form.cleaned_data.get("iso_feedback", "").strip()
 
+            old_iso_status = pr_request.get_iso_status_display()
+
             pr_request.reviewed_by = request.user
             pr_request.reviewed_at = timezone.now()
             pr_request.iso_feedback = feedback
 
             ticket = pr_request.ticket
             requestor = ticket.employee_id
+            old_ticket_status = ticket.get_status_display()
 
             if action == "approve":
                 # Approving does NOT create an "Approved" resting status: the
@@ -3092,6 +3123,19 @@ def iso_review_password_reset(request, pr_id):
 
             pr_request.save()
             ticket.save()
+
+            _helpdesk_audit(
+                request,
+                "Password reset request approved" if action == "approve"
+                else "Password reset request rejected",
+                ticket,
+                {
+                    "status": {"from": old_iso_status, "to": pr_request.get_iso_status_display()},
+                    "ticket_status": {"from": old_ticket_status, "to": ticket.get_status_display()},
+                    "reviewer": request.user.get_full_name() or request.user.username,
+                    "feedback": feedback or None,
+                },
+            )
 
             # Create a comment on the ticket so it shows up in the activity feed
             try:
@@ -3220,6 +3264,8 @@ def password_reset_mark_awaiting(request, pr_id):
     ticket = pr_request.ticket
     requestor = ticket.employee_id
 
+    old_iso_status = pr_request.get_iso_status_display()
+
     pr_request.iso_status = "AWAITING_ACKNOWLEDGEMENT"
     pr_request.actioned_by = request.user
     pr_request.save()
@@ -3227,6 +3273,16 @@ def password_reset_mark_awaiting(request, pr_id):
     # Keep the underlying ticket status meaningful for the rest of the helpdesk UI.
     ticket.status = "on_hold"
     ticket.save()
+
+    _helpdesk_audit(
+        request,
+        "Password reset request marked awaiting acknowledgement",
+        ticket,
+        {
+            "status": {"from": old_iso_status, "to": pr_request.get_iso_status_display()},
+            "note": comment or None,
+        },
+    )
 
     # Inline audit entry on the existing comment thread (spec §5/§7).
     try:
@@ -3293,11 +3349,23 @@ def password_reset_acknowledge(request, pr_id):
     comment = form.cleaned_data["comment"]
     ticket = pr_request.ticket
 
+    old_iso_status = pr_request.get_iso_status_display()
+
     pr_request.iso_status = "CLOSED"
     pr_request.closed_by = request.user
     pr_request.save()
     ticket.status = "resolved"
     ticket.save()
+
+    _helpdesk_audit(
+        request,
+        "Password reset request acknowledged",
+        ticket,
+        {
+            "status": {"from": old_iso_status, "to": pr_request.get_iso_status_display()},
+            "note": comment or None,
+        },
+    )
 
     try:
         Comment.objects.create(
@@ -3370,6 +3438,13 @@ def password_reset_request_withdraw(request, pr_id):
     platform = pr_request.platform
     ticket_title = str(ticket)
 
+    _helpdesk_audit(
+        request,
+        "Password reset request withdrawn",
+        ticket,
+        {"platform": platform, "title": ticket_title},
+    )
+
     # Delete the request and ticket
     pr_request.delete()
     ticket.delete()
@@ -3397,6 +3472,13 @@ def password_reset_request_delete(request, pr_id):
             pr_request = PasswordResetRequest.objects.get(id=pr_id)
             ticket = pr_request.ticket
             ticket_title = str(ticket)
+
+            _helpdesk_audit(
+                request,
+                "Password reset request deleted",
+                ticket,
+                {"platform": pr_request.platform, "title": ticket_title},
+            )
 
             # Send delete notification
             try:
@@ -3564,6 +3646,16 @@ def access_request_create(request):
             access_request.save()
             access_request.forward_to.set(selected_forward_users)
 
+            _helpdesk_audit(
+                request,
+                "Access request created",
+                ticket,
+                {
+                    "status": access_request.get_status_display(),
+                    "forward_to": access_request.get_forward_to_display() or None,
+                },
+            )
+
             notification_actor = getattr(
                 request.user, "employee_get", selected_employee
             )
@@ -3674,6 +3766,14 @@ def access_request_update(request, ar_id):
             ticket.assigned_to.clear()
             ticket.assigned_to.add(selected_employee)
 
+            log_form_changes(
+                request.user,
+                "helpdesk",
+                "Access request updated",
+                form,
+                target=ticket,
+            )
+
             messages.success(request, _("Access request updated successfully."))
             return HttpResponse("<script>window.location.reload()</script>")
 
@@ -3740,6 +3840,9 @@ def iso_review_access_request(request, ar_id):
             ticket = access_request.ticket
             requestor = ticket.employee_id
 
+            old_status = access_request.get_status_display()
+            old_ticket_status = ticket.get_status_display()
+
             if action == "approve":
                 access_request.status = "ISO_APPROVED"
                 ticket.status = "in_progress"
@@ -3789,6 +3892,20 @@ def iso_review_access_request(request, ar_id):
 
             access_request.save()
             ticket.save()
+
+            _helpdesk_audit(
+                request,
+                "Access request approved" if action == "approve"
+                else "Access request rejected",
+                ticket,
+                {
+                    "status": {"from": old_status, "to": access_request.get_status_display()},
+                    "ticket_status": {"from": old_ticket_status, "to": ticket.get_status_display()},
+                    "reviewer": request.user.get_full_name() or request.user.username,
+                    "feedback": feedback or None,
+                    "stage": "ISO Officer",
+                },
+            )
 
             try:
                 notify.send(
@@ -3844,6 +3961,9 @@ def isc_review_access_request(request, ar_id):
             ticket = access_request.ticket
             requestor = ticket.employee_id
 
+            old_status = access_request.get_status_display()
+            old_ticket_status = ticket.get_status_display()
+
             if action == "approve":
                 access_request.status = "COMPLETED"
                 ticket.status = "resolved"
@@ -3873,6 +3993,20 @@ def isc_review_access_request(request, ar_id):
 
             access_request.save()
             ticket.save()
+
+            _helpdesk_audit(
+                request,
+                "Access request approved" if action == "approve"
+                else "Access request rejected",
+                ticket,
+                {
+                    "status": {"from": old_status, "to": access_request.get_status_display()},
+                    "ticket_status": {"from": old_ticket_status, "to": ticket.get_status_display()},
+                    "reviewer": request.user.get_full_name() or request.user.username,
+                    "feedback": feedback or None,
+                    "stage": "IS Council",
+                },
+            )
 
             try:
                 notify.send(
@@ -3916,11 +4050,24 @@ def access_request_acknowledge(request, ar_id):
 
     comment = form.cleaned_data["comment"]
     ticket = access_request.ticket
+    old_status = access_request.get_status_display()
+    old_ticket_status = ticket.get_status_display()
     access_request.status = "CLOSED"
     access_request.closed_by = request.user
     access_request.save()
     ticket.status = "resolved"
     ticket.save()
+
+    _helpdesk_audit(
+        request,
+        "Access request acknowledged",
+        ticket,
+        {
+            "status": {"from": old_status, "to": access_request.get_status_display()},
+            "ticket_status": {"from": old_ticket_status, "to": ticket.get_status_display()},
+            "note": comment or None,
+        },
+    )
 
     _access_review_comment(
         ticket,
@@ -3960,6 +4107,12 @@ def access_request_withdraw(request, ar_id):
         return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
 
     ticket_title = str(ticket)
+    _helpdesk_audit(
+        request,
+        "Access request withdrawn",
+        ticket,
+        {"status": access_request.get_status_display(), "title": ticket_title},
+    )
     access_request.delete()
     ticket.delete()
     messages.success(
@@ -3983,6 +4136,12 @@ def access_request_delete(request, ar_id):
             access_request = AccessRequest.objects.get(id=ar_id)
             ticket = access_request.ticket
             ticket_title = str(ticket)
+            _helpdesk_audit(
+                request,
+                "Access request deleted",
+                ticket,
+                {"status": access_request.get_status_display(), "title": ticket_title},
+            )
             access_request.delete()
             ticket.delete()
             messages.success(
@@ -4094,6 +4253,16 @@ def exception_request_create(request):
             exception_request.ticket = ticket
             exception_request.save()
             exception_request.forward_to.set(selected_forward_users)
+
+            _helpdesk_audit(
+                request,
+                "Exception request created",
+                ticket,
+                {
+                    "status": exception_request.get_status_display(),
+                    "forward_to": exception_request.get_forward_to_display() or None,
+                },
+            )
 
             notification_actor = getattr(
                 request.user, "employee_get", selected_employee
@@ -4212,6 +4381,14 @@ def exception_request_update(request, er_id):
             ticket.assigned_to.clear()
             ticket.assigned_to.add(selected_employee)
 
+            log_form_changes(
+                request.user,
+                "helpdesk",
+                "Exception request updated",
+                form,
+                target=ticket,
+            )
+
             messages.success(request, _("Exception request updated successfully."))
             return HttpResponse("<script>window.location.reload()</script>")
 
@@ -4254,6 +4431,9 @@ def iso_review_exception_request(request, er_id):
             exception_request.feedback = feedback
             ticket = exception_request.ticket
             requestor = ticket.employee_id
+
+            old_status = exception_request.get_status_display()
+            old_ticket_status = ticket.get_status_display()
 
             if action == "approve":
                 exception_request.status = "ISO_APPROVED"
@@ -4302,6 +4482,20 @@ def iso_review_exception_request(request, er_id):
 
             exception_request.save()
             ticket.save()
+
+            _helpdesk_audit(
+                request,
+                "Exception request approved" if action == "approve"
+                else "Exception request rejected",
+                ticket,
+                {
+                    "status": {"from": old_status, "to": exception_request.get_status_display()},
+                    "ticket_status": {"from": old_ticket_status, "to": ticket.get_status_display()},
+                    "reviewer": request.user.get_full_name() or request.user.username,
+                    "feedback": feedback or None,
+                    "stage": "ISO Officer",
+                },
+            )
 
             try:
                 notify.send(
@@ -4361,6 +4555,9 @@ def isc_review_exception_request(request, er_id):
             ticket = exception_request.ticket
             requestor = ticket.employee_id
 
+            old_status = exception_request.get_status_display()
+            old_ticket_status = ticket.get_status_display()
+
             if action == "approve":
                 exception_request.status = "COMPLETED"
                 ticket.status = "resolved"
@@ -4390,6 +4587,20 @@ def isc_review_exception_request(request, er_id):
 
             exception_request.save()
             ticket.save()
+
+            _helpdesk_audit(
+                request,
+                "Exception request approved" if action == "approve"
+                else "Exception request rejected",
+                ticket,
+                {
+                    "status": {"from": old_status, "to": exception_request.get_status_display()},
+                    "ticket_status": {"from": old_ticket_status, "to": ticket.get_status_display()},
+                    "reviewer": request.user.get_full_name() or request.user.username,
+                    "feedback": feedback or None,
+                    "stage": "IS Council",
+                },
+            )
 
             try:
                 notify.send(
@@ -4437,11 +4648,24 @@ def exception_request_acknowledge(request, er_id):
 
     comment = form.cleaned_data["comment"]
     ticket = exception_request.ticket
+    old_status = exception_request.get_status_display()
+    old_ticket_status = ticket.get_status_display()
     exception_request.status = "CLOSED"
     exception_request.closed_by = request.user
     exception_request.save()
     ticket.status = "resolved"
     ticket.save()
+
+    _helpdesk_audit(
+        request,
+        "Exception request acknowledged",
+        ticket,
+        {
+            "status": {"from": old_status, "to": exception_request.get_status_display()},
+            "ticket_status": {"from": old_ticket_status, "to": ticket.get_status_display()},
+            "note": comment or None,
+        },
+    )
 
     _access_review_comment(
         ticket,
@@ -4481,6 +4705,12 @@ def exception_request_withdraw(request, er_id):
         return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
 
     ticket_title = str(ticket)
+    _helpdesk_audit(
+        request,
+        "Exception request withdrawn",
+        ticket,
+        {"status": exception_request.get_status_display(), "title": ticket_title},
+    )
     exception_request.delete()
     ticket.delete()
     messages.success(
@@ -4504,6 +4734,12 @@ def exception_request_delete(request, er_id):
             exception_request = ExceptionRequest.objects.get(id=er_id)
             ticket = exception_request.ticket
             ticket_title = str(ticket)
+            _helpdesk_audit(
+                request,
+                "Exception request deleted",
+                ticket,
+                {"status": exception_request.get_status_display(), "title": ticket_title},
+            )
             exception_request.delete()
             ticket.delete()
             messages.success(
@@ -4620,6 +4856,16 @@ def admin_access_request_create(request):
             admin_access_request.save()
             admin_access_request.forward_to.set(selected_forward_users)
 
+            _helpdesk_audit(
+                request,
+                "Admin access request created",
+                ticket,
+                {
+                    "status": admin_access_request.get_status_display(),
+                    "forward_to": admin_access_request.get_forward_to_display() or None,
+                },
+            )
+
             notification_actor = getattr(
                 request.user, "employee_get", selected_employee
             )
@@ -4735,6 +4981,14 @@ def admin_access_request_update(request, aar_id):
             ticket.assigned_to.clear()
             ticket.assigned_to.add(selected_employee)
 
+            log_form_changes(
+                request.user,
+                "helpdesk",
+                "Admin access request updated",
+                form,
+                target=ticket,
+            )
+
             messages.success(request, _("Admin access request updated successfully."))
             return HttpResponse("<script>window.location.reload()</script>")
 
@@ -4777,6 +5031,9 @@ def iso_review_admin_access_request(request, aar_id):
             admin_access_request.feedback = feedback
             ticket = admin_access_request.ticket
             requestor = ticket.employee_id
+
+            old_status = admin_access_request.get_status_display()
+            old_ticket_status = ticket.get_status_display()
 
             if action == "approve":
                 admin_access_request.status = "ISO_APPROVED"
@@ -4824,6 +5081,20 @@ def iso_review_admin_access_request(request, aar_id):
 
             admin_access_request.save()
             ticket.save()
+
+            _helpdesk_audit(
+                request,
+                "Admin access request approved" if action == "approve"
+                else "Admin access request rejected",
+                ticket,
+                {
+                    "status": {"from": old_status, "to": admin_access_request.get_status_display()},
+                    "ticket_status": {"from": old_ticket_status, "to": ticket.get_status_display()},
+                    "reviewer": request.user.get_full_name() or request.user.username,
+                    "feedback": feedback or None,
+                    "stage": "ISO Officer",
+                },
+            )
 
             try:
                 notify.send(
@@ -4883,6 +5154,9 @@ def isc_review_admin_access_request(request, aar_id):
             ticket = admin_access_request.ticket
             requestor = ticket.employee_id
 
+            old_status = admin_access_request.get_status_display()
+            old_ticket_status = ticket.get_status_display()
+
             if action == "approve":
                 admin_access_request.status = "COMPLETED"
                 ticket.status = "resolved"
@@ -4912,6 +5186,20 @@ def isc_review_admin_access_request(request, aar_id):
 
             admin_access_request.save()
             ticket.save()
+
+            _helpdesk_audit(
+                request,
+                "Admin access request approved" if action == "approve"
+                else "Admin access request rejected",
+                ticket,
+                {
+                    "status": {"from": old_status, "to": admin_access_request.get_status_display()},
+                    "ticket_status": {"from": old_ticket_status, "to": ticket.get_status_display()},
+                    "reviewer": request.user.get_full_name() or request.user.username,
+                    "feedback": feedback or None,
+                    "stage": "IS Council",
+                },
+            )
 
             try:
                 notify.send(
@@ -4959,11 +5247,24 @@ def admin_access_request_acknowledge(request, aar_id):
 
     comment = form.cleaned_data["comment"]
     ticket = admin_access_request.ticket
+    old_status = admin_access_request.get_status_display()
+    old_ticket_status = ticket.get_status_display()
     admin_access_request.status = "CLOSED"
     admin_access_request.closed_by = request.user
     admin_access_request.save()
     ticket.status = "resolved"
     ticket.save()
+
+    _helpdesk_audit(
+        request,
+        "Admin access request acknowledged",
+        ticket,
+        {
+            "status": {"from": old_status, "to": admin_access_request.get_status_display()},
+            "ticket_status": {"from": old_ticket_status, "to": ticket.get_status_display()},
+            "note": comment or None,
+        },
+    )
 
     _access_review_comment(
         ticket,
@@ -5003,6 +5304,12 @@ def admin_access_request_withdraw(request, aar_id):
         return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
 
     ticket_title = str(ticket)
+    _helpdesk_audit(
+        request,
+        "Admin access request withdrawn",
+        ticket,
+        {"status": admin_access_request.get_status_display(), "title": ticket_title},
+    )
     admin_access_request.delete()
     ticket.delete()
     messages.success(
@@ -5026,6 +5333,12 @@ def admin_access_request_delete(request, aar_id):
             admin_access_request = AdminAccessRequest.objects.get(id=aar_id)
             ticket = admin_access_request.ticket
             ticket_title = str(ticket)
+            _helpdesk_audit(
+                request,
+                "Admin access request deleted",
+                ticket,
+                {"status": admin_access_request.get_status_display(), "title": ticket_title},
+            )
             admin_access_request.delete()
             ticket.delete()
             messages.success(
