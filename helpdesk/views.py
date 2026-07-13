@@ -1305,6 +1305,11 @@ def ticket_detail(request, ticket_id, **kwargs):
             "is_iso_officer": request.user.is_superuser or _is_iso_officer(request.user),
             "is_isc_member": request.user.is_superuser
             or _is_isc_member(request.user),
+            # (Divisional Head / IS Council) and Stage 2 (ISO Officer) approvals
+            # remain strictly sequential and role-separated: an ISO Officer can
+            # only act AFTER the Divisional Head has approved the request.
+            "access_is_divisional_head": _is_isc_member(request.user),
+            "access_is_iso_officer": _is_iso_officer(request.user),
         }
         return render(request, "helpdesk/ticket/ticket_detail.html", context=context)
     else:
