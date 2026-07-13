@@ -1021,6 +1021,14 @@ class ReimbursementForm(ModelForm):
                 "ad_to_encash",
                 "bonus_to_encash",
             ]
+        elif type == "bonus":
+            exclude_fields += [
+                "attachment",
+                "leave_type_id",
+                "cfd_to_encash",
+                "ad_to_encash",
+                "bonus_to_encash",
+            ]
         elif type == "leave_encashment":
             exclude_fields += ["attachment", "amount", "bonus_to_encash"]
         elif type == "bonus_encashment":
@@ -1141,6 +1149,10 @@ class ReimbursementForm(ModelForm):
             has_temp = bool(self.data.get("temp_attachment_paths", ""))
             if is_new and not attachment and not has_temp:
                 self.add_error("attachment", _("Attachment is required."))
+
+        elif type_ == "bonus":
+            if amount is None or amount <= 0.00:
+                self.add_error("amount", "Amount must be greater than zero.")
 
         return cleaned_data
 
