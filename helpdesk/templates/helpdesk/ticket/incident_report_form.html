@@ -88,6 +88,15 @@
                             {% trans "Business Unit / Process Affected" %} <span style="color: red;">*</span>
                         </label>
                         {{ form.business_unit }}
+                        <div class="d-flex justify-content-between mt-1">
+                            <span class="oh-text--muted" style="font-size:12px;">
+                                {% blocktrans with max=form.business_unit.field.max_length %}Max {{ max }} characters{% endblocktrans %}
+                            </span>
+                            <span class="oh-text--muted" id="businessUnitCounter" style="font-size:12px;">
+                                0/{{ form.business_unit.field.max_length }}
+                            </span>
+                        </div>
+                        <span class="oh-text--danger" id="businessUnitClientError" style="font-size:12px; display:none;"></span>
                         {% if form.business_unit.errors %}
                             <span class="oh-text--danger" style="font-size:12px;">{{ form.business_unit.errors|join:", " }}</span>
                         {% endif %}
@@ -207,33 +216,61 @@
         if (!modal) { return; }
 
         const form = modal.querySelector("form");
-        const descriptionInput = modal.querySelector("#id_description");
-        const counter = modal.querySelector("#incidentDescriptionCounter");
-        const errorEl = modal.querySelector("#incidentDescriptionClientError");
+        if (!form) { return; }
 
-        if (!form || !descriptionInput || !counter || !errorEl) { return; }
-        const maxLength = parseInt(descriptionInput.dataset.maxlength || "0", 10);
-        if (!maxLength) { return; }
-        const errorMessage = descriptionInput.dataset.maxlengthMessage ||
-            `Description cannot exceed ${maxLength} characters.`;
+        const bindMaxLength = function (inputId, counterId, errorId, fallbackLabel) {
+            const input = modal.querySelector(inputId);
+            const counter = modal.querySelector(counterId);
+            const errorEl = modal.querySelector(errorId);
+            if (!input || !counter || !errorEl) { return null; }
 
-        const updateState = function () {
-            const currentLength = descriptionInput.value.length;
-            counter.textContent = `${currentLength}/${maxLength}`;
-            const exceedsLimit = currentLength > maxLength;
-            errorEl.style.display = exceedsLimit ? "block" : "none";
-            errorEl.textContent = exceedsLimit ? errorMessage : "";
-            descriptionInput.setCustomValidity(exceedsLimit ? errorMessage : "");
-            return exceedsLimit;
+            const maxLength = parseInt(input.dataset.maxlength || "0", 10);
+            if (!maxLength) { return null; }
+            const errorMessage = input.dataset.maxlengthMessage ||
+                `${fallbackLabel} cannot exceed ${maxLength} characters.`;
+
+            const updateState = function () {
+                const currentLength = input.value.length;
+                counter.textContent = `${currentLength}/${maxLength}`;
+                const exceedsLimit = currentLength > maxLength;
+                errorEl.style.display = exceedsLimit ? "block" : "none";
+                errorEl.textContent = exceedsLimit ? errorMessage : "";
+                input.setCustomValidity(exceedsLimit ? errorMessage : "");
+                return exceedsLimit;
+            };
+            input.addEventListener("input", updateState);
+            updateState();
+            return { input: input, updateState: updateState };
         };
-        descriptionInput.addEventListener("input", updateState);
+
+        const fields = [
+            bindMaxLength(
+                "#id_description",
+                "#incidentDescriptionCounter",
+                "#incidentDescriptionClientError",
+                "Description"
+            ),
+            bindMaxLength(
+                "#id_business_unit",
+                "#businessUnitCounter",
+                "#businessUnitClientError",
+                "Business Unit / Process Affected"
+            ),
+        ].filter(Boolean);
+
+        if (!fields.length) { return; }
+
         form.addEventListener("submit", function (event) {
-            if (updateState()) {
+            let firstInvalid = null;
+            fields.forEach(function (field) {
+                if (field.updateState() && !firstInvalid) {
+                    firstInvalid = field.input;
+                }
+            });
+            if (firstInvalid) {
                 event.preventDefault();
-                descriptionInput.focus();
+                firstInvalid.focus();
             }
         });
-        updateState();
     })();
 </script>
-
