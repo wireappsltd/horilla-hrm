@@ -625,6 +625,27 @@ class AccessRequest(HorillaModel):
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True, verbose_name=_("Updated At"))
+    history = HorillaAuditLog(
+        related_name="history_set",
+        bases=[
+            HorillaAuditInfo,
+        ],
+        m2m_fields=["forward_to"],
+        excluded_fields=[
+            "ticket",
+            "user_id",
+            "iso_reviewed_by",
+            "iso_reviewed_at",
+            "isc_reviewed_by",
+            "isc_reviewed_at",
+            "closed_by",
+            "created_at",
+            "updated_at",
+            "is_active",
+            "modified_by",
+            "created_by",
+        ],
+    )
 
     class Meta:
         verbose_name = _("Access Request")
@@ -632,6 +653,10 @@ class AccessRequest(HorillaModel):
 
     def __str__(self):
         return f"Access Request – {self.get_domain_display()} – {self.ticket}"
+
+    def tracking(self):
+        """Return the tracked history of this AccessRequest instance."""
+        return get_diff(self)
 
     def get_forward_to_users(self):
         """Return selected forwarding users as a queryset."""
@@ -719,6 +744,27 @@ class ExceptionRequest(HorillaModel):
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True, verbose_name=_("Updated At"))
+    history = HorillaAuditLog(
+        related_name="history_set",
+        bases=[
+            HorillaAuditInfo,
+        ],
+        m2m_fields=["forward_to"],
+        excluded_fields=[
+            "ticket",
+            "user_id",
+            "iso_reviewed_by",
+            "iso_reviewed_at",
+            "isc_reviewed_by",
+            "isc_reviewed_at",
+            "closed_by",
+            "created_at",
+            "updated_at",
+            "is_active",
+            "modified_by",
+            "created_by",
+        ],
+    )
 
     class Meta:
         verbose_name = _("Exception Request")
@@ -726,6 +772,10 @@ class ExceptionRequest(HorillaModel):
 
     def __str__(self):
         return f"Exception Request – {self.isms_reference} – {self.ticket}"
+
+    def tracking(self):
+        """Return the tracked history of this ExceptionRequest instance."""
+        return get_diff(self)
 
     def get_forward_to_users(self):
         """Return selected forwarding users as a queryset."""
@@ -822,6 +872,27 @@ class AdminAccessRequest(HorillaModel):
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True, verbose_name=_("Updated At"))
+    history = HorillaAuditLog(
+        related_name="history_set",
+        bases=[
+            HorillaAuditInfo,
+        ],
+        m2m_fields=["forward_to"],
+        excluded_fields=[
+            "ticket",
+            "user_id",
+            "iso_reviewed_by",
+            "iso_reviewed_at",
+            "isc_reviewed_by",
+            "isc_reviewed_at",
+            "closed_by",
+            "created_at",
+            "updated_at",
+            "is_active",
+            "modified_by",
+            "created_by",
+        ],
+    )
 
     class Meta:
         verbose_name = _("Admin Access Request")
@@ -829,6 +900,10 @@ class AdminAccessRequest(HorillaModel):
 
     def __str__(self):
         return f"Admin Access Request – {self.system_application} – {self.ticket}"
+
+    def tracking(self):
+        """Return the tracked history of this AdminAccessRequest instance."""
+        return get_diff(self)
 
     def get_forward_to_users(self):
         """Return selected forwarding users as a queryset."""
