@@ -141,6 +141,27 @@ def paginator_qry(qryset, page_number):
     return qryset
 
 
+def order_leave_requests(request, queryset):
+    """
+    By default the pending ``requested`` items are floated to the very top and
+    the rest are ordered by the most recent start date. This default is applied on the initial page load AND on every
+    paginated / filtered request, so the ordering "sticks" across all pages.
+
+    """
+    queryset = queryset.order_by(
+        Case(
+            When(status="requested", then=Value(0)),
+            default=Value(1),
+            output_field=IntegerField(),
+        ),
+        "-start_date",
+        "-id",
+    )
+    if request.GET.get("sortby"):
+        queryset = sortby(request, queryset, "sortby")
+    return queryset
+
+
 @login_required
 @permission_required("leave.view_leavetype")
 def leave_type_view(request):
@@ -595,23 +616,7 @@ def leave_request_view(request):
         normal_requests = LeaveRequest.objects.filter(id__in=normal_requests).distinct()
 
     queryset = normal_requests | multiple_approvals
-    # Default ordering: keep the latest requests on top (by start date) while
-    # floating the pending "requested" items to the very top so they are the
-    # first thing an approver sees.
-    queryset = queryset.order_by(
-        Case(
-            When(status="requested", then=Value(0)),
-            default=Value(1),
-            output_field=IntegerField(),
-        ),
-        "-start_date",
-        "-id",
-    )
-    # Apply sorting on the full dataset (not just the current page) so that a
-    # stateful page reload (e.g. after approve/reject) restores the active sort
-    # column and direction and paginates from the correct position.
-    if request.GET.get("sortby"):
-        queryset = sortby(request, queryset, "sortby")
+    queryset = order_leave_requests(request, queryset)
     page_number = request.GET.get("page")
     page_obj = paginator_qry(queryset, page_number)
     leave_request_filter = LeaveRequestFilter()
@@ -889,19 +894,9 @@ def leave_request_filter(request):
 
     queryset = queryset | multiple_approvals
     leave_request_filter = LeaveRequestFilter(request.GET, queryset).qs
-    leave_request_filter = leave_request_filter.order_by(
-        Case(
-            When(status="requested", then=Value(0)),
-            default=Value(1),
-            output_field=IntegerField(),
-        ),
-        "-start_date",
-        "-id",
-    )
+    leave_request_filter = order_leave_requests(request, leave_request_filter)
     page_number = request.GET.get("page")
     template = ("leave/leave_request/leave_requests.html",)
-    if request.GET.get("sortby"):
-        leave_request_filter = sortby(request, leave_request_filter, "sortby")
 
     if field != "" and field is not None:
         leave_request_filter = group_by_queryset(
