@@ -1256,17 +1256,18 @@ class IncidentReportForm(forms.ModelForm):
             }
         ),
     )
+
     priority = forms.ChoiceField(
         choices=PRIORITY,
         initial="medium",
         label=_("Priority"),
-        widget=forms.Select(attrs={"class": "oh-select oh-select-2 w-100"}),
+        widget=forms.Select(attrs={"class": "oh-select w-100"}),
     )
     forward_to = forms.ModelMultipleChoiceField(
         queryset=User.objects.none(),
         label=_("Forward To"),
         required=True,
-        widget=forms.SelectMultiple(attrs={"class": "oh-select oh-select-2 w-100"}),
+        widget=forms.SelectMultiple(attrs={"class": "oh-select w-100"}),
     )
     deadline = forms.DateField(
         required=False,
@@ -1287,7 +1288,7 @@ class IncidentReportForm(forms.ModelForm):
         ]
         widgets = {
             "reported_by": forms.Select(
-                attrs={"class": "oh-select oh-select-2 w-100"}
+                attrs={"class": "oh-select w-100"}
             ),
             "occurrence_date": forms.DateInput(
                 attrs={"class": "oh-input w-100", "type": "date"}
@@ -1299,7 +1300,7 @@ class IncidentReportForm(forms.ModelForm):
                 }
             ),
             "location_type": forms.Select(
-                attrs={"class": "oh-select oh-select-2 w-100"}
+                attrs={"class": "oh-select w-100"}
             ),
             "description": forms.Textarea(
                 attrs={
@@ -1309,7 +1310,7 @@ class IncidentReportForm(forms.ModelForm):
                 }
             ),
             "initial_classification": forms.Select(
-                attrs={"class": "oh-select oh-select-2 w-100"}
+                attrs={"class": "oh-select w-100"}
             ),
         }
         labels = {
@@ -1939,15 +1940,16 @@ class ISOEvaluationForm(forms.ModelForm):
             "iso_comments",
         ]
         widgets = {
+
             "iso_complies": forms.Select(
-                attrs={"class": "oh-select oh-select-2 w-100"}
+                attrs={"class": "oh-select w-100"}
             ),
             "iso_impact": forms.Textarea(attrs={"class": "oh-input w-100", "rows": 2}),
             "iso_risk_assessment": forms.Textarea(
                 attrs={"class": "oh-input w-100", "rows": 2}
             ),
             "iso_approval": forms.Select(
-                attrs={"class": "oh-select oh-select-2 w-100"}
+                attrs={"class": "oh-select w-100"}
             ),
             "iso_comments": forms.Textarea(
                 attrs={"class": "oh-input w-100", "rows": 2}
