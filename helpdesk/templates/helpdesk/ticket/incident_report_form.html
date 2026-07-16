@@ -1,5 +1,23 @@
 {% load i18n %}
 
+<style>
+
+    #incidentReportModal .oh-modal__dialog {
+        display: flex;
+        flex-direction: column;
+        max-height: calc(100vh - 3.5rem);
+        margin: 1.75rem auto;
+    }
+    #incidentReportModal .oh-modal__dialog-header {
+        flex: 0 0 auto;
+    }
+    #incidentReportModal .oh-modal__dialog-body {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+    }
+</style>
+
 <div class="oh-modal oh-modal--show" id="incidentReportModal">
     <div class="oh-modal__dialog">
         <div class="oh-modal__dialog-header">
