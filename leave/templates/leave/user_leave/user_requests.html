@@ -143,6 +143,22 @@
                                 title="{% trans 'Cancel' %}"
                                 class="oh-btn oh-btn--primary w-100"> {% trans "Cancel" %}
                             </a>
+                        {% elif leave_request.status == 'approved' %}
+                            {% if leave_request.cancellation_status == 'requested' %}
+                                <button class="oh-btn oh-btn--warning-outline w-100" disabled
+                                    title="{% trans 'Cancellation request pending HR review' %}">
+                                    {% trans "Cancellation Requested" %}
+                                </button>
+                            {% else %}
+                                <a type="submit" data-toggle="oh-modal-toggle"
+                                    data-target="#cancellationRequestModal"
+                                    hx-get="{% url 'user-request-cancellation-request' leave_request.id %}"
+                                    hx-target="#cancellationRequestForm"
+                                    title="{% trans 'Request cancellation of this approved leave' %}"
+                                    class="oh-btn oh-btn--primary w-100">
+                                    {% trans "Request Cancellation" %}
+                                </a>
+                            {% endif %}
                         {% else %}
                             <button class="oh-btn oh-btn--primary w-100" disabled>
                                 {% trans "Cancel" %}

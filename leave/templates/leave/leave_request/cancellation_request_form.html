@@ -1,0 +1,44 @@
+{% load i18n %}
+{% if form.errors %}
+<!-- form errors  -->
+<div class="oh-wrapper">
+  <div class="oh-alert-container">
+    {% for error in form.non_field_errors %}
+    <div class="oh-alert oh-alert--animated oh-alert--danger">{{ error }}</div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+<div class="oh-modal__dialog-header">
+  <h2 class="oh-modal__dialog-title" id="cancellationRequestModalLabel">
+    {% trans "Request Leave Cancellation" %}
+  </h2>
+  <button class="oh-modal__close" aria-label="Close">
+    <ion-icon name="close-outline"></ion-icon>
+  </button>
+</div>
+<div class="oh-modal__dialog-body">
+  <p class="text-muted">
+    {% trans "Submit a request to cancel this approved leave. HR/Admin will review and approve or reject it." %}
+  </p>
+  <form
+    hx-post="{% url 'user-request-cancellation-request' id %}"
+    hx-encoding="multipart/form-data"
+  >
+    <div class="oh-general__tab-target oh-profile-section">
+      <div class="col-sm-12 col-md-12 col-lg-12">
+        <label class="oh-label">{% trans "Cancellation Reason" %}</label>
+        {{ form.reason }} {{ form.reason.errors }}
+      </div>
+      <div class="d-flex flex-row-reverse">
+        <button
+          type="submit"
+          class="oh-btn oh-btn--secondary oh-btn--shadow mt-3"
+        >
+          {% trans "Submit Request" %}
+        </button>
+      </div>
+    </div>
+  </form>
+</div>
+
