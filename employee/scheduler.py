@@ -251,6 +251,7 @@ def send_leave_request_reminders():
 
     pending_requests = LeaveRequest.objects.filter(status="requested")
 
+
     for request in pending_requests:
         employee = request.employee_id
         manager = employee.get_reporting_manager()
@@ -276,6 +277,25 @@ def send_leave_request_reminders():
             # )
 
 
+def deactivate_resigned_employees():
+    """
+    Deactivate employee profiles whose resignation has become effective.
+
+    Delegates to the offboarding domain logic. Runs only when the optional
+    offboarding app is installed. Scheduled to run at 11:59 PM daily so that a
+    resigned employee's profile is deactivated (and their login revoked) at the
+    end of their effective/last working date.
+    """
+    from django.apps import apps
+
+    if not apps.is_installed("offboarding"):
+        return
+
+    from offboarding.methods import deactivate_resigned_employees as _deactivate
+
+    _deactivate()
+
+
 if not any(
     cmd in sys.argv
     for cmd in ["makemigrations", "migrate", "compilemessages", "flush", "shell"]
@@ -287,6 +307,16 @@ def start():
     scheduler = BackgroundScheduler()
     scheduler.add_job(update_experience, "interval", hours=4)
     scheduler.add_job(block_unblock_disciplinary, "interval", seconds=25)
+    # Deactivate resigned employee profiles at 11:59 PM on their effective date.
+    scheduler.add_job(
+        deactivate_resigned_employees,
+        trigger="cron",
+        hour=23,
+        minute=59,
+        id="deactivate_resigned_employees",
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
     # scheduler.add_job(send_probation_end_notifications, "interval", days=1)
     # scheduler.add_job(send_contract_end_notification, "interval", seconds=30)
     # scheduler.add_job(send_birthday_in_this_month_notification, "interval", seconds=5)
