@@ -1436,6 +1436,217 @@ def user_leave_cancel(request, id):
 
 @login_required
 @hx_request_required
+def user_leave_cancellation_request(request, id):
+    """
+    Allows an employee to raise a cancellation request against their own
+    already-approved leave, including leaves whose date has already passed.
+
+    Instead of cancelling the leave directly, this records a cancellation
+    request that HR/Admin will later review and either approve or reject.
+    """
+    leave_request = LeaveRequest.objects.get(id=id)
+    if leave_request.employee_id.employee_user_id.id != request.user.id:
+        messages.error(request, _("You don't have the permission."))
+        return _trigger_leave_stats_refresh(
+            HttpResponse("<script>location.reload();</script>")
+        )
+    if leave_request.status != "approved":
+        messages.error(
+            request,
+            _("Only approved leave requests can be requested for cancellation."),
+        )
+        return _trigger_leave_stats_refresh(
+            HttpResponse("<script>location.reload();</script>")
+        )
+    if leave_request.cancellation_status == "requested":
+        messages.info(
+            request, _("A cancellation request is already pending review.")
+        )
+        return _trigger_leave_stats_refresh(
+            HttpResponse("<script>location.reload();</script>")
+        )
+    form = CancellationRequestForm()
+    if request.method == "POST":
+        form = CancellationRequestForm(request.POST)
+        if form.is_valid():
+            leave_request.cancellation_status = "requested"
+            leave_request.cancellation_reason = form.cleaned_data["reason"]
+            leave_request.cancellation_requested_at = timezone.now()
+            # Reset any previous review details in case this is a re-request
+            # after an earlier rejection.
+            leave_request.cancellation_reviewed_by = None
+            leave_request.cancellation_reviewed_at = None
+            leave_request.cancellation_note = ""
+            leave_request.save()
+
+            comment = LeaverequestComment()
+            comment.request_id = leave_request
+            comment.employee_id = request.user.employee_get
+            comment.comment = (
+                _("Cancellation requested: ") + leave_request.cancellation_reason
+            )
+            comment.save()
+
+            messages.success(
+                request, _("Cancellation request submitted successfully.")
+            )
+            with contextlib.suppress(Exception):
+                LeaveMailSendThread(
+                    request, leave_request, type="cancellation_request"
+                ).start()
+            return _trigger_leave_stats_refresh(
+                HttpResponse("<script>location.reload();</script>")
+            )
+    return render(
+        request,
+        "leave/leave_request/cancellation_request_form.html",
+        {"form": form, "id": id},
+    )
+
+
+
+@login_required
+@manager_can_enter("leave.change_leaverequest")
+def cancellation_request_approve(request, id):
+    """
+    HR/Admin approves an employee's leave cancellation request.
+
+    Approving cancels the underlying leave and restores the employee's leave
+    balance. A note is mandatory.
+    """
+    leave_request = LeaveRequest.objects.get(id=id)
+    if leave_request.cancellation_status != "requested":
+        messages.error(request, _("No pending cancellation request to approve."))
+        return _trigger_leave_stats_refresh(
+            HttpResponse("<script>location.reload();</script>"), request
+        )
+    form = CancellationReviewForm()
+    if request.method == "POST":
+        form = CancellationReviewForm(request.POST)
+        if form.is_valid():
+            note = form.cleaned_data["note"]
+            employee_id = leave_request.employee_id
+            leave_type_id = leave_request.leave_type_id
+            available_leave = AvailableLeave.objects.get(
+                leave_type_id=leave_type_id, employee_id=employee_id
+            )
+            available_leave.available_days += leave_request.approved_available_days
+            available_leave.carryforward_days += (
+                leave_request.approved_carryforward_days
+            )
+            leave_request.approved_available_days = 0
+            leave_request.approved_carryforward_days = 0
+            leave_request.status = "cancelled"
+            leave_request.leave_clashes_count = 0
+            leave_request.reject_reason = note
+            leave_request.reviewed_by = getattr(request.user, "employee_get", None)
+            leave_request.reviewed_at = timezone.now()
+            leave_request.cancellation_status = "approved"
+            leave_request.cancellation_note = note
+            leave_request.cancellation_reviewed_by = getattr(
+                request.user, "employee_get", None
+            )
+            leave_request.cancellation_reviewed_at = timezone.now()
+            leave_request.save()
+            available_leave.save()
+
+            comment = LeaverequestComment()
+            comment.request_id = leave_request
+            comment.employee_id = request.user.employee_get
+            comment.comment = _("Cancellation approved: ") + note
+            comment.save()
+
+            messages.success(request, _("Leave cancellation request approved."))
+            with contextlib.suppress(Exception):
+                notify.send(
+                    request.user.employee_get,
+                    recipient=leave_request.employee_id.employee_user_id,
+                    verb="Your leave cancellation request has been approved.",
+                    verb_ar="تمت الموافقة على طلب إلغاء الإجازة الخاص بك",
+                    verb_de="Ihr Antrag auf Stornierung des Urlaubs wurde genehmigt.",
+                    verb_es="Tu solicitud de cancelación de permiso ha sido aprobada.",
+                    verb_fr="Votre demande d'annulation de congé a été approuvée.",
+                    icon="checkmark-circle",
+                    redirect=reverse("user-request-view")
+                    + f"?id={leave_request.id}",
+                )
+            with contextlib.suppress(Exception):
+                LeaveMailSendThread(
+                    request, leave_request, type="cancellation_approve"
+                ).start()
+            return _trigger_leave_stats_refresh(
+                HttpResponse("<script>location.reload();</script>"), request
+            )
+    return render(
+        request,
+        "leave/leave_request/cancellation_review_form.html",
+        {"form": form, "id": id, "action": "approve"},
+    )
+
+
+@login_required
+@manager_can_enter("leave.change_leaverequest")
+def cancellation_request_reject(request, id):
+    """
+    HR/Admin rejects an employee's leave cancellation request. The leave stays
+    approved. A note is mandatory.
+    """
+    leave_request = LeaveRequest.objects.get(id=id)
+    if leave_request.cancellation_status != "requested":
+        messages.error(request, _("No pending cancellation request to reject."))
+        return _trigger_leave_stats_refresh(
+            HttpResponse("<script>location.reload();</script>"), request
+        )
+    form = CancellationReviewForm()
+    if request.method == "POST":
+        form = CancellationReviewForm(request.POST)
+        if form.is_valid():
+            note = form.cleaned_data["note"]
+            leave_request.cancellation_status = "rejected"
+            leave_request.cancellation_note = note
+            leave_request.cancellation_reviewed_by = getattr(
+                request.user, "employee_get", None
+            )
+            leave_request.cancellation_reviewed_at = timezone.now()
+            # Leave remains approved.
+            leave_request.save()
+
+            comment = LeaverequestComment()
+            comment.request_id = leave_request
+            comment.employee_id = request.user.employee_get
+            comment.comment = _("Cancellation rejected: ") + note
+            comment.save()
+
+            messages.success(request, _("Leave cancellation request rejected."))
+            with contextlib.suppress(Exception):
+                notify.send(
+                    request.user.employee_get,
+                    recipient=leave_request.employee_id.employee_user_id,
+                    verb="Your leave cancellation request has been rejected.",
+                    verb_ar="تم رفض طلب إلغاء الإجازة الخاص بك",
+                    verb_de="Ihr Antrag auf Stornierung des Urlaubs wurde abgelehnt.",
+                    verb_es="Tu solicitud de cancelación de permiso ha sido rechazada.",
+                    verb_fr="Votre demande d'annulation de congé a été rejetée.",
+                    icon="close-circle",
+                    redirect=reverse("user-request-view")
+                    + f"?id={leave_request.id}",
+                )
+            with contextlib.suppress(Exception):
+                LeaveMailSendThread(
+                    request, leave_request, type="cancellation_reject"
+                ).start()
+            return _trigger_leave_stats_refresh(
+                HttpResponse("<script>location.reload();</script>"), request
+            )
+    return render(
+        request,
+        "leave/leave_request/cancellation_review_form.html",
+        {"form": form, "id": id, "action": "reject"},
+    )
+
+
+@login_required
+@hx_request_required
 @manager_can_enter("leave.view_leaverequest")
 def one_request_view(request, id):
     """
