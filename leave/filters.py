@@ -170,6 +170,7 @@ class LeaveRequestFilter(FilterSet):
             "employee_id",
             "leave_type_id",
             "status",
+            "cancellation_status",
             "department_name",
             "overall_leave",
             "employee_id__employee_work_info__company_id",

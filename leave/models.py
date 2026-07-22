@@ -130,6 +130,14 @@ LEAVE_STATUS = (
     ("rejected", _("Rejected")),
 )
 
+# Status choices for an employee-initiated request to cancel an already
+# approved leave. Reviewed by HR/Admin who can approve or reject it.
+LEAVE_CANCELLATION_STATUS = (
+    ("requested", _("Requested")),
+    ("approved", _("Approved")),
+    ("rejected", _("Rejected")),
+)
+
 LEAVE_ALLOCATION_STATUS = (
     ("requested", _("Requested")),
     ("approved", _("Approved")),
@@ -797,6 +805,43 @@ class LeaveRequest(HorillaModel):
     )
     reviewed_at = models.DateTimeField(
         null=True, blank=True, verbose_name=_("Actioned At")
+    )
+
+    # ---- Leave cancellation request flow ----
+    # Allows an employee to request cancellation of an already approved leave
+    # (even when the leave date has passed). HR/Admin reviews the request and
+    # can approve (cancel the leave) or reject (keep it approved), always with
+    # a mandatory note.
+    cancellation_status = models.CharField(
+        max_length=10,
+        choices=LEAVE_CANCELLATION_STATUS,
+        null=True,
+        blank=True,
+        verbose_name=_("Cancellation Request Status"),
+    )
+    cancellation_reason = models.TextField(
+        blank=True,
+        max_length=255,
+        verbose_name=_("Cancellation Reason"),
+    )
+    cancellation_requested_at = models.DateTimeField(
+        null=True, blank=True, verbose_name=_("Cancellation Requested At")
+    )
+    cancellation_reviewed_by = models.ForeignKey(
+        Employee,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        verbose_name=_("Cancellation Reviewed By"),
+        related_name="leave_cancellation_reviewed",
+    )
+    cancellation_reviewed_at = models.DateTimeField(
+        null=True, blank=True, verbose_name=_("Cancellation Reviewed At")
+    )
+    cancellation_note = models.TextField(
+        blank=True,
+        max_length=255,
+        verbose_name=_("Cancellation Review Note"),
     )
 
     class Meta:

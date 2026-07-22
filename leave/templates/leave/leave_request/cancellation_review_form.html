@@ -1,0 +1,56 @@
+{% load i18n %}
+{% if form.errors %}
+<!-- form errors  -->
+<div class="oh-wrapper">
+  <div class="oh-alert-container">
+    {% for error in form.non_field_errors %}
+    <div class="oh-alert oh-alert--animated oh-alert--danger">{{ error }}</div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+<div class="oh-modal__dialog-header">
+  <h2 class="oh-modal__dialog-title" id="cancellationReviewModalLabel">
+    {% if action == 'approve' %}
+      {% trans "Approve Cancellation Request" %}
+    {% else %}
+      {% trans "Reject Cancellation Request" %}
+    {% endif %}
+  </h2>
+  <button class="oh-modal__close" aria-label="Close">
+    <ion-icon name="close-outline"></ion-icon>
+  </button>
+</div>
+<div class="oh-modal__dialog-body">
+  <p class="text-muted">
+    {% if action == 'approve' %}
+      {% trans "Approving will cancel the leave and restore the employee's leave balance. A note is required." %}
+    {% else %}
+      {% trans "Rejecting will keep the leave approved. A note is required." %}
+    {% endif %}
+  </p>
+  <form
+    {% if action == 'approve' %}
+    hx-post="{% url 'cancellation-request-approve' id %}"
+    {% else %}
+    hx-post="{% url 'cancellation-request-reject' id %}"
+    {% endif %}
+    hx-encoding="multipart/form-data"
+  >
+    <div class="oh-general__tab-target oh-profile-section">
+      <div class="col-sm-12 col-md-12 col-lg-12">
+        <label class="oh-label">{% trans "Note" %} <span class="text-danger">*</span></label>
+        {{ form.note }} {{ form.note.errors }}
+      </div>
+      <div class="d-flex flex-row-reverse">
+        <button
+          type="submit"
+          class="oh-btn {% if action == 'approve' %}oh-btn--success{% else %}oh-btn--danger{% endif %} oh-btn--shadow mt-3"
+        >
+          {% if action == 'approve' %}{% trans "Approve" %}{% else %}{% trans "Reject" %}{% endif %}
+        </button>
+      </div>
+    </div>
+  </form>
+</div>
+
