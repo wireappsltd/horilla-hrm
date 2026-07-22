@@ -98,6 +98,37 @@
                 </div>
             {% endif %}
         {% endif %}
+        {% if leave_request.cancellation_status %}
+            <div class="oh-timeoff-modal__stats w-100 mt-3 p-2
+                {% if leave_request.cancellation_status == 'approved' %}row-status--gray
+                {% elif leave_request.cancellation_status == 'rejected' %}row-status--gray
+                {% else %}row-status--yellow{% endif %} diff-cell">
+                <div class="oh-timeoff-modal__stat">
+                    <span class="oh-timeoff-modal__stat-title">{% trans "Cancellation Request" %}</span>
+                    <div class="oh-timeoff-modal__stat-description">
+                        {% if leave_request.cancellation_status == 'requested' %}
+                            {% trans "Pending HR review" %}
+                        {% elif leave_request.cancellation_status == 'approved' %}
+                            {% trans "Approved by HR" %}
+                        {% elif leave_request.cancellation_status == 'rejected' %}
+                            {% trans "Rejected by HR" %}
+                        {% endif %}
+                    </div>
+                </div>
+                {% if leave_request.cancellation_reason %}
+                <div class="oh-timeoff-modal__stat mt-2">
+                    <span class="oh-timeoff-modal__stat-title">{% trans "Your Reason" %}</span>
+                    <div class="oh-timeoff-modal__stat-description">{{ leave_request.cancellation_reason }}</div>
+                </div>
+                {% endif %}
+                {% if leave_request.cancellation_note %}
+                <div class="oh-timeoff-modal__stat mt-2">
+                    <span class="oh-timeoff-modal__stat-title">{% trans "HR Note" %}</span>
+                    <div class="oh-timeoff-modal__stat-description">{{ leave_request.cancellation_note }}</div>
+                </div>
+                {% endif %}
+            </div>
+        {% endif %}
         {% if leave_request.attachment %}
             <a href="{{ leave_request.attachment.url }}" target="_blank" class="oh-timeoff-modal__download-link">
                 <ion-icon class="me-1" name="download-outline"></ion-icon>
