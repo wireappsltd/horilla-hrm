@@ -26,16 +26,20 @@
     }
 
     @media screen and (min-width: 992px) {
+        /* The fixed navbar occupies 65px of height + a 3px bottom border = 68px.
+           Subtracting the true 68px keeps the helpdesk panel exactly within the
+           viewport so the page itself never scrolls (which is what produced the
+           white background beneath the change-request AND incident detail views). */
         .oh-helpdesk {
-            height: calc(100vh - 65px);
+            height: calc(100vh - 68px);
             overflow: hidden;
-            grid-template-rows: calc(100vh - 65px);
+            grid-template-rows: calc(100vh - 68px);
         }
 
         .oh-helpdesk__left {
             display: flex;
             flex-direction: column;
-            height: calc(100vh - 65px);
+            height: calc(100vh - 68px);
             min-height: 0;
             overflow: hidden;
         }
@@ -47,7 +51,7 @@
         }
 
         .oh-helpdesk__right {
-            height: calc(100vh - 65px);
+            height: calc(100vh - 68px);
             min-height: 0;
             overflow-y: auto;
         }
