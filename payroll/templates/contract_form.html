@@ -18,6 +18,10 @@
         {{form.non_field_errors}}
       </div>
 
+      {% for hidden in form.hidden_fields %}
+        {{ hidden }}
+      {% endfor %}
+
       {% for field in form.visible_fields %}
 
         {% if field.name != 'contract_status' %}
