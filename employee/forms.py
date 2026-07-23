@@ -556,6 +556,9 @@ class EmployeeWorkInformationForm(ModelForm):
             }
         )
 
+        if "mobile" in self.fields:
+            self.fields["mobile"].label = _("Phone Number")
+
         for field in self.fields:
             self.fields[field].widget.attrs["placeholder"] = self.fields[field].label
             if disable:
