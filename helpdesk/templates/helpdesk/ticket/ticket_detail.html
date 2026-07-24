@@ -26,9 +26,25 @@
     }
 
     @media screen and (min-width: 992px) {
+
+        .oh-wrapper-main {
+            align-items: start;
+        }
+
+        #sidebar {
+            height: 100vh;
+            max-height: 100vh;
+            overflow-y: auto;
+        }
+
+        .oh-sidebar {
+            min-height: 0;
+            height: 100%;
+            max-height: 100vh;
+            overflow-y: auto;
+        }
+
         .oh-helpdesk {
-            height: calc(100vh - 68px);
-            overflow: hidden;
             grid-template-rows: calc(100vh - 68px);
         }
 
@@ -44,6 +60,11 @@
             height: auto;
             flex: 1 1 auto;
             min-height: 0;
+            overflow-y: auto;
+        }
+
+        .oh-helpdesk__chatbox {
+            flex: 0 0 auto;
         }
 
         .oh-helpdesk__right {
@@ -165,6 +186,26 @@
     html.oh-scroll-lock,
     body.oh-scroll-lock {
         overflow: hidden !important;
+    }
+
+    .oh-helpdesk__chatbox {
+        flex: 0 0 auto;
+    }
+
+    .oh-helpdesk__chatbox .note-editor {
+        margin-bottom: 0;
+    }
+
+    .oh-helpdesk__chatbox .note-editor .note-editable {
+        min-height: 60px;
+        max-height: 140px;
+        overflow-y: auto;
+    }
+
+    /* The resize grip pushes the editor taller than needed; hide it so the
+       editor keeps a predictable, fully-visible height. */
+    .oh-helpdesk__chatbox .note-editor .note-statusbar {
+        display: none;
     }
 </style>
 
