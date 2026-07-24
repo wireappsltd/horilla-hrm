@@ -15,6 +15,7 @@ from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 
 from base.context_processors import intial_notice_period
+from base.email_handlers import render_branded_email
 from base.methods import closest_numbers, eval_validate, paginator_qry, sortby
 from base.models import Department, JobPosition
 from base.views import general_settings
@@ -1161,6 +1162,22 @@ def create_resignation_request(request):
 
             print(employee, description)
             form.save()
+            from django.utils.html import strip_tags
+
+            resign_company = None
+            try:
+                resign_company = (
+                    employee.get_company() if hasattr(employee, "get_company") else None
+                )
+            except Exception:
+                resign_company = None
+            resignation_content = (
+                f"A new resignation request has been submitted.\n\n"
+                f"Employee: {employee}\n"
+                f"Planned Last Working Day: {planned_to_leave_on}\n"
+                f"Exit Reason: {exit_reason}\n"
+                f"Description: {strip_tags(description) if description else ''}"
+            )
             for user in hr_users:
                 notify.send(
                     sender=employee,
@@ -1171,18 +1188,22 @@ def create_resignation_request(request):
                 )
 
                 if user.email:
+                    try:
+                        recipient_name = user.employee_get.get_full_name()
+                    except Exception:
+                        recipient_name = user.get_full_name() or user.username
                     send_mail(
                         subject=f"New resignation letter from {employee}",
-                        message=description,
+                        message=strip_tags(resignation_content),
                         from_email='tech@wireapps.co.uk',
                         recipient_list=[user.email],
                         fail_silently=True,
-                        html_message=render_to_string("emails/resignation_request.html", {
-                            "employee": employee,
-                            "description": description,
-                            "planned_to_leave_on": planned_to_leave_on,
-                            "exit_reason": exit_reason,
-                        })
+                        html_message=render_branded_email(
+                            recipient_name=recipient_name,
+                            title="New resignation request",
+                            content=resignation_content,
+                            company_name=str(resign_company) if resign_company else "",
+                        ),
                     )
 
             messages.success(request, _("Resignation letter saved"))

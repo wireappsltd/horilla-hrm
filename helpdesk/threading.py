@@ -10,9 +10,9 @@ from threading import Thread
 from django.contrib import messages
 from django.contrib.auth.models import Group, User
 from django.core.mail import EmailMessage
-from django.template.loader import render_to_string
 
 from base.backends import ConfiguredEmailBackend
+from base.email_handlers import render_branded_email
 from base.models import Department
 from employee.models import EmployeeWorkInformation
 from helpdesk.models import ISO_GROUP_NAME, Ticket
@@ -55,16 +55,18 @@ class TicketSendThread(Thread):
         if ticket_id != "#":
             link = f"{protocol}://{host}/helpdesk/ticket-detail/{ticket_id}/"
         for recipient in recipients:
-            html_message = render_to_string(
-                "helpdesk/mail_templates/ticket_mail.html",
-                {
-                    "link": link,
-                    "instance": recipient,
-                    "host": host,
-                    "protocol": protocol,
-                    "subject": subject,
-                    "content": content,
-                },
+            company = (
+                recipient.get_company() if hasattr(recipient, "get_company") else None
+            )
+            html_message = render_branded_email(
+                recipient_name=recipient.get_full_name(),
+                title=subject,
+                content=content,
+                button_label="View Ticket" if link != "#" else "",
+                button_url=link if link != "#" else "",
+                company_name=str(company) if company else "",
+                host=host,
+                protocol=protocol,
                 request=self.request,
             )
 
@@ -169,16 +171,18 @@ class AddAssigneeThread(Thread):
                 pass
         link = f"{protocol}://{host}/helpdesk/ticket-detail/{self.ticket.id}/"
         for recipient in self.recipients:
-            html_message = render_to_string(
-                "helpdesk/mail_templates/ticket_mail.html",
-                {
-                    "link": link,
-                    "instance": recipient,
-                    "host": host,
-                    "protocol": protocol,
-                    "subject": subject,
-                    "content": content,
-                },
+            company = (
+                recipient.get_company() if hasattr(recipient, "get_company") else None
+            )
+            html_message = render_branded_email(
+                recipient_name=recipient.get_full_name(),
+                title=subject,
+                content=content,
+                button_label="View Ticket",
+                button_url=link,
+                company_name=str(company) if company else "",
+                host=host,
+                protocol=protocol,
                 request=self.request,
             )
 
@@ -228,16 +232,18 @@ class RemoveAssigneeThread(Thread):
         protocol = self.protocol
         link = f"{protocol}://{host}/helpdesk/ticket-detail/{self.ticket.id}/"
         for recipient in self.recipients:
-            html_message = render_to_string(
-                "helpdesk/mail_templates/ticket_mail.html",
-                {
-                    "link": link,
-                    "instance": recipient,
-                    "host": host,
-                    "protocol": protocol,
-                    "subject": subject,
-                    "content": content,
-                },
+            company = (
+                recipient.get_company() if hasattr(recipient, "get_company") else None
+            )
+            html_message = render_branded_email(
+                recipient_name=recipient.get_full_name(),
+                title=subject,
+                content=content,
+                button_label="View Ticket",
+                button_url=link,
+                company_name=str(company) if company else "",
+                host=host,
+                protocol=protocol,
                 request=self.request,
             )
 
@@ -368,19 +374,23 @@ class PasswordResetMailThread(Thread):
 
         for recipient in recipients:
             try:
-                # Do NOT pass request= to render_to_string – we are in a
+                # Do NOT pass request= to render_branded_email – we are in a
                 # child thread where context processors that rely on the
                 # request / _thread_locals will fail.
-                html_message = render_to_string(
-                    "helpdesk/mail_templates/ticket_mail.html",
-                    {
-                        "link": link,
-                        "instance": recipient,
-                        "host": host,
-                        "protocol": protocol,
-                        "subject": subject,
-                        "content": content,
-                    },
+                company = (
+                    recipient.get_company()
+                    if hasattr(recipient, "get_company")
+                    else None
+                )
+                html_message = render_branded_email(
+                    recipient_name=recipient.get_full_name(),
+                    title=subject,
+                    content=content,
+                    button_label="View Ticket" if link != "#" else "",
+                    button_url=link if link != "#" else "",
+                    company_name=str(company) if company else "",
+                    host=host,
+                    protocol=protocol,
                 )
 
                 email = EmailMessage(

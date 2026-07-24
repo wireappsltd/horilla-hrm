@@ -1404,12 +1404,29 @@ def send_otp(request):
     display_email_name = email_backend.dynamic_from_email_with_display_name
 
     otp_code = set_otp(request)
+    from base.email_handlers import render_branded_email
+
+    company = employee.get_company() if hasattr(employee, "get_company") else None
+    branded_body = render_branded_email(
+        recipient_name=employee.get_full_name(),
+        title="Your verification code",
+        content=(
+            f"Your one-time verification code is: {otp_code}\n\n"
+            "This code is valid for a limited time. If you did not try to sign in, "
+            "please ignore this email."
+        ),
+        company_name=str(company) if company else "",
+        host=request.get_host(),
+        protocol="https" if request.is_secure() else "http",
+        request=request,
+    )
     email = EmailMessage(
         subject="Your OTP Code",
-        body=f"Your OTP code is {otp_code}",
+        body=branded_body,
         from_email=display_email_name,
         to=[email],
     )
+    email.content_subtype = "html"
     thread = threading.Thread(target=email.send)
     thread.start()
 

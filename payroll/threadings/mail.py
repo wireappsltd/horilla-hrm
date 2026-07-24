@@ -8,9 +8,10 @@ import logging
 from threading import Thread
 
 from django.core.mail import EmailMessage
-from django.template.loader import render_to_string
+from django.urls import reverse
 
 from base.backends import ConfiguredEmailBackend
+from base.email_handlers import render_branded_email
 from employee.models import EmployeeWorkInformation
 from payroll.models.models import Payslip
 from payroll.views.views import payslip_pdf
@@ -34,13 +35,30 @@ class MailSendThread(Thread):
     def run(self) -> None:
         super().run()
         for record in list(self.result_dict.values()):
-            html_message = render_to_string(
-                "payroll/mail_templates/default.html",
-                {
-                    "record": record,
-                    "host": self.host,
-                    "protocol": self.protocol,
-                },
+            first_instance = record["instances"][0]
+            recipient_name = first_instance.get_name()
+            company = (
+                first_instance.get_company()
+                if hasattr(first_instance, "get_company")
+                else None
+            )
+            try:
+                button_url = f"{self.protocol}://{self.host}{reverse('view-payslip')}"
+            except Exception:
+                button_url = ""
+            content = (
+                f"You have {record['count']} payslip attachment(s) in this email. "
+                f"Have a good day."
+            )
+            html_message = render_branded_email(
+                recipient_name=recipient_name,
+                title="Your payslips are ready",
+                content=content,
+                button_label="View Payslips" if button_url else "",
+                button_url=button_url,
+                company_name=str(company) if company else "",
+                host=self.host,
+                protocol=self.protocol,
                 request=self.request,
             )
             attachments = []

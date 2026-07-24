@@ -4,10 +4,10 @@ from django.contrib.auth.models import Group
 from django.contrib import messages
 from django.core.mail import EmailMessage
 from django.db.models import Q
-from django.template.loader import render_to_string
 from django.utils.translation import gettext as _
 
 from base.backends import ConfiguredEmailBackend
+from base.email_handlers import render_branded_email
 
 logger = logging.getLogger(__name__)
 
@@ -41,20 +41,30 @@ class LeaveMailSendThread(Thread):
 
         host = self.host
         protocol = self.protocol
+        link = "#"
         if leave_request_id != "#":
             link = int(leave_request_id)
         for recipient in recipients:
             if recipient:
-                html_message = render_to_string(
-                    "base/mail_templates/leave_request_template.html",
-                    {
-                        "link": link,
-                        "instance": recipient,
-                        "host": host,
-                        "protocol": protocol,
-                        "subject": subject,
-                        "content": content,
-                    },
+                company = (
+                    recipient.get_company()
+                    if hasattr(recipient, "get_company")
+                    else None
+                )
+                button_url = (
+                    f"{protocol}://{host}/leave/request-view/?id={link}"
+                    if link != "#"
+                    else ""
+                )
+                html_message = render_branded_email(
+                    recipient_name=recipient.get_full_name(),
+                    title=subject,
+                    content=content,
+                    button_label="View Leave Request" if button_url else "",
+                    button_url=button_url,
+                    company_name=str(company) if company else "",
+                    host=host,
+                    protocol=protocol,
                     request=self.request,
                 )
 

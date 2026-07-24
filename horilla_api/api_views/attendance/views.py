@@ -22,6 +22,7 @@ from attendance.views.dashboard import (
 )
 from attendance.views.views import *
 from base.backends import ConfiguredEmailBackend
+from base.email_handlers import render_branded_email
 from base.methods import generate_pdf, is_reportingmanager
 from base.models import HorillaMailTemplate
 from employee.filters import EmployeeFilter
@@ -993,9 +994,18 @@ class OfflineEmployeeMailsend(APIView):
         )
         render_bdy = template_bdy.render(context)
 
+        company = (
+            employee.get_company() if hasattr(employee, "get_company") else None
+        )
+        branded_body = render_branded_email(
+            recipient_name=employee.get_full_name(),
+            content=render_bdy,
+            content_is_html=True,
+            company_name=str(company) if company else "",
+        )
         email = EmailMessage(
             subject,
-            render_bdy,
+            branded_body,
             host,
             [employee.employee_work_info.email],
         )
