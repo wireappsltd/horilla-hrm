@@ -175,9 +175,15 @@
                                     {{leave_request.multiple_approvals.approved|length}} / {{leave_request.multiple_approvals.managers|length}} {% trans "Approved" %}
                                 </div>
                             {% else %}
-                                {{leave_request.get_status_display}}
                                 {% if leave_request.cancellation_status == 'requested' %}
-                                    <span class="oh-badge oh-badge--warning oh-badge--small ms-1">{% trans "Cancellation Requested" %}</span>
+                                    <span class="oh-badge oh-badge--warning oh-badge--small">{% trans "Cancellation Requested" %}</span>
+                                {% elif leave_request.cancellation_status == 'approved' %}
+                                    <span class="oh-badge oh-badge--secondary oh-badge--small">{% trans "Cancelled" %}</span>
+                                {% elif leave_request.cancellation_status == 'rejected' %}
+                                    {{leave_request.get_status_display}}
+                                    <span class="oh-badge oh-badge--danger oh-badge--small ms-1">{% trans "Cancellation Rejected" %}</span>
+                                {% else %}
+                                    {{leave_request.get_status_display}}
                                 {% endif %}
                             {% endif %}
                         </div>
