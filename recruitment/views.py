@@ -18,7 +18,7 @@ import logging
 from django.contrib import messages
 from django.contrib.auth.models import Permission
 from django.core import serializers
-from django.core.mail import send_mail
+from django.core.mail import EmailMultiAlternatives
 from django.core.paginator import Paginator
 from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
 from django.shortcuts import redirect, render
@@ -1259,6 +1259,8 @@ def send_acknowledgement(request):
     """
     This method is used to send acknowledgement mail to the candidate
     """
+    from base.email_handlers import attach_inline_logo, render_branded_email
+
     with contextlib.suppress(Exception):
         send_to = request.POST.get("to")
         subject = request.POST.get("subject")
@@ -1271,9 +1273,27 @@ def send_acknowledgement(request):
             except:
                 logger.error(Exception)
 
-        res = send_mail(
-            subject, bdy, display_email_name, [send_to], fail_silently=False
+        # Standardize the acknowledgement mail with the shared WireApps branded
+        # template. The body is admin-authored (WYSIWYG), so keep it as HTML.
+        recipient_name = (send_to or "").split("@")[0]
+        candidate = Candidate.objects.filter(email=send_to).first()
+        if candidate:
+            recipient_name = candidate.name
+        branded_body = render_branded_email(
+            recipient_name=recipient_name,
+            title=subject,
+            content=bdy,
+            content_is_html=True,
+            request=request,
         )
+        email = EmailMultiAlternatives(
+            subject, branded_body, display_email_name, [send_to]
+        )
+        email.content_subtype = "html"
+        # Attach the inline WireApps logo so this email keeps the same
+        # standardized branded look as every other Horilla email.
+        attach_inline_logo(email)
+        res = email.send(fail_silently=False)
         if res == 1:
             return HttpResponse(
                 """

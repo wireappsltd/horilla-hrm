@@ -12,7 +12,7 @@ from django.contrib.auth.models import Group, User
 from django.core.mail import EmailMessage
 
 from base.backends import ConfiguredEmailBackend
-from base.email_handlers import render_branded_email
+from base.email_handlers import attach_inline_logo, render_branded_email
 from base.models import Department
 from employee.models import EmployeeWorkInformation
 from helpdesk.models import ISO_GROUP_NAME, Ticket
@@ -78,6 +78,7 @@ class TicketSendThread(Thread):
                 reply_to=[display_email_name],
             )
             email.content_subtype = "html"
+            attach_inline_logo(email)
             try:
                 email.send()
             except:
@@ -194,6 +195,7 @@ class AddAssigneeThread(Thread):
                 reply_to=[display_email_name],
             )
             email.content_subtype = "html"
+            attach_inline_logo(email)
             try:
                 email.send()
             except:
@@ -255,6 +257,7 @@ class RemoveAssigneeThread(Thread):
                 reply_to=[display_email_name],
             )
             email.content_subtype = "html"
+            attach_inline_logo(email)
             try:
                 email.send()
             except:
@@ -402,6 +405,7 @@ class PasswordResetMailThread(Thread):
                     reply_to=reply_to,
                 )
                 email.content_subtype = "html"
+                attach_inline_logo(email)
                 email.send()
                 logger.info(
                     "Password-reset email sent to %s (%s)",

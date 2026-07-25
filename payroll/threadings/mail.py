@@ -11,7 +11,7 @@ from django.core.mail import EmailMessage
 from django.urls import reverse
 
 from base.backends import ConfiguredEmailBackend
-from base.email_handlers import render_branded_email
+from base.email_handlers import attach_inline_logo, render_branded_email
 from employee.models import EmployeeWorkInformation
 from payroll.models.models import Payslip
 from payroll.views.views import payslip_pdf
@@ -97,6 +97,7 @@ class MailSendThread(Thread):
 
             # Send the email
             email.content_subtype = "html"
+            attach_inline_logo(email)
             try:
                 email.send()
                 Payslip.objects.filter(id__in=self.ids).update(sent_to_employee=True)

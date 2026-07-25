@@ -6,7 +6,7 @@ from django.apps import apps
 from django.db import models
 from django.contrib import messages
 from django.contrib.auth.models import User
-from django.core.mail import send_mail
+from django.core.mail import EmailMultiAlternatives
 from django.core.paginator import Paginator
 from django.http import HttpResponse, JsonResponse, HttpResponseBadRequest
 from django.shortcuts import redirect, render
@@ -15,7 +15,7 @@ from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 
 from base.context_processors import intial_notice_period
-from base.email_handlers import render_branded_email
+from base.email_handlers import attach_inline_logo, render_branded_email
 from base.methods import closest_numbers, eval_validate, paginator_qry, sortby
 from base.models import Department, JobPosition
 from base.views import general_settings
@@ -1192,19 +1192,23 @@ def create_resignation_request(request):
                         recipient_name = user.employee_get.get_full_name()
                     except Exception:
                         recipient_name = user.get_full_name() or user.username
-                    send_mail(
+                    resignation_email = EmailMultiAlternatives(
                         subject=f"New resignation letter from {employee}",
-                        message=strip_tags(resignation_content),
-                        from_email='tech@wireapps.co.uk',
-                        recipient_list=[user.email],
-                        fail_silently=True,
-                        html_message=render_branded_email(
+                        body=strip_tags(resignation_content),
+                        from_email="tech@wireapps.co.uk",
+                        to=[user.email],
+                    )
+                    resignation_email.attach_alternative(
+                        render_branded_email(
                             recipient_name=recipient_name,
                             title="New resignation request",
                             content=resignation_content,
                             company_name=str(resign_company) if resign_company else "",
                         ),
+                        "text/html",
                     )
+                    attach_inline_logo(resignation_email)
+                    resignation_email.send(fail_silently=True)
 
             messages.success(request, _("Resignation letter saved"))
             return HttpResponse("<script>window.location.reload()</script>")

@@ -7,7 +7,7 @@ from django.db.models import Q
 from django.utils.translation import gettext as _
 
 from base.backends import ConfiguredEmailBackend
-from base.email_handlers import render_branded_email
+from base.email_handlers import attach_inline_logo, render_branded_email
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +76,7 @@ class LeaveMailSendThread(Thread):
                     reply_to=[display_email_name],
                 )
                 email.content_subtype = "html"
+                attach_inline_logo(email)
                 try:
                     email.send()
                 except:

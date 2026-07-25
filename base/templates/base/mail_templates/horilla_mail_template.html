@@ -60,28 +60,14 @@
         <center class="hr-wrapper">
             <table class="hr-table-main" width="100%" style="margin-top: 60px">
                 <tr>
-                    <td>
-                        <table class="hr-table-main__header">
-                            <tr>
-                                <td style="width: 50%">
-                                    {% if host %}
-                                    <img
-                                        src="{{ protocol }}://{{ host }}{% static '/images/ui/horilla-logo.png' %}"
-                                        height="30"
-                                        width="110.4"
-                                        alt="{{ white_label_company_name }}"
-                                    />
-                                    {% else %}
-                                    <strong style="font-size: 18px; color: #1c1c1c">
-                                        {{ white_label_company_name|default:"Horilla" }}
-                                    </strong>
-                                    {% endif %}
-                                </td>
-                                <td style="width: 50%; text-align: right">
-                                    <a href="#" class="hr-link">View in browser</a>
-                                </td>
-                            </tr>
-                        </table>
+                    <td align="center" style="padding: 15px 15px 20px 15px">
+                        <img
+                            src="{% if logo_url %}{{ logo_url }}{% else %}cid:{{ logo_cid }}{% endif %}"
+                            alt="{% firstof white_label_company_name company_name 'WireApps' %}"
+                            width="88"
+                            height="88"
+                            style="display: inline-block; border: 0"
+                        />
                     </td>
                 </tr>
                 <tr>
@@ -133,7 +119,7 @@
                             font-size: 12px;
                         "
                     >
-                        This mail was sent to you from {{ company_name|default:white_label_company_name|default:"Horilla" }}.<br />
+                        This mail was sent to you from {% firstof company_name white_label_company_name "WireApps" %}.<br />
                         Don't want to receive mails like these anymore?
                         <a href="#" style="color: #5c5c5c">Unsubscribe here</a>.
                     </td>
@@ -150,11 +136,10 @@
                             font-size: 12px;
                         "
                     >
-                        &copy; {{ current_year }} {{ white_label_company_name|default:"Horilla" }}
+                        &copy; {{ current_year }} {% firstof white_label_company_name company_name "WireApps" %}
                     </td>
                 </tr>
             </table>
         </center>
     </body>
 </html>
-

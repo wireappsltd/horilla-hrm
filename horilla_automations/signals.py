@@ -351,7 +351,7 @@ def send_mail(request, automation, instance):
     mail sending method
     """
     from base.backends import ConfiguredEmailBackend
-    from base.email_handlers import render_branded_email
+    from base.email_handlers import attach_inline_logo, render_branded_email
     from base.methods import eval_validate, generate_pdf
     from employee.models import Employee
     from horilla_automations.methods.methods import (
@@ -488,6 +488,7 @@ def send_mail(request, automation, instance):
         email.content_subtype = "html"
 
         email.attachments = attachments
+        attach_inline_logo(email)
 
         def _send_mail(email):
             try:

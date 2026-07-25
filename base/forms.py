@@ -2578,6 +2578,8 @@ class PassWordResetForm(forms.Form):
         """
         Send a django.core.mail.EmailMultiAlternatives to `to_email`.
         """
+        from base.email_handlers import attach_inline_logo
+
         subject = loader.render_to_string(subject_template_name, context)
         # Email subject *must not* contain newlines
         subject = "".join(subject.splitlines())
@@ -2590,6 +2592,9 @@ class PassWordResetForm(forms.Form):
             html_email = loader.render_to_string(html_email_template_name, context)
             email_message.attach_alternative(html_email, "text/html")
 
+        # Attach the inline WireApps logo so the branded password-reset email
+        # renders identically to every other standardized Horilla email.
+        attach_inline_logo(email_message)
         email_message.send()
 
     def get_users(self, email):

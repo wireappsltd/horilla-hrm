@@ -22,7 +22,7 @@ from attendance.views.dashboard import (
 )
 from attendance.views.views import *
 from base.backends import ConfiguredEmailBackend
-from base.email_handlers import render_branded_email
+from base.email_handlers import attach_inline_logo, render_branded_email
 from base.methods import generate_pdf, is_reportingmanager
 from base.models import HorillaMailTemplate
 from employee.filters import EmployeeFilter
@@ -1012,6 +1012,9 @@ class OfflineEmployeeMailsend(APIView):
         email.content_subtype = "html"
 
         email.attachments = attachments
+        # Attach the inline WireApps logo so this email keeps the same
+        # standardized branded look as every other Horilla email.
+        attach_inline_logo(email)
         try:
             email.send()
             if employee.employee_work_info.email:

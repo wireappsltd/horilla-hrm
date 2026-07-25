@@ -4,7 +4,7 @@ from threading import Thread
 from django.core.mail import EmailMessage
 
 from base.backends import ConfiguredEmailBackend
-from base.email_handlers import render_branded_email
+from base.email_handlers import attach_inline_logo, render_branded_email
 
 logger = logging.getLogger(__name__)
 
@@ -143,6 +143,7 @@ class CheckupMailThread(Thread):
                 reply_to=[from_email],
             )
             email.content_subtype = "html"
+            attach_inline_logo(email)
             try:
                 send_result = email.send()
                 logger.info(

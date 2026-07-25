@@ -22,7 +22,7 @@ from django import template
 from django.contrib import messages
 from django.contrib.auth import login
 from django.contrib.auth.models import User
-from django.core.mail import EmailMessage, send_mail
+from django.core.mail import EmailMessage, EmailMultiAlternatives
 from django.core.paginator import Paginator
 from django.db.models import ProtectedError
 from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
@@ -35,7 +35,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods, require_POST
 
 from base.backends import ConfiguredEmailBackend
-from base.email_handlers import render_branded_email
+from base.email_handlers import attach_inline_logo, render_branded_email
 from base.methods import (
     closest_numbers,
     generate_pdf,
@@ -687,16 +687,6 @@ def email_send(request):
                 new_portal.save()
             else:
                 OnboardingPortal(candidate_id=candidate, token=token).save()
-            html_message = render_to_string(
-                "onboarding/mail_templates/default.html",
-                {
-                    "portal": f"{protocol}://{host}/onboarding/user-creation/{token}",
-                    "instance": candidate,
-                    "host": host,
-                    "protocol": protocol,
-                },
-                request=request,
-            )
             company = None
             try:
                 company = candidate.recruitment_id.company_id
@@ -725,6 +715,7 @@ def email_send(request):
             )
             email.content_subtype = "html"
             email.attachments = attachments
+            attach_inline_logo(email)
             try:
                 email.send()
                 # to check ajax or not
@@ -1641,14 +1632,15 @@ def onboarding_send_mail(request, candidate_id):
             else "",
         )
         with contextlib.suppress(Exception):
-            res = send_mail(
+            email = EmailMultiAlternatives(
                 subject,
                 strip_tags(body),
                 display_email_name,
                 [candidate_mail],
-                html_message=branded_body,
-                fail_silently=False,
             )
+            email.attach_alternative(branded_body, "text/html")
+            attach_inline_logo(email)
+            res = email.send(fail_silently=False)
             if res == 1:
                 messages.success(request, _("Mail sent successfully"))
             else:
