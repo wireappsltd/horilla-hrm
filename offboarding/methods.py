@@ -7,7 +7,12 @@ from base.methods import (
     get_pagination,
     get_working_days,
 )
-from offboarding.models import OffboardingEmployee, OffboardingTask, EmployeeTask
+from offboarding.models import (
+    OffboardingEmployee,
+    OffboardingTask,
+    EmployeeTask,
+    ResignationLetter,
+)
 from payroll.methods.methods import get_attendance, get_leaves, months_between_range
 from payroll.methods.payslip_calc import calculate_allowance
 from payroll.models.models import Contract, Deduction, Payslip
@@ -174,3 +179,101 @@ def assign_stage_tasks_to_employee(employee):
             employee_tasks,
             ignore_conflicts=True,
         )
+
+
+def _resolve_effective_date(offboarding_employee, resignation_letter=None):
+    """
+    Return the date on which a resignation becomes effective for the given
+    offboarding employee.
+
+    Priority:
+        1. ``last_working_date``   - explicit last day at work.
+        2. ``notice_period_ends``  - end of the notice period.
+        3. ``planned_to_leave_on`` - planned resignation date on the letter.
+    """
+    if offboarding_employee.last_working_date:
+        return offboarding_employee.last_working_date
+    if offboarding_employee.notice_period_ends:
+        return offboarding_employee.notice_period_ends
+    if resignation_letter is not None:
+        return resignation_letter.planned_to_leave_on
+    return None
+
+
+def deactivate_resigned_employees():
+    """
+    Deactivate the profiles of employees whose resignation has become effective.
+
+    Intended to be triggered by the background scheduler at 11:59 PM daily. Any
+    employee whose effective resignation date is today (or has already passed
+    while the server was down) and who is still active will be deactivated and
+    have their login/access revoked:
+
+        * ``Employee.is_active`` -> ``False`` (status becomes "Inactive").
+        * Linked ``User.is_active`` -> ``False`` (login/access rights revoked).
+    """
+    from django.utils import timezone
+
+    today = timezone.localdate()
+
+    offboarding_employees = OffboardingEmployee.objects.filter(
+        employee_id__is_active=True
+    ).select_related("employee_id", "employee_id__employee_user_id")
+
+    deactivated_count = 0
+
+    for offboarding_employee in offboarding_employees:
+        employee = offboarding_employee.employee_id
+
+        resignation_letter = (
+            ResignationLetter.objects.filter(
+                offboarding_employee_id=offboarding_employee,
+                status="approved",
+            )
+            .order_by("-created_at")
+            .first()
+        )
+
+        effective_date = _resolve_effective_date(
+            offboarding_employee, resignation_letter
+        )
+
+        # Skip if there is no effective date or it has not yet arrived.
+        if not effective_date or effective_date > today:
+            continue
+
+        try:
+            with transaction.atomic():
+                # Update employee record status -> Inactive.
+                employee.is_active = False
+                employee.save()
+
+                # Revoke access rights / login by disabling the linked user.
+                user = employee.employee_user_id
+                if user is not None and user.is_active:
+                    user.is_active = False
+                    user.save(update_fields=["is_active"])
+
+            deactivated_count += 1
+            logger.info(
+                "Resigned employee '%s' (id=%s) deactivated. Effective date: %s.",
+                employee.get_full_name(),
+                employee.pk,
+                effective_date,
+            )
+        except Exception as error:  # noqa: BLE001
+            logger.error(
+                "Failed to deactivate resigned employee '%s' (id=%s): %s",
+                employee.get_full_name(),
+                employee.pk,
+                error,
+            )
+
+    if deactivated_count:
+        logger.info(
+            "Offboarding scheduler deactivated %d resigned employee profile(s).",
+            deactivated_count,
+        )
+
+    return deactivated_count
+
