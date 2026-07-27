@@ -176,12 +176,11 @@
                                 </div>
                             {% else %}
                                 {% if leave_request.cancellation_status == 'requested' %}
-                                    <span class="oh-badge oh-badge--warning oh-badge--small">{% trans "Cancellation Requested" %}</span>
+                                    {% trans "Cancellation Requested" %}
                                 {% elif leave_request.cancellation_status == 'approved' %}
-                                    <span class="oh-badge oh-badge--secondary oh-badge--small">{% trans "Cancelled" %}</span>
+                                    {% trans "Cancelled" %}
                                 {% elif leave_request.cancellation_status == 'rejected' %}
-                                    {{leave_request.get_status_display}}
-                                    <span class="oh-badge oh-badge--danger oh-badge--small ms-1">{% trans "Cancellation Rejected" %}</span>
+                                    {{leave_request.get_status_display}} - {% trans "Cancellation Rejected" %}
                                 {% else %}
                                     {{leave_request.get_status_display}}
                                 {% endif %}
