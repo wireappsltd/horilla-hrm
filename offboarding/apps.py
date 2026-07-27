@@ -16,3 +16,5 @@ class OffboardingConfig(AppConfig):
             path("offboarding/", include("offboarding.urls")),
         )
         super().ready()
+
+

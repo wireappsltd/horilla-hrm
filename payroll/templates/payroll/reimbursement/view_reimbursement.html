@@ -63,7 +63,10 @@
 
 <script>
     function reimbursementConfirm(params, target, approve = false) {
-        event.preventDefault(); event.stopPropagation()
+        if (typeof event !== "undefined" && event) {
+            event.preventDefault();
+            event.stopPropagation();
+        }
         Swal.fire({
             text: params,
             icon: "question",
@@ -77,13 +80,20 @@
                 if (approve) {
                     $(`${target} [name=amount]`).attr("required", true);
                 }
-                $(target + "Button").click();
-                if (event.target.tagName.toLowerCase() === "form") {
-                    event.target.submit();
-                } else if (event.target.tagName.toLowerCase() === "a") {
-                    window.location.href = event.target.href;
+                // Submit the confirmation form directly instead of relying on the
+                // global `event` object (which is unavailable inside this async
+                // callback) so that both Approve and Reject reliably submit.
+                const submitBtn = document.querySelector(target + "Button");
+                if (submitBtn) {
+                    const form = submitBtn.closest("form");
+                    if (form && typeof form.requestSubmit === "function") {
+                        form.requestSubmit(submitBtn);
+                    } else if (form) {
+                        form.submit();
+                    } else {
+                        submitBtn.click();
+                    }
                 }
-            } else {
             }
         });
     }

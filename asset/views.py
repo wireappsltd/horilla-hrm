@@ -74,7 +74,71 @@ from horilla.decorators import (
 from horilla.group_by import group_by_queryset
 from horilla.horilla_settings import HORILLA_DATE_FORMATS
 from horilla.methods import horilla_users_with_perms
+from horilla_audit.methods import log_activity, log_form_changes
 from notifications.signals import notify
+
+
+def _asset_client_ip(request):
+    """Best-effort client IP: first X-Forwarded-For hop, else REMOTE_ADDR."""
+    forwarded = request.META.get("HTTP_X_FORWARDED_FOR")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.META.get("REMOTE_ADDR", "")
+
+
+def _asset_audit(request, action, target=None, changes=None):
+    """Write an asset-module ActivityLog entry for a lifecycle event.
+
+    Thin wrapper over ``log_activity`` so every asset event lands in the
+    "Assets" audit tab with a consistent actor and (where available) the
+    client IP stamped into ``changes``. Never blocks the request — the
+    underlying helper swallows and logs its own failures.
+    """
+    changes = dict(changes or {})
+    ip = _asset_client_ip(request)
+    if ip:
+        changes.setdefault("IP", ip)
+    log_activity(
+        request.user,
+        module="asset",
+        action=action,
+        target=target,
+        changes=changes or None,
+    )
+
+
+@login_required
+@permission_required("asset.add_asset")
+def asset_duplicate(request, obj_id, **kwargs):
+    """Duplicate an asset and record the new record in the audit trail.
+
+    ``duplicate-asset`` normally points straight at the shared
+    ``base.views.object_duplicate``, which has no audit hook. This wrapper
+    delegates to it and, when a duplicate is actually created (POST), logs the
+    new asset under the Assets audit tab. The new object is identified by
+    diffing asset ids around the call, since ``object_duplicate`` does not
+    return the created instance.
+    """
+    from base.views import object_duplicate
+
+    before_ids = set(Asset.objects.values_list("id", flat=True))
+    response = object_duplicate(request, obj_id, **kwargs)
+    if request.method == "POST":
+        new_asset = Asset.objects.exclude(id__in=before_ids).order_by("id").last()
+        if new_asset:
+            _asset_audit(
+                request,
+                "Asset created (duplicated)",
+                target=new_asset,
+                changes={
+                    "Asset": new_asset.asset_name,
+                    "Tracking ID": new_asset.asset_tracking_id,
+                    "Category": str(new_asset.asset_category_id),
+                    "Status": new_asset.get_asset_status_display(),
+                    "Duplicated from": str(obj_id),
+                },
+            )
+    return response
 
 
 def asset_del(request, asset):
@@ -82,8 +146,14 @@ def asset_del(request, asset):
     Handle the deletion of an asset and provide message to the user.
     """
     try:
+        details = {
+            "Asset": asset.asset_name,
+            "Tracking ID": asset.asset_tracking_id,
+            "Status": asset.get_asset_status_display(),
+        }
         asset.delete()
         messages.success(request, _("Asset deleted successfully"))
+        _asset_audit(request, "Asset deleted", changes=details)
     except ProtectedError:
         messages.error(request, _("You cannot delete this asset."))
 
@@ -122,7 +192,18 @@ def asset_creation(request, asset_category_id):
     if request.method == "POST":
         form = AssetForm(request.POST, initial=initial_data)
         if form.is_valid():
-            form.save()
+            asset = form.save()
+            _asset_audit(
+                request,
+                "Asset created",
+                target=asset,
+                changes={
+                    "Asset": asset.asset_name,
+                    "Tracking ID": asset.asset_tracking_id,
+                    "Category": str(asset.asset_category_id),
+                    "Status": asset.get_asset_status_display(),
+                },
+            )
             messages.success(request, _("Asset created successfully"))
             return redirect("asset-creation", asset_category_id=asset_category_id)
     context = {"asset_creation_form": form}
@@ -153,6 +234,15 @@ def add_asset_report(request, asset_id=None):
 
         if asset_report_form.is_valid():
             asset_report = asset_report_form.save()
+            _asset_audit(
+                request,
+                "Maintenance record added",
+                target=asset_report,
+                changes={
+                    "Asset": str(asset_report.asset_id),
+                    "Title": asset_report.title,
+                },
+            )
             messages.success(request, _("Report added successfully."))
 
             if asset_report_form.is_valid() and request.FILES:
@@ -206,6 +296,13 @@ def asset_update(request, asset_id):
         asset_form = AssetForm(request.POST, instance=instance)
         if asset_form.is_valid():
             asset_form.save()
+            log_form_changes(
+                request.user,
+                "asset",
+                "Asset updated",
+                form=asset_form,
+                target=instance,
+            )
             messages.success(request, _("Asset Updated"))
     context = {
         "instance": instance,
@@ -710,7 +807,17 @@ def asset_request_creation(request):
     if request.method == "POST":
         form = AssetRequestForm(request.POST, user=request.user)
         if form.is_valid():
-            form.save()
+            asset_request = form.save()
+            _asset_audit(
+                request,
+                "Asset requested",
+                target=asset_request,
+                changes={
+                    "Requested by": str(asset_request.requested_employee_id),
+                    "Category": str(asset_request.asset_category_id),
+                    "Description": asset_request.description or "",
+                },
+            )
             messages.success(request, _("Asset request created!"))
         context["asset_request_form"] = form
 
@@ -753,6 +860,20 @@ def asset_request_approve(request, req_id):
 
                 asset_request.asset_request_status = "Approved"
                 asset_request.save()
+
+                _asset_audit(
+                    request,
+                    "Asset request approved",
+                    target=asset_request,
+                    changes={
+                        "Requested by": str(asset_request.requested_employee_id),
+                        "Category": str(asset_request.asset_category_id),
+                        "Asset assigned": str(asset),
+                        "Assigned to": str(allocation.assigned_to_employee_id),
+                        "Request status": {"from": "Requested", "to": "Approved"},
+                        "Asset status": {"from": "Available", "to": "In use"},
+                    },
+                )
 
                 notify.send(
                     request.user.employee_get,
@@ -827,6 +948,16 @@ def asset_request_reject(request, req_id):
     asset_request = AssetRequest.objects.get(id=req_id)
     asset_request.asset_request_status = "Rejected"
     asset_request.save()
+    _asset_audit(
+        request,
+        "Asset request rejected",
+        target=asset_request,
+        changes={
+            "Requested by": str(asset_request.requested_employee_id),
+            "Category": str(asset_request.asset_category_id),
+            "Request status": {"from": "Requested", "to": "Rejected"},
+        },
+    )
     messages.info(request, _("Asset request has been rejected."))
     notify.send(
         request.user.employee_get,
@@ -865,6 +996,17 @@ def asset_allocate_creation(request):
             asset.asset_status = "In use"
             asset.save()
             instance = form.save()
+            _asset_audit(
+                request,
+                "Asset assigned",
+                target=instance,
+                changes={
+                    "Asset": str(instance.asset_id),
+                    "Assigned to": str(instance.assigned_to_employee_id),
+                    "Assigned by": str(instance.assigned_by_employee_id),
+                    "Asset status": {"from": "Available", "to": "In use"},
+                },
+            )
             files = request.FILES.getlist("assign_images")
             attachments = []
             if request.FILES:
@@ -891,6 +1033,15 @@ def asset_allocate_return_request(request, asset_id):
     asset_assign = AssetAssignment.objects.get(id=asset_id)
     asset_assign.return_request = True
     asset_assign.save()
+    _asset_audit(
+        request,
+        "Asset return requested",
+        target=asset_assign,
+        changes={
+            "Asset": str(asset_assign.asset_id),
+            "Assigned to": str(asset_assign.assigned_to_employee_id),
+        },
+    )
     message = _("Return request for {} initiated.").format(asset_assign.asset_id)
     messages.success(request, message)
     permed_users = horilla_users_with_perms("asset.change_assetassignment")
@@ -964,6 +1115,18 @@ def asset_allocate_return(request, asset_id):
                     asset_allocation.return_images.add(*attachments)
                 asset.asset_status = "Available"
                 asset.save()
+                _asset_audit(
+                    request,
+                    "Asset returned",
+                    target=asset_allocation,
+                    changes={
+                        "Asset": asset.asset_name,
+                        "Returned by": str(asset_allocation.assigned_to_employee_id),
+                        "Condition": asset_return_condition or "",
+                        "Return status": asset_return_status,
+                        "Asset status": {"from": "In use", "to": "Available"},
+                    },
+                )
                 messages.info(request, _("Asset Return Successful !."))
                 return HttpResponse(
                     response.content.decode("utf-8")
@@ -985,6 +1148,18 @@ def asset_allocate_return(request, asset_id):
                     attachment.save()
                     attachments.append(attachment)
                 asset_allocation.return_images.add(*attachments)
+            _asset_audit(
+                request,
+                "Asset returned (decommissioned)",
+                target=asset_allocation,
+                changes={
+                    "Asset": asset.asset_name,
+                    "Returned by": str(asset_allocation.assigned_to_employee_id),
+                    "Condition": asset_return_condition or "",
+                    "Return status": asset_return_status,
+                    "Asset status": {"from": "In use", "to": "Not-Available"},
+                },
+            )
             messages.info(request, _("Asset Return Successful!."))
             return HttpResponse(
                 response.content.decode("utf-8") + "<script>location.reload();</script>"
@@ -1378,7 +1553,17 @@ def asset_import(request):
             file = request.FILES.get("asset_import")
             if file is not None and file.content_type == "text/csv":
                 try:
+                    before = Asset.objects.count()
                     csv_asset_import(file)
+                    _asset_audit(
+                        request,
+                        "Assets imported",
+                        changes={
+                            "File": file.name,
+                            "Format": "CSV",
+                            "Records": {"from": before, "to": Asset.objects.count()},
+                        },
+                    )
                     messages.success(request, _("Successfully imported Assets"))
                 except Exception as exception:
                     messages.error(request, f"{exception}")
@@ -1388,8 +1573,18 @@ def asset_import(request):
                 == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             ):
                 try:
+                    before = Asset.objects.count()
                     dataframe = pd.read_excel(file)
                     spreadsheetml_asset_import(dataframe)
+                    _asset_audit(
+                        request,
+                        "Assets imported",
+                        changes={
+                            "File": file.name,
+                            "Format": "Excel",
+                            "Records": {"from": before, "to": Asset.objects.count()},
+                        },
+                    )
                     messages.success(request, _("Successfully imported Assets"))
                 except KeyError as exception:
                     messages.error(request, f"{exception}")
@@ -1524,6 +1719,11 @@ def asset_export_excel(request):
         response = HttpResponse(content_type="application/vnd.ms-excel")
         response["Content-Disposition"] = 'attachment; filename="assets.xlsx"'
         dataframe.to_excel(response, index=False)
+        _asset_audit(
+            request,
+            "Assets exported",
+            changes={"Format": "Excel", "Records": len(queryset)},
+        )
         return response
     context = {"asset_export_filter": asset_export_filter}
     return render(request, "category/asset_filter_export.html", context)
@@ -2181,6 +2381,18 @@ def asset_yearly_checkup_submit(request, asset_allocation_id):
             )
             if attachments:
                 log.images.add(*attachments)
+
+            _asset_audit(
+                request,
+                "Yearly check-up completed",
+                target=assignment,
+                changes={
+                    "Asset": str(assignment.asset_id),
+                    "Assigned to": str(assignment.assigned_to_employee_id),
+                    "Check-up date": str(checkup_date),
+                    "Description": form.cleaned_data.get("checkup_description") or "",
+                },
+            )
 
             send_checkup_completion_notification(request, assignment)
             messages.success(

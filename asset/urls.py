@@ -21,7 +21,7 @@ urlpatterns = [
     path("asset-update/<int:asset_id>/", views.asset_update, name="asset-update"),
     path(
         "duplicate-asset/<int:obj_id>/",
-        object_duplicate,
+        views.asset_duplicate,
         name="duplicate-asset",
         kwargs={
             "model": Asset,

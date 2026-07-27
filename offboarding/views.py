@@ -454,7 +454,7 @@ def add_employee(request):
                 EmployeeTask.objects.get_or_create(
                     employee_id=instance,
                     task_id=task,
-                    defaults={"status": "todo"}
+                    defaults={"status": "pending"}
                 )
 
             if stage.type == "fnf":
@@ -619,7 +619,7 @@ def change_stage(request):
             EmployeeTask.objects.get_or_create(
                 employee_id=employee,
                 task_id=task,
-                defaults={"status": "todo"}
+                defaults={"status": "pending"}
             )
 
     stage_forms = {}
@@ -878,6 +878,29 @@ def update_task_status(request, *args, **kwargs):
         redirect=reverse("offboarding-pipeline"),
         icon="information",
     )
+    # Notify the offboarding employees when their clearance is approved/rejected
+    if status in ("approved", "rejected"):
+        for emp_task in employee_task:
+            try:
+                recipient = emp_task.employee_id.employee_id.employee_user_id
+                if not recipient:
+                    continue
+                notify.send(
+                    request.user.employee_get,
+                    recipient=recipient,
+                    verb=(
+                        f'Your clearance "{emp_task.task_id.title}" has been '
+                        f"{status}"
+                    ),
+                    verb_ar=f"",
+                    verb_de=f"",
+                    verb_es=f"",
+                    verb_fr=f"",
+                    redirect=reverse("offboarding-pipeline"),
+                    icon="information",
+                )
+            except Exception:
+                pass
     stage = OffboardingStage.objects.get(id=stage_id)
     stage_forms = {}
     stage_forms[str(stage.offboarding_id.id)] = StageSelectForm(

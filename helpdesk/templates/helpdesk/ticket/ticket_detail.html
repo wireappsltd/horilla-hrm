@@ -26,15 +26,33 @@
     }
 
     @media screen and (min-width: 992px) {
+
+        .oh-wrapper-main {
+            align-items: start;
+        }
+
+        #sidebar {
+            height: 100vh;
+            max-height: 100vh;
+            overflow-y: auto;
+        }
+
+        .oh-sidebar {
+            min-height: 0;
+            height: 100%;
+            max-height: 100vh;
+            overflow-y: auto;
+        }
+
         .oh-helpdesk {
-            height: calc(100vh - 65px);
-            overflow: hidden;
+            grid-template-rows: calc(100vh - 68px);
         }
 
         .oh-helpdesk__left {
             display: flex;
             flex-direction: column;
-            height: calc(100vh - 65px);
+            height: calc(100vh - 68px);
+            min-height: 0;
             overflow: hidden;
         }
 
@@ -42,6 +60,24 @@
             height: auto;
             flex: 1 1 auto;
             min-height: 0;
+            overflow-y: auto;
+        }
+
+        .oh-helpdesk__chatbox {
+            flex: 0 0 auto;
+        }
+
+        .oh-helpdesk__right {
+            height: calc(100vh - 68px);
+            min-height: 0;
+            overflow-y: auto;
+        }
+    }
+
+
+    @media screen and (max-width: 991.98px) {
+        .oh-helpdesk__body {
+            height: auto;
         }
     }
 
@@ -145,6 +181,31 @@
         height: 38px;
         display: inline-flex;
         align-items: center;
+    }
+
+    html.oh-scroll-lock,
+    body.oh-scroll-lock {
+        overflow: hidden !important;
+    }
+
+    .oh-helpdesk__chatbox {
+        flex: 0 0 auto;
+    }
+
+    .oh-helpdesk__chatbox .note-editor {
+        margin-bottom: 0;
+    }
+
+    .oh-helpdesk__chatbox .note-editor .note-editable {
+        min-height: 60px;
+        max-height: 140px;
+        overflow-y: auto;
+    }
+
+    /* The resize grip pushes the editor taller than needed; hide it so the
+       editor keeps a predictable, fully-visible height. */
+    .oh-helpdesk__chatbox .note-editor .note-statusbar {
+        display: none;
     }
 </style>
 
@@ -2489,6 +2550,25 @@
     })();
 </script>
 {% endif %}
+
+<script>
+    (function () {
+        var modals = document.querySelectorAll('.oh-modal');
+        if (!modals.length || typeof MutationObserver === 'undefined') { return; }
+
+        function syncScrollLock() {
+            var anyOpen = document.querySelector('.oh-modal.oh-modal--show') !== null;
+            document.documentElement.classList.toggle('oh-scroll-lock', anyOpen);
+            document.body.classList.toggle('oh-scroll-lock', anyOpen);
+        }
+
+        var observer = new MutationObserver(syncScrollLock);
+        modals.forEach(function (modal) {
+            observer.observe(modal, { attributes: true, attributeFilter: ['class'] });
+        });
+        syncScrollLock();
+    })();
+</script>
 
 <script type="module" src="https://unpkg.com/ionicons@5.5.2/dist/ionicons/ionicons.esm.js"></script>
 <script nomodule src="https://unpkg.com/ionicons@5.5.2/dist/ionicons/ionicons.js"></script>

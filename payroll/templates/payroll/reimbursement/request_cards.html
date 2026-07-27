@@ -957,6 +957,10 @@
 
     <script>
         function reimbursementConfirm(params, target, approve = false) {
+            if (typeof event !== "undefined" && event) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
             Swal.fire({
                 text: params,
                 icon: "question",
@@ -970,13 +974,17 @@
                     if (approve) {
                         $(`${target} [name=amount]`).attr("required", true);
                     }
-                    $(target + "Button").click();
-                    if (event.target.tagName.toLowerCase() === "form") {
-                        event.target.submit();
-                    } else if (event.target.tagName.toLowerCase() === "a") {
-                        window.location.href = event.target.href;
+                    const submitBtn = document.querySelector(target + "Button");
+                    if (submitBtn) {
+                        const form = submitBtn.closest("form");
+                        if (form && typeof form.requestSubmit === "function") {
+                            form.requestSubmit(submitBtn);
+                        } else if (form) {
+                            form.submit();
+                        } else {
+                            submitBtn.click();
+                        }
                     }
-                } else {
                 }
             });
         }
