@@ -1,5 +1,23 @@
 {% load i18n %}
 
+<style>
+
+    #changeRequestModal .oh-modal__dialog {
+        display: flex;
+        flex-direction: column;
+        max-height: calc(100vh - 3.5rem);
+        margin: 1.75rem auto;
+    }
+    #changeRequestModal .oh-modal__dialog-header {
+        flex: 0 0 auto;
+    }
+    #changeRequestModal .oh-modal__dialog-body {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+    }
+</style>
+
 <div class="oh-modal oh-modal--show" id="changeRequestModal">
     <div class="oh-modal__dialog">
         <div class="oh-modal__dialog-header">
