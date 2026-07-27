@@ -80,6 +80,8 @@
                     hx-target="#objectDetailsModalW25Target">
                     <div class="oh-sticky-table__sd {% if leave_request.status == "requested" %}row-status--orange
                         {% elif leave_request.status == "cancelled" %} row-status--gray
+                        {% elif leave_request.cancellation_status == "requested" %} row-status--orange
+                        {% elif leave_request.cancellation_status == "approved" %} row-status--gray
                         {% elif leave_request.status == "approved" %} row-status--yellow {% elif leave_request.status == "rejected" %} row-status--red{% endif %}" onclick="event.stopPropagation()">
                         <div class="centered-div">
                             <input
@@ -122,7 +124,16 @@
                             {{leave_request.multiple_approvals.approved|length}} / {{leave_request.multiple_approvals.managers|length}} {% trans "Approved" %}
                             </div>
                         {% else %}
-                            {{leave_request.get_status_display}}
+                            {% if leave_request.cancellation_status == 'requested' %}
+                                <span class="oh-badge oh-badge--warning oh-badge--small">{% trans "Cancellation Requested" %}</span>
+                            {% elif leave_request.cancellation_status == 'approved' %}
+                                <span class="oh-badge oh-badge--secondary oh-badge--small">{% trans "Cancelled" %}</span>
+                            {% elif leave_request.cancellation_status == 'rejected' %}
+                                {{leave_request.get_status_display}}
+                                <span class="oh-badge oh-badge--danger oh-badge--small ms-1">{% trans "Cancellation Rejected" %}</span>
+                            {% else %}
+                                {{leave_request.get_status_display}}
+                            {% endif %}
                         {% endif %}
                     </div>
                     <div class="oh-sticky-table__td" onclick="event.stopPropagation();">
@@ -145,9 +156,16 @@
                             </a>
                         {% elif leave_request.status == 'approved' %}
                             {% if leave_request.cancellation_status == 'requested' %}
-                                <button class="oh-btn oh-btn--warning-outline w-100" disabled
+                                <button class="oh-btn oh-btn--warning w-100" disabled
                                     title="{% trans 'Cancellation request pending HR review' %}">
+                                    <ion-icon name="hourglass-outline" class="me-1"></ion-icon>
                                     {% trans "Cancellation Requested" %}
+                                </button>
+                            {% elif leave_request.cancellation_status == 'approved' %}
+                                <button class="oh-btn oh-btn--secondary w-100" disabled
+                                    title="{% trans 'Approved leave has been cancelled' %}">
+                                    <ion-icon name="close-circle-outline" class="me-1"></ion-icon>
+                                    {% trans "Cancelled" %}
                                 </button>
                             {% else %}
                                 <a type="submit" data-toggle="oh-modal-toggle"
@@ -155,7 +173,8 @@
                                     hx-get="{% url 'user-request-cancellation-request' leave_request.id %}"
                                     hx-target="#cancellationRequestForm"
                                     title="{% trans 'Request cancellation of this approved leave' %}"
-                                    class="oh-btn oh-btn--primary w-100">
+                                    class="oh-btn oh-btn--danger-outline w-100">
+                                    <ion-icon name="close-circle-outline" class="me-1"></ion-icon>
                                     {% trans "Request Cancellation" %}
                                 </a>
                             {% endif %}
