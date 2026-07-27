@@ -82,7 +82,7 @@ def compute_resignation_balance(employee, last_working_date, notice_end_date):
                                 EmployeeTask(
                                     employee_id=off_emp,
                                     task_id=deduction_task,
-                                    status="todo",
+                                    status="pending",
                                     description=description,
                                 )
                             ],
@@ -127,7 +127,7 @@ def assign_task_to_stage_employees(sender, instance, created, **kwargs):
             EmployeeTask(
                 employee_id=employee,
                 task_id=instance,
-                status="todo",
+                status="pending",
             )
             for employee in employees
         ]
@@ -165,7 +165,7 @@ def assign_stage_tasks_to_employee(employee):
     )
 
     employee_tasks = [
-        EmployeeTask(employee_id=employee, task_id=task, status="todo")
+        EmployeeTask(employee_id=employee, task_id=task, status="pending")
         for task in tasks
     ]
 

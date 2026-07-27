@@ -115,15 +115,17 @@
                     >
                         <strong
                             >Hello {{ instance.get_full_name }},
-                            {{subject}}!</strong
+                            {{subject}}.</strong
                         >
                     </td>
                 </tr>
+                {% if content %}
                 <tr>
                     <td align="center" style="padding-top: 0px">
                         <p style="width: 90%">{{content}}</p>
                     </td>
                 </tr>
+                {% endif %}
                 {% if link != "#" %}
                 <tr>
                     <td style="padding: 15px" align="center">
