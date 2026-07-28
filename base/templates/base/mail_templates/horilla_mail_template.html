@@ -1,0 +1,145 @@
+{% load static %} {% now "Y" as current_year %}
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>{{ white_label_company_name }}</title>
+
+        <style>
+            body {
+                margin: 0;
+                background-color: #e5e5e5;
+            }
+
+            table {
+                border-spacing: 0;
+            }
+
+            td {
+                padding: 0;
+            }
+
+            img {
+                border: 0;
+            }
+
+            .hr-wrapper {
+                width: 100%;
+                table-layout: fixed;
+                background-color: #e5e5e5;
+                padding-bottom: 60px;
+            }
+
+            .hr-table-main {
+                background-color: #fff;
+                margin: 0 auto;
+                width: 100%;
+                max-width: 650px;
+                border-spacing: 0;
+                font-family: Arial, "Helvetica Neue", Helvetica, sans-serif;
+                color: #1c1c1c;
+                margin-top: 15px;
+            }
+
+            .hr-table-main__header {
+                table-layout: fixed;
+                padding: 15px;
+                width: 100%;
+            }
+
+            .hr-link {
+                color: #6f6f6f;
+                font-size: 12px;
+            }
+        </style>
+    </head>
+
+    <body>
+        <center class="hr-wrapper">
+            <table class="hr-table-main" width="100%" style="margin-top: 60px">
+                <tr>
+                    <td align="center" style="padding: 15px 15px 20px 15px">
+                        <img
+                            src="{% if logo_url %}{{ logo_url }}{% else %}cid:{{ logo_cid }}{% endif %}"
+                            alt="{% firstof white_label_company_name company_name 'WireApps' %}"
+                            width="88"
+                            height="88"
+                            style="display: inline-block; border: 0"
+                        />
+                    </td>
+                </tr>
+                <tr>
+                    <td
+                        style="padding: 30px 25px 0 25px; font-size: 24px"
+                        align="center"
+                    >
+                        {% if recipient_name or title %}
+                        <strong>Hello {{ recipient_name }}{% if title %}, {{ title }}{% endif %}!</strong>
+                        {% endif %}
+                    </td>
+                </tr>
+                <tr>
+                    <td align="center" style="padding-top: 0px">
+                        <p style="width: 90%; font-size: 15px; line-height: 1.5">
+                            {% if content_is_html %}{{ content|safe }}{% else %}{{ content|linebreaksbr }}{% endif %}
+                        </p>
+                    </td>
+                </tr>
+                {% if button_url and button_label %}
+                <tr>
+                    <td style="padding: 15px" align="center">
+                        <a
+                            href="{{ button_url }}"
+                            style="
+                                background-color: #e54f37;
+                                color: #fff;
+                                border-radius: 10px;
+                                display: inline-block;
+                                padding: 15px 25px;
+                                text-decoration: none;
+                                font-weight: bold;
+                            "
+                            >{{ button_label }}</a
+                        >
+                    </td>
+                </tr>
+                {% endif %}
+
+                <tr>
+                    <td
+                        align="center"
+                        style="
+                            padding-left: 15px;
+                            padding-right: 15px;
+                            padding-top: 30px;
+                            padding-bottom: 15px;
+                            color: #5c5c5c;
+                            font-size: 12px;
+                        "
+                    >
+                        This mail was sent to you from {% firstof company_name white_label_company_name "WireApps" %}.<br />
+                        Don't want to receive mails like these anymore?
+                        <a href="#" style="color: #5c5c5c">Unsubscribe here</a>.
+                    </td>
+                </tr>
+                <tr>
+                    <td
+                        align="center"
+                        style="
+                            padding-left: 15px;
+                            padding-right: 15px;
+                            padding-bottom: 10px;
+                            padding-top: 10px;
+                            color: #5c5c5c;
+                            font-size: 12px;
+                        "
+                    >
+                        &copy; {{ current_year }} {% firstof white_label_company_name company_name "WireApps" %}
+                    </td>
+                </tr>
+            </table>
+        </center>
+    </body>
+</html>

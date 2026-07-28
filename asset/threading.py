@@ -2,9 +2,9 @@ import logging
 from threading import Thread
 
 from django.core.mail import EmailMessage
-from django.template.loader import render_to_string
 
 from base.backends import ConfiguredEmailBackend
+from base.email_handlers import attach_inline_logo, render_branded_email
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +78,20 @@ class CheckupMailThread(Thread):
         )
         logger.info("[CheckupMailThread] subject=%r", subject)
 
+        title = {
+            "upcoming": "Asset check-up reminder",
+            "overdue": "Asset check-up is overdue",
+            "completed": "Asset check-up completed",
+        }.get(self.notification_type, "Asset check-up update")
+
+        details = (
+            f"Asset Name: {self.context.get('asset_name', '')}\n"
+            f"Tracking ID: {self.context.get('tracking_id', '')}\n"
+            f"Assigned To: {self.context.get('assigned_to', '')}\n"
+            f"Check-up Date: {self.context.get('checkup_date', '')}\n"
+            f"Service Shop: {self.context.get('service_shop', '')}"
+        )
+
         sent_count = 0
         skipped_no_email = 0
         failed_count = 0
@@ -101,15 +115,17 @@ class CheckupMailThread(Thread):
                 continue
 
             try:
-                html_message = render_to_string(
-                    "asset/mail_templates/checkup_notification.html",
-                    {
-                        **self.context,
-                        "recipient_name": employee_label,
-                        "is_overdue": self.is_overdue,
-                        "is_completed": self.is_completed,
-                        "notification_type": self.notification_type,
-                    },
+                company = (
+                    employee.get_company()
+                    if hasattr(employee, "get_company")
+                    else None
+                )
+                content = f"{self.context.get('message', '')}\n\n{details}"
+                html_message = render_branded_email(
+                    recipient_name=employee_label,
+                    title=title,
+                    content=content,
+                    company_name=str(company) if company else "",
                 )
             except Exception:
                 logger.exception(
@@ -127,6 +143,7 @@ class CheckupMailThread(Thread):
                 reply_to=[from_email],
             )
             email.content_subtype = "html"
+            attach_inline_logo(email)
             try:
                 send_result = email.send()
                 logger.info(

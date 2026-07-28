@@ -2573,20 +2573,28 @@ class PassWordResetForm(forms.Form):
         from_email,
         to_email,
         html_email_template_name=None,
+        html_message=None,
     ):
         """
         Send a django.core.mail.EmailMultiAlternatives to `to_email`.
         """
+        from base.email_handlers import attach_inline_logo
+
         subject = loader.render_to_string(subject_template_name, context)
         # Email subject *must not* contain newlines
         subject = "".join(subject.splitlines())
         body = loader.render_to_string(email_template_name, context)
 
         email_message = EmailMultiAlternatives(subject, body, from_email, [to_email])
-        if html_email_template_name is not None:
+        if html_message is not None:
+            email_message.attach_alternative(html_message, "text/html")
+        elif html_email_template_name is not None:
             html_email = loader.render_to_string(html_email_template_name, context)
             email_message.attach_alternative(html_email, "text/html")
 
+        # Attach the inline WireApps logo so the branded password-reset email
+        # renders identically to every other standardized Horilla email.
+        attach_inline_logo(email_message)
         email_message.send()
 
     def get_users(self, email):
@@ -2657,13 +2665,47 @@ class PassWordResetForm(forms.Form):
                 "protocol": "https" if use_https else "http",
                 **(extra_email_context or {}),
             }
+            # Build the branded HTML email so password-reset matches the
+            # standardized Horilla email look used across all features.
+            from django.urls import NoReverseMatch, reverse
+
+            from base.email_handlers import render_branded_email
+
+            protocol = context["protocol"]
+            try:
+                reset_path = reverse(
+                    "password_reset_confirm",
+                    kwargs={"uidb64": context["uid"], "token": token},
+                )
+                reset_url = f"{protocol}://{domain}{reset_path}"
+            except NoReverseMatch:
+                reset_url = ""
+
+            company = (
+                employee.get_company() if hasattr(employee, "get_company") else None
+            )
+            branded_html = render_branded_email(
+                recipient_name=employee.get_full_name(),
+                title="Password reset requested",
+                content=(
+                    "We received a request to reset the password for your account. "
+                    "Click the button below to choose a new password. If you did not "
+                    "request this, you can safely ignore this email."
+                ),
+                button_label="Reset Password" if reset_url else "",
+                button_url=reset_url,
+                company_name=str(company) if company else "",
+                host=domain,
+                protocol=protocol,
+                request=request,
+            )
             self.send_mail(
                 subject_template_name,
                 email_template_name,
                 context,
                 from_email,
                 email,
-                html_email_template_name=html_email_template_name,
+                html_message=branded_html,
             )
 
 
