@@ -1668,17 +1668,14 @@ def view_reimbursement(request):
     reimbursement_exists = False
     if Reimbursement.objects.exists():
         reimbursement_exists = True
-    if request.GET:
-        filter_object = ReimbursementFilter(request.GET)
-    else:
-        filter_object = ReimbursementFilter({"status": "requested"})
+    filter_object = ReimbursementFilter(request.GET)
     requests = filter_own_records(
         request, filter_object.qs, "payroll.view_reimbursement"
     )
-    reimbursements = requests.filter(type="reimbursement")
+    reimbursements = requests.filter(type__in=["reimbursement", "bonus"])
     leave_encashments = requests.filter(type="leave_encashment")
     bonus_encashment = requests.filter(type="bonus_encashment")
-    data_dict = {"status": ["requested"]}
+    data_dict = {}
     view = request.GET.get("view")
     template = "payroll/reimbursement/view_reimbursement.html"
 
@@ -1808,7 +1805,7 @@ def search_reimbursement(request):
     requests = ReimbursementFilter(request.GET).qs
     requests = filter_own_records(request, requests, "payroll.view_reimbursement")
     data_dict = parse_qs(request.GET.urlencode())
-    reimbursements = requests.filter(type="reimbursement")
+    reimbursements = requests.filter(type__in=["reimbursement", "bonus"])
     leave_encashments = requests.filter(type="leave_encashment")
     bonus_encashment = requests.filter(type="bonus_encashment")
     reimbursements_ids = json.dumps(list(reimbursements.values_list("id", flat=True)))
@@ -1896,6 +1893,8 @@ def approve_reimbursements(request):
             if reimbursement.type == "leave_encashment":
                 reimbursement.amount = amount
             elif reimbursement.type == "bonus_encashment":
+                reimbursement.amount = amount
+            elif reimbursement.type == "bonus":
                 reimbursement.amount = amount
 
             emp = reimbursement.employee_id

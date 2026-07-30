@@ -9,6 +9,7 @@ from helpdesk.models import (
     Comment,
     DepartmentManager,
     FAQCategory,
+    IncidentReport,
     Ticket,
     TicketType,
 )
@@ -24,3 +25,4 @@ admin.site.register(DepartmentManager)
 admin.site.register(ClaimRequest)
 admin.site.register(AccessRequest)
 admin.site.register(AdminAccessRequest)
+admin.site.register(IncidentReport)

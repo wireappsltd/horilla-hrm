@@ -16,6 +16,7 @@ from django.http import HttpResponse, JsonResponse
 from django.shortcuts import render
 
 from base.backends import ConfiguredEmailBackend
+from base.email_handlers import attach_inline_logo, render_branded_email
 from base.forms import MailTemplateForm
 from base.methods import export_data, generate_pdf
 from base.models import HorillaMailTemplate
@@ -254,14 +255,25 @@ def send_mail_to_employee(request):
             else employee.email
         )
 
+        company = (
+            employee.get_company() if hasattr(employee, "get_company") else None
+        )
+        branded_body = render_branded_email(
+            recipient_name=employee.get_full_name(),
+            content=render_bdy,
+            content_is_html=True,
+            company_name=str(company) if company else "",
+            request=request,
+        )
         email = EmailMessage(
             subject=subject,
-            body=render_bdy,
+            body=branded_body,
             to=[send_to_mail],
         )
         email.content_subtype = "html"
 
         email.attachments = attachments
+        attach_inline_logo(email)
         try:
             email.send()
             if employee.employee_work_info.email or employee.email:

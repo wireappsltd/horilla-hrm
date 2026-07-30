@@ -16,7 +16,6 @@ from payroll.context_processors import get_active_employees
 from payroll.models.models import (
     Contract,
     EncashmentGeneralSettings,
-    PayrollGeneralSetting,
     ReimbursementFile,
     ReimbursementrequestComment,
 )
@@ -43,6 +42,7 @@ class ContractForm(ModelForm):
             "filing_status",
             "pay_frequency",
             "shift",
+            "wage_type",
         ]
         model = Contract
 
@@ -79,9 +79,14 @@ class ContractForm(ModelForm):
                     "hx-swap": "beforebegin",
                 }
             )
-        first = PayrollGeneralSetting.objects.first()
-        if first and self.instance.pk is None:
-            self.initial["notice_period_in_days"] = first.notice_period
+        # Notice period is hardcoded to 60 days and must not be editable by the user.
+        self.initial["notice_period_in_days"] = 60
+        self.fields["notice_period_in_days"].disabled = True
+        self.fields["notice_period_in_days"].widget.attrs.update(
+            {"readonly": True}
+        )
+        # Work Type should only be hidden from the UI in the frontend.
+        self.fields["work_type"].widget = forms.HiddenInput()
         self.fields["contract_document"].widget.attrs[
             "accept"
         ] = ".jpg, .jpeg, .png, .pdf"

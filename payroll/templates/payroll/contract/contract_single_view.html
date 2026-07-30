@@ -82,6 +82,12 @@
             </div>
             <div class="oh-timeoff-modal__stats-container mt-3 mb-3">
                 <div class="oh-timeoff-modal__stat">
+                    <span class="oh-timeoff-modal__stat-title">{% trans "Contract Type" %}</span>
+                    <span class="oh-timeoff-modal__stat-count">{{contract.get_contract_type_display}}</span>
+                </div>
+            </div>
+            <div class="oh-timeoff-modal__stats-container mt-3 mb-3">
+                <div class="oh-timeoff-modal__stat">
                     <span class="oh-timeoff-modal__stat-title">{% trans "Wage Type" %}</span>
                     <span class="oh-timeoff-modal__stat-count">{{contract.get_wage_type_display}}</span>
                 </div>

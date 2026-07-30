@@ -351,6 +351,7 @@ def send_mail(request, automation, instance):
     mail sending method
     """
     from base.backends import ConfiguredEmailBackend
+    from base.email_handlers import attach_inline_logo, render_branded_email
     from base.methods import eval_validate, generate_pdf
     from employee.models import Employee
     from horilla_automations.methods.methods import (
@@ -470,9 +471,15 @@ def send_mail(request, automation, instance):
         soup = BeautifulSoup(render_bdy, "html.parser")
         plain_text = soup.get_text(separator="\n")
 
+        branded_body = render_branded_email(
+            content=render_bdy,
+            content_is_html=True,
+            request=request,
+        )
+
         email = EmailMessage(
             subject=render_title,
-            body=render_bdy,
+            body=branded_body,
             to=to,
             cc=cc,
             from_email=from_email,
@@ -481,6 +488,7 @@ def send_mail(request, automation, instance):
         email.content_subtype = "html"
 
         email.attachments = attachments
+        attach_inline_logo(email)
 
         def _send_mail(email):
             try:

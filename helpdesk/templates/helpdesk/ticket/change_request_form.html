@@ -1,0 +1,251 @@
+{% load i18n %}
+
+<style>
+
+    #changeRequestModal .oh-modal__dialog {
+        display: flex;
+        flex-direction: column;
+        max-height: calc(100vh - 3.5rem);
+        margin: 1.75rem auto;
+    }
+    #changeRequestModal .oh-modal__dialog-header {
+        flex: 0 0 auto;
+    }
+    #changeRequestModal .oh-modal__dialog-body {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+    }
+</style>
+
+<div class="oh-modal oh-modal--show" id="changeRequestModal">
+    <div class="oh-modal__dialog">
+        <div class="oh-modal__dialog-header">
+            <h2 class="oh-modal__dialog-title">
+                {% trans "Change Request" %}
+            </h2>
+            <button
+                class="oh-modal__close"
+                aria-label="Close"
+                onclick="document.getElementById('changeRequestModal').classList.remove('oh-modal--show')"
+            >
+                <ion-icon name="close-outline"></ion-icon>
+            </button>
+        </div>
+
+        <div class="oh-modal__dialog-body">
+            <form
+                method="post"
+                {% if change_request %}
+                    hx-post="{% url 'change-request-update' change_request.id %}"
+                {% else %}
+                    hx-post="{% url 'change-request-create' %}"
+                {% endif %}
+                hx-target="#changeRequestModalTarget"
+                hx-swap="innerHTML"
+                hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'
+            >
+                {% csrf_token %}
+                {{ form.employee }}
+
+                <!-- User ID (Email) — auto-populated, read-only -->
+                <div class="oh-layout--row">
+                    <div class="oh-form__group col-md-12">
+                        <label class="oh-label" for="id_user_email">{% trans "User ID (Email)" %}</label>
+                        {{ form.user_email }}
+                    </div>
+                </div>
+
+                <!-- Summary of Change Requirement -->
+                <div class="oh-form__group mt-2">
+                    <label class="oh-label oh-label--mandatory" for="id_summary">
+                        {% trans "Summary of Change Requirement" %} <span style="color: red;">*</span>
+                    </label>
+                    {{ form.summary }}
+                    <div class="d-flex justify-content-between mt-1">
+                        <span class="oh-text--muted" style="font-size:12px;">
+                            {% blocktrans with max=form.SUMMARY_MAX_LENGTH %}Max {{ max }} characters{% endblocktrans %}
+                        </span>
+                        <span class="oh-text--muted" id="changeSummaryCounter" style="font-size:12px;">
+                            0/{{ form.SUMMARY_MAX_LENGTH }}
+                        </span>
+                    </div>
+                    <span class="oh-text--danger" id="changeSummaryClientError" style="font-size:12px; display:none;"></span>
+                    {% if form.summary.errors %}
+                        <span class="oh-text--danger" style="font-size:12px;">{{ form.summary.errors|join:", " }}</span>
+                    {% endif %}
+                </div>
+
+                <!-- Categorisation & Change Type -->
+                <div class="oh-layout--row mt-2">
+                    <div class="oh-form__group col-md-6">
+                        <label class="oh-label oh-label--mandatory" for="id_categorisation">
+                            {% trans "Change Categorisation" %} <span style="color: red;">*</span>
+                        </label>
+                        {{ form.categorisation }}
+                        {% if form.categorisation.errors %}
+                            <span class="oh-text--danger" style="font-size:12px;">{{ form.categorisation.errors|join:", " }}</span>
+                        {% endif %}
+                    </div>
+                    <div class="oh-form__group col-md-6">
+                        <label class="oh-label oh-label--mandatory" for="id_change_type">
+                            {% trans "Change Type" %} <span style="color: red;">*</span>
+                        </label>
+                        {{ form.change_type }}
+                        {% if form.change_type.errors %}
+                            <span class="oh-text--danger" style="font-size:12px;">{{ form.change_type.errors|join:", " }}</span>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Reason for Categorisation -->
+                <div class="oh-form__group mt-2">
+                    <label class="oh-label oh-label--mandatory" for="id_categorisation_reason">
+                        {% trans "Reason for Change Categorisation" %} <span style="color: red;">*</span>
+                    </label>
+                    {{ form.categorisation_reason }}
+                    {% if form.categorisation_reason.errors %}
+                        <span class="oh-text--danger" style="font-size:12px;">{{ form.categorisation_reason.errors|join:", " }}</span>
+                    {% endif %}
+                </div>
+
+                <!-- Expiry Date (only when Temporary) -->
+                <div class="oh-layout--row mt-2" id="changeExpiryDateWrapper" style="display:none;">
+                    <div class="oh-form__group col-md-6">
+                        <label class="oh-label oh-label--mandatory" for="id_expiry_date">
+                            {% trans "Expiry Date" %} <span style="color: red;">*</span>
+                        </label>
+                        {{ form.expiry_date }}
+                        {% if form.expiry_date.errors %}
+                            <span class="oh-text--danger" style="font-size:12px;">{{ form.expiry_date.errors|join:", " }}</span>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Services / Systems Impacted -->
+                <div class="oh-form__group mt-2">
+                    <label class="oh-label oh-label--mandatory" for="id_services_impacted">
+                        {% trans "List of Services / Systems Impacted" %} <span style="color: red;">*</span>
+                    </label>
+                    {{ form.services_impacted }}
+                    {% if form.services_impacted.errors %}
+                        <span class="oh-text--danger" style="font-size:12px;">{{ form.services_impacted.errors|join:", " }}</span>
+                    {% endif %}
+                </div>
+
+                <!-- Change Required By & Change Requested By -->
+                <div class="oh-layout--row mt-2">
+                    <div class="oh-form__group col-md-6">
+                        <label class="oh-label oh-label--mandatory" for="id_change_required_by">
+                            {% trans "Change Required By Date" %} <span style="color: red;">*</span>
+                        </label>
+                        {{ form.change_required_by }}
+                        {% if form.change_required_by.errors %}
+                            <span class="oh-text--danger" style="font-size:12px;">{{ form.change_required_by.errors|join:", " }}</span>
+                        {% endif %}
+                    </div>
+                    <div class="oh-form__group col-md-6">
+                        <label class="oh-label oh-label--mandatory" for="id_change_requested_by">
+                            {% trans "Change Requested By Date" %} <span style="color: red;">*</span>
+                        </label>
+                        {{ form.change_requested_by }}
+                        {% if form.change_requested_by.errors %}
+                            <span class="oh-text--danger" style="font-size:12px;">{{ form.change_requested_by.errors|join:", " }}</span>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Priority & Due Date -->
+                <div class="oh-layout--row mt-2">
+                    <div class="oh-form__group col-md-6">
+                        <label class="oh-label" for="id_priority">{% trans "Priority" %}</label>
+                        {{ form.priority }}
+                    </div>
+                    <div class="oh-form__group col-md-6">
+                        <label class="oh-label" for="id_deadline">{% trans "Due Date" %}</label>
+                        {{ form.deadline }}
+                        {% if form.deadline.errors %}
+                            <span class="oh-text--danger" style="font-size:12px;">{{ form.deadline.errors|join:", " }}</span>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Forward To (Divisional Head — IS Council) -->
+                <div class="oh-layout--row mt-2">
+                    <div class="oh-form__group col-md-12">
+                        <label class="oh-label oh-label--mandatory" for="id_forward_to">
+                            {% trans "Forward To (Divisional Head — IS Council)" %} <span style="color: red;">*</span>
+                        </label>
+                        {{ form.forward_to }}
+                        {% if form.forward_to.errors %}
+                            <span class="oh-text--danger" style="font-size:12px;">{{ form.forward_to.errors|join:", " }}</span>
+                        {% endif %}
+                    </div>
+                </div>
+
+                {% if form.non_field_errors %}
+                    <div class="oh-alert oh-alert--danger mt-2">{{ form.non_field_errors }}</div>
+                {% endif %}
+
+                <div class="d-flex justify-content-end mt-3">
+                    <button type="submit" class="oh-btn oh-btn--secondary">{% trans "Save" %}</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Toggle the Expiry Date field based on the selected Change Type.
+    function changeRequestToggleExpiry(selectEl) {
+        var wrapper = document.getElementById("changeExpiryDateWrapper");
+        if (!wrapper) { return; }
+        var expiryInput = document.getElementById("id_expiry_date");
+        if (selectEl && selectEl.value === "temporary") {
+            wrapper.style.display = "";
+            if (expiryInput) { expiryInput.required = true; }
+        } else {
+            wrapper.style.display = "none";
+            if (expiryInput) { expiryInput.required = false; expiryInput.value = ""; }
+        }
+    }
+
+    (function () {
+        const modal = document.getElementById("changeRequestModal");
+        if (!modal) { return; }
+
+        // Initialise the Expiry Date visibility from the current Change Type.
+        const changeTypeSelect = modal.querySelector("#id_change_type");
+        if (changeTypeSelect) { changeRequestToggleExpiry(changeTypeSelect); }
+
+        const form = modal.querySelector("form");
+        const summaryInput = modal.querySelector("#id_summary");
+        const counter = modal.querySelector("#changeSummaryCounter");
+        const errorEl = modal.querySelector("#changeSummaryClientError");
+
+        if (!form || !summaryInput || !counter || !errorEl) { return; }
+        const maxLength = parseInt(summaryInput.dataset.maxlength || "0", 10);
+        if (!maxLength) { return; }
+        const errorMessage = summaryInput.dataset.maxlengthMessage ||
+            `Summary cannot exceed ${maxLength} characters.`;
+
+        const updateState = function () {
+            const currentLength = summaryInput.value.length;
+            counter.textContent = `${currentLength}/${maxLength}`;
+            const exceedsLimit = currentLength > maxLength;
+            errorEl.style.display = exceedsLimit ? "block" : "none";
+            errorEl.textContent = exceedsLimit ? errorMessage : "";
+            summaryInput.setCustomValidity(exceedsLimit ? errorMessage : "");
+            return exceedsLimit;
+        };
+        summaryInput.addEventListener("input", updateState);
+        form.addEventListener("submit", function (event) {
+            if (updateState()) {
+                event.preventDefault();
+                summaryInput.focus();
+            }
+        });
+        updateState();
+    })();
+</script>
+

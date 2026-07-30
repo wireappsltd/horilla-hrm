@@ -328,6 +328,9 @@ class EmployeeTask(HorillaModel):
     """
 
     statuses = [
+        ("pending", _("Pending")),
+        ("approved", _("Approved")),
+        ("rejected", _("Rejected")),
         ("todo", _("Todo")),
         ("in_progress", _("In progress")),
         ("stuck", _("Stuck")),
@@ -340,7 +343,7 @@ class EmployeeTask(HorillaModel):
         verbose_name="Employee",
         null=True,
     )
-    status = models.CharField(max_length=20, choices=statuses, default="todo")
+    status = models.CharField(max_length=20, choices=statuses, default="pending")
     task_id = models.ForeignKey(OffboardingTask, on_delete=models.CASCADE)
     description = models.TextField(null=True, editable=False, max_length=255)
     history = HorillaAuditLog(
@@ -373,6 +376,31 @@ class EmployeeTask(HorillaModel):
                 redirect="offboarding/offboarding-pipeline",
                 icon="information",
             )
+        except Exception:
+            pass
+        # Notify the clearance/task managers that a clearance is pending their approval
+        try:
+            manager_recipients = [
+                manager.employee_user_id
+                for manager in self.task_id.managers.all()
+                if manager.employee_user_id
+            ]
+            if manager_recipients:
+                employee_name = self.employee_id.employee_id.get_full_name()
+                notify.send(
+                    request.user.employee_get,
+                    recipient=manager_recipients,
+                    verb=(
+                        f'Clearance "{self.task_id.title}" is pending your '
+                        f"approval for {employee_name}"
+                    ),
+                    verb_ar=f"",
+                    verb_de=f"",
+                    verb_es=f"",
+                    verb_fr=f"",
+                    redirect="offboarding/offboarding-pipeline",
+                    icon="information",
+                )
         except Exception:
             pass
 

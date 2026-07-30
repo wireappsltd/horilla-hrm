@@ -197,6 +197,21 @@
                                     name="amount" class="mt-2"{% if req.status == "approved" %}disabled{% endif %} {% if req.amount %}
                                     value="{{req.amount}}"{% endif %} />
                                 </p>
+                                {% elif req.type == 'bonus' %}
+                                <p class="oh-faq-card__desc" style="max-height: 180px">
+                                    <i>
+                                        {% trans 'Requsted bonus of' %}
+                                        <span class="text-danger">
+                                            {{ req.amount }}
+                                        </span>
+                                        {% trans 'as a lump sum payment.' %}
+                                    </i>
+                                    <input style="display: block;padding:
+                                    10px;margin-top: 10px;" type="number" required
+                                    default="0" min="0" placeholder="Amount"
+                                    name="amount" class="mt-2"{% if req.status == "approved" %}disabled{% endif %} {% if req.amount %}
+                                    value="{{req.amount}}"{% endif %} />
+                                </p>
                                 {% else %}
                                 <p class="oh-faq-card__desc" style="max-height: 180px">
                                     <i>
@@ -942,6 +957,10 @@
 
     <script>
         function reimbursementConfirm(params, target, approve = false) {
+            if (typeof event !== "undefined" && event) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
             Swal.fire({
                 text: params,
                 icon: "question",
@@ -955,13 +974,17 @@
                     if (approve) {
                         $(`${target} [name=amount]`).attr("required", true);
                     }
-                    $(target + "Button").click();
-                    if (event.target.tagName.toLowerCase() === "form") {
-                        event.target.submit();
-                    } else if (event.target.tagName.toLowerCase() === "a") {
-                        window.location.href = event.target.href;
+                    const submitBtn = document.querySelector(target + "Button");
+                    if (submitBtn) {
+                        const form = submitBtn.closest("form");
+                        if (form && typeof form.requestSubmit === "function") {
+                            form.requestSubmit(submitBtn);
+                        } else if (form) {
+                            form.submit();
+                        } else {
+                            submitBtn.click();
+                        }
                     }
-                } else {
                 }
             });
         }

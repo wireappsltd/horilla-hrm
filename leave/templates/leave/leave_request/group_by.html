@@ -129,7 +129,15 @@
                                           {{leave_request.multiple_approvals.approved|length}} / {{leave_request.multiple_approvals.managers|length}} {% trans "Approved" %}
                                         </div>
                                       {% else %}
-                                        {{leave_request.get_status_display}}
+                                        {% if leave_request.cancellation_status == 'requested' %}
+                                          {% trans "Cancellation Requested" %}
+                                        {% elif leave_request.cancellation_status == 'approved' %}
+                                          {% trans "Cancelled" %}
+                                        {% elif leave_request.cancellation_status == 'rejected' %}
+                                          {{leave_request.get_status_display}} - {% trans "Cancellation Rejected" %}
+                                        {% else %}
+                                          {{leave_request.get_status_display}}
+                                        {% endif %}
                                       {% endif %}
                                     </div>
                                     {% if  not dashboard %}
@@ -171,7 +179,7 @@
                                       </div>
                                       <div class="oh-sticky-table__td oh-sticky-table__right" onclick="event.stopPropagation()">
                                         <div class="oh-btn-group" >
-                                          {% if leave_request.status == 'cancelled' %}
+                                          {% if leave_request.status == 'cancelled' and leave_request.cancellation_status != 'approved' %}
                                             <a type="submit" data-toggle="oh-modal-toggle"
                                                 data-target="#rejectModal" hx-get="{% url 'request-cancel' leave_request.id %}" hx-target="#rejectForm"  title="{% trans 'Approve cancellation request' %}"
                                                 class="oh-btn oh-btn--warning w-100";>

@@ -62,6 +62,35 @@ def get_total_days(start_date, end_date):
     return total_days
 
 
+def _leave_day_fraction(instance, day):
+    """
+    Return the portion (0.5 or 1.0) of a single day that is covered by the
+    given leave request.
+
+    A half-day breakdown ("first_half"/"second_half") on the start date or the
+    end date of the leave counts as 0.5; every other covered day counts as a
+    full day (1.0).
+
+    Args:
+        instance (obj): LeaveRequest instance
+        day (date): the specific date to evaluate
+    """
+    # Single-day leave: a half-day breakdown on either side means half a day.
+    if instance.start_date == instance.end_date:
+        if (
+            instance.start_date_breakdown != "full_day"
+            or instance.end_date_breakdown != "full_day"
+        ):
+            return 0.5
+        return 1.0
+
+    if day == instance.start_date and instance.start_date_breakdown != "full_day":
+        return 0.5
+    if day == instance.end_date and instance.end_date_breakdown != "full_day":
+        return 0.5
+    return 1.0
+
+
 def get_leaves(employee, start_date, end_date):
     """
     This method is used to return all the leaves taken by the employee
@@ -76,53 +105,35 @@ def get_leaves(employee, start_date, end_date):
         approved_leaves = employee.leaverequest_set.filter(status="approved")
     else:
         approved_leaves = None
-    paid_leave = 0
-    unpaid_leave = 0
-    paid_half = 0
-    unpaid_half = 0
-    paid_leave_dates = []
-    unpaid_leave_dates = []
+
     company_leave_dates = get_working_days(start_date, end_date)["company_leave_dates"]
+
+    # Accumulate the covered fraction of each date, keeping paid and unpaid
+    # leave separate. The per-date value is capped at 1.0 so that two half-day
+    # leaves of *different* leave types on the *same* day are correctly combined
+    # into a single full leave day instead of being double-counted. Previously
+    # the counts were derived as ``len(dates) - total_half_days`` which
+    # over-subtracted for shared dates and caused such days to be treated as
+    # Loss of Pay (LOP).
+    paid_fraction_by_date = {}
+    unpaid_fraction_by_date = {}
 
     if approved_leaves and approved_leaves.exists():
         for instance in approved_leaves:
-            if instance.leave_type_id.payment == "paid":
-                # if the taken leave is paid
-                # for the start date
-                all_the_paid_leave_taken_dates = instance.requested_dates()
-                paid_leave_dates = paid_leave_dates + [
-                    date
-                    for date in all_the_paid_leave_taken_dates
-                    if start_date <= date <= end_date
-                ]
-            else:
-                # if the taken leave is unpaid
-                # for the start date
-                all_unpaid_leave_taken_dates = instance.requested_dates()
-                unpaid_leave_dates = unpaid_leave_dates + [
-                    date
-                    for date in all_unpaid_leave_taken_dates
-                    if start_date <= date <= end_date
-                ]
+            is_paid = instance.leave_type_id.payment == "paid"
+            bucket = paid_fraction_by_date if is_paid else unpaid_fraction_by_date
+            for day in instance.requested_dates():
+                if not (start_date <= day <= end_date):
+                    continue
+                if day in company_leave_dates:
+                    continue
+                fraction = _leave_day_fraction(instance, day)
+                bucket[day] = min(1.0, bucket.get(day, 0.0) + fraction)
 
-    half_day_data = find_half_day_leaves(employee, start_date, end_date)
-
-    unpaid_half = half_day_data["half_unpaid_leaves"]
-    paid_half = half_day_data["half_paid_leaves"]
-
-    paid_leave_dates = list(set(paid_leave_dates) - set(company_leave_dates))
-    unpaid_leave_dates = list(set(unpaid_leave_dates) - set(company_leave_dates))
-    paid_leave = len(paid_leave_dates) - paid_half
-    unpaid_leave = len(unpaid_leave_dates) - unpaid_half
-
-    # print({
-    #     "paid_leave": paid_leave,
-    #     "unpaid_leaves": unpaid_leave,
-    #     "total_leaves": paid_leave + unpaid_leave,
-    #     "paid_leave_dates": paid_leave_dates,
-    #     "unpaid_leave_dates": unpaid_leave_dates,
-    #     "leave_dates": unpaid_leave_dates + paid_leave_dates,
-    # })
+    paid_leave_dates = list(paid_fraction_by_date.keys())
+    unpaid_leave_dates = list(unpaid_fraction_by_date.keys())
+    paid_leave = sum(paid_fraction_by_date.values())
+    unpaid_leave = sum(unpaid_fraction_by_date.values())
 
     return {
         "paid_leave": paid_leave,
@@ -134,6 +145,7 @@ def get_leaves(employee, start_date, end_date):
         "unpaid_leave_dates": unpaid_leave_dates,
         "leave_dates": unpaid_leave_dates + paid_leave_dates,
     }
+
 
 
 if apps.is_installed("attendance"):
@@ -314,35 +326,13 @@ def daily_computation(employee, wage, start_date, end_date):
     basic_pay = wage * total_working_days
     loss_of_pay = 0
 
-    date_range = get_date_range(start_date, end_date)
-    half_day_leaves_between_period_on_start_date = (
-        employee.leaverequest_set.filter(
-            leave_type_id__payment="unpaid",
-            start_date__in=date_range,
-            status="approved",
-        )
-        .exclude(start_date_breakdown="full_day")
-        .count()
-    )
-
-    half_day_leaves_between_period_on_end_date = (
-        employee.leaverequest_set.filter(
-            leave_type_id__payment="unpaid", end_date__in=date_range, status="approved"
-        )
-        .exclude(end_date_breakdown="full_day")
-        .exclude(start_date=F("end_date"))
-        .count()
-    )
-    unpaid_half_leaves = (
-        half_day_leaves_between_period_on_start_date
-        + half_day_leaves_between_period_on_end_date
-    ) * 0.5
-
     contract = employee.contract_set.filter(
         is_active=True, contract_status="active"
     ).first()
 
-    unpaid_leaves = leave_data["unpaid_leaves"] - unpaid_half_leaves
+    # ``get_leaves`` already returns the unpaid leave amount with half-day
+    # breakdowns and same-day combinations correctly accounted for.
+    unpaid_leaves = leave_data["unpaid_leaves"]
     if contract.calculate_daily_leave_amount:
         loss_of_pay = truncate_2dp((unpaid_leaves) * wage)
     else:
@@ -505,44 +495,14 @@ def monthly_computation(employee, wage, start_date, end_date, *args, **kwargs):
 
     contract = employee.contract_set.filter(contract_status="active").first()
     loss_of_pay = 0
-    date_range = get_date_range(start_date, end_date)
-    if apps.is_installed("leave"):
-        start_date_leaves = (
-            employee.leaverequest_set.filter(
-                leave_type_id__payment="unpaid",
-                start_date__in=date_range,
-                status="approved",
-            )
-            .exclude(start_date_breakdown="full_day")
-            .count()
-        )
-        end_date_leaves = (
-            employee.leaverequest_set.filter(
-                leave_type_id__payment="unpaid",
-                end_date__in=date_range,
-                status="approved",
-            )
-            .exclude(end_date_breakdown="full_day")
-            .exclude(start_date=F("end_date"))
-            .count()
-        )
-    else:
-        start_date_leaves = 0
-        end_date_leaves = 0
-
-    half_day_leaves_between_period_on_start_date = start_date_leaves
-
-    half_day_leaves_between_period_on_end_date = end_date_leaves
-
-    unpaid_half_leaves = (
-        half_day_leaves_between_period_on_start_date
-        + half_day_leaves_between_period_on_end_date
-    ) * 0.5
 
     contract = employee.contract_set.filter(
         is_active=True, contract_status="active"
     ).first()
-    unpaid_leaves = abs(leave_data["unpaid_leaves"] - unpaid_half_leaves)
+    # ``get_leaves`` already returns the unpaid leave amount with half-day
+    # breakdowns and same-day combinations correctly accounted for, so it can be
+    # used directly without an additional half-day correction.
+    unpaid_leaves = leave_data["unpaid_leaves"]
     paid_days = month_data[0]["working_days_on_period"] - unpaid_leaves
     daily_computed_salary = get_daily_salary(wage=wage, wage_date=start_date)[
         "day_wage"

@@ -41,13 +41,16 @@ from helpdesk.models import (
     PRIORITY,
     ISO_GROUP_NAME,
     ISC_GROUP_NAME,
+    INCIDENT_CLASSIFICATION_CHOICES,
     AccessRequest,
     AdminAccessRequest,
     Attachment,
+    ChangeRequest,
     Comment,
     DepartmentManager,
     ExceptionRequest,
     FAQCategory,
+    IncidentReport,
     PasswordResetRequest,
     Ticket,
     TicketType,
@@ -255,8 +258,11 @@ class PasswordResetRequestForm(forms.ModelForm):
             except Exception:
                 selected_employee = None
 
+        # Forward To → show all ISO officers and IS Council members.
         self.fields["forward_to"].queryset = (
-            User.objects.filter(groups__name=ISO_GROUP_NAME, is_active=True)
+            User.objects.filter(
+                groups__name__in=[ISO_GROUP_NAME, ISC_GROUP_NAME], is_active=True
+            )
             .distinct()
             .order_by("first_name", "username")
         )
@@ -312,9 +318,9 @@ class PasswordResetRequestForm(forms.ModelForm):
         # Pre-select: if editing, use the saved forward_to M2M; otherwise default to all ISO members
         if self.instance and self.instance.pk:
             # For editing, use the saved forward_to M2M as the authoritative initial.
-            # Filter to only include users still in the ISO group.
+            # Filter to only include users still in the ISO / IS Council groups.
             saved_forward = self.instance.forward_to.filter(
-                groups__name=ISO_GROUP_NAME, is_active=True
+                groups__name__in=[ISO_GROUP_NAME, ISC_GROUP_NAME], is_active=True
             ).distinct()
             if saved_forward.exists():
                 self.fields["forward_to"].initial = saved_forward
@@ -592,9 +598,11 @@ class AccessRequestForm(forms.ModelForm):
             self.fields["employee"].initial = owner
         self.initial["user_email"] = email_initial
 
-        # Forward To → Stage 2 reviewers (ISO group members).
+        # Forward To → show all ISO officers and IS Council members.
         self.fields["forward_to"].queryset = (
-            User.objects.filter(groups__name=ISO_GROUP_NAME, is_active=True)
+            User.objects.filter(
+                groups__name__in=[ISO_GROUP_NAME, ISC_GROUP_NAME], is_active=True
+            )
             .distinct()
             .order_by("first_name", "username")
         )
@@ -618,7 +626,7 @@ class AccessRequestForm(forms.ModelForm):
         iso_user_qs = self.fields["forward_to"].queryset
         if self.instance and self.instance.pk:
             saved_forward = self.instance.forward_to.filter(
-                groups__name=ISO_GROUP_NAME, is_active=True
+                groups__name__in=[ISO_GROUP_NAME, ISC_GROUP_NAME], is_active=True
             ).distinct()
             if saved_forward.exists():
                 self.initial["forward_to"] = list(
@@ -831,9 +839,11 @@ class ExceptionRequestForm(forms.ModelForm):
             self.fields["employee"].initial = owner
         self.initial["user_email"] = email_initial
 
-        # Forward To → Stage 2 reviewers (IS Council group members).
+        # Forward To → show all ISO officers and IS Council members.
         self.fields["forward_to"].queryset = (
-            User.objects.filter(groups__name=ISC_GROUP_NAME, is_active=True)
+            User.objects.filter(
+                groups__name__in=[ISO_GROUP_NAME, ISC_GROUP_NAME], is_active=True
+            )
             .distinct()
             .order_by("first_name", "username")
         )
@@ -853,14 +863,26 @@ class ExceptionRequestForm(forms.ModelForm):
                 "maxlength": str(self.DESCRIPTION_MAX_LENGTH),
             }
         )
-        self.fields["isms_reference"].widget.attrs["maxlength"] = str(
-            self.ISMS_REFERENCE_MAX_LENGTH
+        # ISMS Reference character cap (mirrors Description behaviour so the
+        # limit and a live counter can be surfaced to the user in the template).
+        isms_error_message = _(
+            "ISMS Reference cannot exceed %(max_length)s characters."
+        ) % {"max_length": self.ISMS_REFERENCE_MAX_LENGTH}
+        isms_field = self.fields["isms_reference"]
+        isms_field.max_length = self.ISMS_REFERENCE_MAX_LENGTH
+        isms_field.error_messages["max_length"] = isms_error_message
+        isms_field.widget.attrs.update(
+            {
+                "data-maxlength": str(self.ISMS_REFERENCE_MAX_LENGTH),
+                "data-maxlength-message": isms_error_message,
+                "maxlength": str(self.ISMS_REFERENCE_MAX_LENGTH),
+            }
         )
 
         isc_user_qs = self.fields["forward_to"].queryset
         if self.instance and self.instance.pk:
             saved_forward = self.instance.forward_to.filter(
-                groups__name=ISC_GROUP_NAME, is_active=True
+                groups__name__in=[ISO_GROUP_NAME, ISC_GROUP_NAME], is_active=True
             ).distinct()
             if saved_forward.exists():
                 self.initial["forward_to"] = list(
@@ -1049,9 +1071,11 @@ class AdminAccessRequestForm(forms.ModelForm):
             self.fields["employee"].initial = owner
         self.initial["user_email"] = email_initial
 
-        # Forward To → Stage 2 reviewers (IS Council group members).
+        # Forward To → show all ISO officers and IS Council members.
         self.fields["forward_to"].queryset = (
-            User.objects.filter(groups__name=ISC_GROUP_NAME, is_active=True)
+            User.objects.filter(
+                groups__name__in=[ISO_GROUP_NAME, ISC_GROUP_NAME], is_active=True
+            )
             .distinct()
             .order_by("first_name", "username")
         )
@@ -1075,7 +1099,7 @@ class AdminAccessRequestForm(forms.ModelForm):
         isc_user_qs = self.fields["forward_to"].queryset
         if self.instance and self.instance.pk:
             saved_forward = self.instance.forward_to.filter(
-                groups__name=ISC_GROUP_NAME, is_active=True
+                groups__name__in=[ISO_GROUP_NAME, ISC_GROUP_NAME], is_active=True
             ).distinct()
             if saved_forward.exists():
                 self.initial["forward_to"] = list(
@@ -1158,11 +1182,878 @@ class AdminAccessRequestForm(forms.ModelForm):
         return instance
 
 
+class IncidentReportForm(forms.ModelForm):
+    """
+    Reporter section of an "Incident Report" (ISO Forms category), filled by
+    the logged-in user at submission.
+
+      * ``IR Name`` / ``IR Email`` are auto-populated from the logged-in user's
+        profile and are read-only (surfaced like ``User ID`` on other forms).
+      * ``Incident Reporting Date`` is auto-populated with today's date and is
+        read-only.
+      * ``Incident Description`` is capped at 1000 characters.
+    """
+
+    DESCRIPTION_MAX_LENGTH = 1000
+    BUSINESS_UNIT_MAX_LENGTH = 250
+
+    employee = forms.ModelChoiceField(
+        queryset=Employee.objects.none(),
+        widget=forms.HiddenInput(),
+        required=True,
+    )
+    ir_name = forms.CharField(
+        label=_("IR Name"),
+        required=False,
+        widget=forms.TextInput(
+            attrs={"class": "oh-input w-100", "readonly": "readonly"}
+        ),
+    )
+    ir_email = forms.CharField(
+        label=_("IR Email"),
+        required=False,
+        widget=forms.TextInput(
+            attrs={"class": "oh-input w-100", "readonly": "readonly"}
+        ),
+    )
+    reporting_date = forms.DateField(
+        label=_("Incident Reporting Date"),
+        required=False,
+        widget=forms.DateInput(
+            attrs={
+                "class": "oh-input w-100",
+                "type": "date",
+                "readonly": "readonly",
+            }
+        ),
+    )
+    occurrence_time = forms.TimeField(
+        label=_("Incident Occurrence Time"),
+        required=True,
+        widget=forms.TimeInput(
+            attrs={"class": "oh-input w-100", "type": "time"}, format="%H:%M"
+        ),
+    )
+    duration_hours = forms.IntegerField(
+        label=_("Hours"),
+        required=True,
+        min_value=0,
+        widget=forms.NumberInput(
+            attrs={"class": "oh-input w-100", "min": "0", "placeholder": _("Hours")}
+        ),
+    )
+    duration_minutes = forms.IntegerField(
+        label=_("Minutes"),
+        required=True,
+        min_value=0,
+        max_value=59,
+        widget=forms.NumberInput(
+            attrs={
+                "class": "oh-input w-100",
+                "min": "0",
+                "max": "59",
+                "placeholder": _("Minutes"),
+            }
+        ),
+    )
+
+    priority = forms.ChoiceField(
+        choices=PRIORITY,
+        initial="medium",
+        label=_("Priority"),
+        widget=forms.Select(attrs={"class": "oh-select w-100"}),
+    )
+    forward_to = forms.ModelMultipleChoiceField(
+        queryset=User.objects.none(),
+        label=_("Forward To"),
+        required=True,
+        widget=forms.SelectMultiple(attrs={"class": "oh-select w-100"}),
+    )
+    deadline = forms.DateField(
+        required=False,
+        label=_("Due Date"),
+        widget=forms.DateInput(attrs={"class": "oh-input w-100", "type": "date"}),
+    )
+
+    class Meta:
+        model = IncidentReport
+        fields = [
+            "reported_by",
+            "occurrence_date",
+            "business_unit",
+            "location_type",
+            "description",
+            "initial_classification",
+            "forward_to",
+        ]
+        widgets = {
+            "reported_by": forms.Select(
+                attrs={"class": "oh-select w-100"}
+            ),
+            "occurrence_date": forms.DateInput(
+                attrs={"class": "oh-input w-100", "type": "date"}
+            ),
+            "business_unit": forms.TextInput(
+                attrs={
+                    "class": "oh-input w-100",
+                    "placeholder": _("Business unit or process affected"),
+                }
+            ),
+            "location_type": forms.Select(
+                attrs={"class": "oh-select w-100"}
+            ),
+            "description": forms.Textarea(
+                attrs={
+                    "class": "oh-input w-100",
+                    "rows": 4,
+                    "placeholder": _("Describe the incident"),
+                }
+            ),
+            "initial_classification": forms.Select(
+                attrs={"class": "oh-select w-100"}
+            ),
+        }
+        labels = {
+            "reported_by": _("Reported By"),
+            "occurrence_date": _("Incident Occurrence Date"),
+            "business_unit": _("Business Unit / Process Affected"),
+            "location_type": _("Physical / Virtual Location of Incident"),
+            "description": _("Incident Description"),
+            "initial_classification": _("Initial Classification"),
+        }
+
+    def __init__(self, *args, request=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.request = request
+        today = timezone.localdate()
+        self.fields["deadline"].widget.attrs["min"] = today.isoformat()
+
+        # Resolve the logged-in user's Employee (ticket owner / reporter).
+        current_employee = None
+        if request is not None:
+            try:
+                current_employee = request.user.employee_get
+            except Exception:
+                current_employee = None
+
+        if self.instance and self.instance.pk and getattr(self.instance, "ticket", None):
+            owner = getattr(self.instance.ticket, "employee_id", None) or current_employee
+            self.initial["reporting_date"] = self.instance.reporting_date
+            self.initial["occurrence_time"] = self.instance.occurrence_time
+            self.initial["duration_hours"] = self.instance.duration_hours
+            self.initial["duration_minutes"] = self.instance.duration_minutes
+            name_initial = self.instance.ir_name
+            email_initial = self.instance.ir_email
+        else:
+            owner = current_employee
+            self.initial["reporting_date"] = today
+            name_initial = self._employee_name(owner)
+            email_initial = self._employee_email(owner)
+
+        if owner:
+            self.fields["employee"].queryset = Employee.objects.filter(pk=owner.pk)
+            self.initial["employee"] = owner
+            self.fields["employee"].initial = owner
+        self.initial["ir_name"] = name_initial
+        self.initial["ir_email"] = email_initial
+
+        # Forward To → ISC (IS Council) members who drive the workflow.
+        self.fields["forward_to"].queryset = (
+            User.objects.filter(groups__name=ISC_GROUP_NAME, is_active=True)
+            .distinct()
+            .order_by("first_name", "username")
+        )
+        self.fields["forward_to"].label_from_instance = self._forward_to_label
+
+        # Description character cap.
+        description_error_message = _(
+            "Description cannot exceed %(max_length)s characters."
+        ) % {"max_length": self.DESCRIPTION_MAX_LENGTH}
+        description_field = self.fields["description"]
+        description_field.max_length = self.DESCRIPTION_MAX_LENGTH
+        description_field.error_messages["max_length"] = description_error_message
+        description_field.widget.attrs.update(
+            {
+                "data-maxlength": str(self.DESCRIPTION_MAX_LENGTH),
+                "data-maxlength-message": description_error_message,
+                "maxlength": str(self.DESCRIPTION_MAX_LENGTH),
+            }
+        )
+
+        # Business Unit / Process Affected character cap.
+        business_unit_error_message = _(
+            "Business Unit / Process Affected cannot exceed %(max_length)s characters."
+        ) % {"max_length": self.BUSINESS_UNIT_MAX_LENGTH}
+        business_unit_field = self.fields["business_unit"]
+        business_unit_field.max_length = self.BUSINESS_UNIT_MAX_LENGTH
+        business_unit_field.error_messages["max_length"] = business_unit_error_message
+        business_unit_field.widget.attrs.update(
+            {
+                "data-maxlength": str(self.BUSINESS_UNIT_MAX_LENGTH),
+                "data-maxlength-message": business_unit_error_message,
+                "maxlength": str(self.BUSINESS_UNIT_MAX_LENGTH),
+            }
+        )
+
+        isc_user_qs = self.fields["forward_to"].queryset
+        if self.instance and self.instance.pk:
+            saved_forward = self.instance.forward_to.filter(
+                groups__name=ISC_GROUP_NAME, is_active=True
+            ).distinct()
+            if saved_forward.exists():
+                self.initial["forward_to"] = list(
+                    saved_forward.values_list("pk", flat=True)
+                )
+            else:
+                self.initial["forward_to"] = list(
+                    isc_user_qs.values_list("pk", flat=True)
+                )
+            if hasattr(self.instance, "ticket") and self.instance.ticket:
+                self.fields["priority"].initial = self.instance.ticket.priority
+                self.fields["deadline"].initial = self.instance.ticket.deadline
+        else:
+            self.initial["forward_to"] = list(isc_user_qs.values_list("pk", flat=True))
+
+    @staticmethod
+    def _employee_email(employee):
+        if not employee:
+            return ""
+        for getter in (
+            lambda e: e.employee_work_info.email,
+            lambda e: e.employee_user_id.email,
+            lambda e: e.email,
+        ):
+            try:
+                email = getter(employee) or ""
+                if email:
+                    return email
+            except Exception:
+                continue
+        return ""
+
+    @staticmethod
+    def _employee_name(employee):
+        if not employee:
+            return ""
+        try:
+            return employee.get_full_name() or ""
+        except Exception:
+            return ""
+
+    def _forward_to_label(self, user):
+        try:
+            full_name = user.employee_get.get_full_name()
+            if full_name:
+                return full_name
+        except Exception:
+            pass
+        return user.get_full_name() or user.username
+
+    def clean_description(self):
+        description = (self.cleaned_data.get("description") or "").strip()
+        if not description:
+            raise forms.ValidationError(_("This field is required."))
+        if len(description) > self.DESCRIPTION_MAX_LENGTH:
+            raise forms.ValidationError(
+                _("Description cannot exceed %(max_length)s characters.")
+                % {"max_length": self.DESCRIPTION_MAX_LENGTH}
+            )
+        return description
+
+    def clean_business_unit(self):
+        value = (self.cleaned_data.get("business_unit") or "").strip()
+        if not value:
+            raise forms.ValidationError(_("This field is required."))
+        if len(value) > self.BUSINESS_UNIT_MAX_LENGTH:
+            raise forms.ValidationError(
+                _("Business Unit / Process Affected cannot exceed %(max_length)s characters.")
+                % {"max_length": self.BUSINESS_UNIT_MAX_LENGTH}
+            )
+        return value
+
+    def clean_deadline(self):
+        deadline = self.cleaned_data.get("deadline")
+        if deadline is None:
+            return deadline
+        if deadline < timezone.localdate():
+            raise forms.ValidationError(_("Due date cannot be in the past."))
+        return deadline
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        employee = self.cleaned_data.get("employee")
+        # IR Name / IR Email / Reporting Date are auto-populated and read-only.
+        instance.ir_name = self._employee_name(employee)
+        instance.ir_email = self._employee_email(employee)
+        if not instance.reporting_date:
+            instance.reporting_date = timezone.localdate()
+        instance.occurrence_time = self.cleaned_data.get("occurrence_time")
+        instance.duration_hours = self.cleaned_data.get("duration_hours") or 0
+        instance.duration_minutes = self.cleaned_data.get("duration_minutes") or 0
+        if commit:
+            instance.save()
+            instance.forward_to.set(self.cleaned_data.get("forward_to", []))
+        return instance
+
+
+class IncidentPostReviewForm(forms.ModelForm):
+    """ISC-only form to set/edit the Post-Review Classification (Under Review)."""
+
+    class Meta:
+        model = IncidentReport
+        fields = ["post_review_classification"]
+        widgets = {
+            "post_review_classification": forms.Select(
+                attrs={"class": "oh-select w-100"}
+            ),
+        }
+        labels = {
+            "post_review_classification": _("Post-Review Classification"),
+        }
+
+
+class IncidentTransitionForm(forms.Form):
+    """
+    Single mandatory-comment form used by the ISC-driven Incident Report
+    transitions (Take for Review / Resolve / Close). The ``Resolve`` action
+    additionally captures the Post-Review Classification.
+    """
+
+    comment = forms.CharField(
+        required=True,
+        label=_("Comment"),
+        widget=forms.Textarea(
+            attrs={
+                "class": "oh-input w-100",
+                "rows": 3,
+                "placeholder": _("A comment is required..."),
+            }
+        ),
+    )
+    post_review_classification = forms.ChoiceField(
+        required=False,
+        choices=[("", "---------")] + list(INCIDENT_CLASSIFICATION_CHOICES),
+        label=_("Post-Review Classification"),
+        widget=forms.Select(attrs={"class": "oh-select oh-select-2 w-100"}),
+    )
+
+    def clean_comment(self):
+        comment = (self.cleaned_data.get("comment") or "").strip()
+        if not comment:
+            raise forms.ValidationError(_("A comment is required."))
+        return comment
+
+
+class ChangeRequesterForm(forms.ModelForm):
+    """
+    Section 1 — Change Requester of a "Change Request" ticket (ISO Forms
+    category), filled by the logged-in user at submission.
+
+      * ``User ID (Email)`` is auto-populated from the logged-in user and
+        read-only (captured as the Change Requester identity).
+      * ``Expiry Date`` is required only when ``Change Type`` = Temporary.
+      * ``Forward To`` selects the Stage 1 Divisional Head approvers (ISC group).
+    """
+
+    SUMMARY_MAX_LENGTH = ChangeRequest.SUMMARY_MAX_LENGTH
+
+    employee = forms.ModelChoiceField(
+        queryset=Employee.objects.none(),
+        widget=forms.HiddenInput(),
+        required=True,
+    )
+    user_email = forms.CharField(
+        label=_("User ID (Email)"),
+        required=False,
+        widget=forms.TextInput(
+            attrs={"class": "oh-input w-100", "readonly": "readonly"}
+        ),
+    )
+    priority = forms.ChoiceField(
+        choices=PRIORITY,
+        initial="medium",
+        label=_("Priority"),
+        widget=forms.Select(attrs={"class": "oh-select oh-select-2 w-100"}),
+    )
+    forward_to = forms.ModelMultipleChoiceField(
+        queryset=User.objects.none(),
+        label=_("Forward To"),
+        required=True,
+        widget=forms.SelectMultiple(attrs={"class": "oh-select oh-select-2 w-100"}),
+    )
+    deadline = forms.DateField(
+        required=False,
+        label=_("Due Date"),
+        widget=forms.DateInput(attrs={"class": "oh-input w-100", "type": "date"}),
+    )
+
+    class Meta:
+        model = ChangeRequest
+        fields = [
+            "summary",
+            "categorisation",
+            "categorisation_reason",
+            "change_type",
+            "expiry_date",
+            "services_impacted",
+            "change_required_by",
+            "change_requested_by",
+            "forward_to",
+        ]
+        widgets = {
+            "summary": forms.Textarea(
+                attrs={
+                    "class": "oh-input w-100",
+                    "rows": 4,
+                    "placeholder": _("Summarise the change requirement"),
+                }
+            ),
+            "categorisation": forms.Select(
+                attrs={"class": "oh-select oh-select-2 w-100"}
+            ),
+            "categorisation_reason": forms.Textarea(
+                attrs={
+                    "class": "oh-input w-100",
+                    "rows": 2,
+                    "placeholder": _("Why this categorisation?"),
+                }
+            ),
+            "change_type": forms.Select(
+                attrs={
+                    "class": "oh-select oh-select-2 w-100",
+                    "onchange": "changeRequestToggleExpiry(this)",
+                }
+            ),
+            "expiry_date": forms.DateInput(
+                attrs={"class": "oh-input w-100", "type": "date"}
+            ),
+            "services_impacted": forms.Textarea(
+                attrs={
+                    "class": "oh-input w-100",
+                    "rows": 2,
+                    "placeholder": _("List impacted services / systems"),
+                }
+            ),
+            "change_required_by": forms.DateInput(
+                attrs={"class": "oh-input w-100", "type": "date"}
+            ),
+            "change_requested_by": forms.DateInput(
+                attrs={"class": "oh-input w-100", "type": "date"}
+            ),
+        }
+        labels = {
+            "summary": _("Summary of Change Requirement"),
+            "categorisation": _("Change Categorisation"),
+            "categorisation_reason": _("Reason for Change Categorisation"),
+            "change_type": _("Change Type"),
+            "expiry_date": _("Expiry Date"),
+            "services_impacted": _("List of Services / Systems Impacted"),
+            "change_required_by": _("Change Required By Date"),
+            "change_requested_by": _("Change Requested By Date"),
+        }
+
+    def __init__(self, *args, request=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.request = request
+
+        current_employee = None
+        if request is not None:
+            try:
+                current_employee = request.user.employee_get
+            except Exception:
+                current_employee = None
+
+        if self.instance and self.instance.pk and getattr(self.instance, "ticket", None):
+            owner = getattr(self.instance.ticket, "employee_id", None) or current_employee
+            email_initial = self.instance.user_id
+        else:
+            owner = current_employee
+            email_initial = self._employee_email(owner)
+
+        if owner:
+            self.fields["employee"].queryset = Employee.objects.filter(pk=owner.pk)
+            self.initial["employee"] = owner
+            self.fields["employee"].initial = owner
+        self.initial["user_email"] = email_initial
+
+        # Forward To → Stage 1 Divisional Head approvers (ISC group members).
+        self.fields["forward_to"].queryset = (
+            User.objects.filter(groups__name=ISC_GROUP_NAME, is_active=True)
+            .distinct()
+            .order_by("first_name", "username")
+        )
+        self.fields["forward_to"].label_from_instance = self._forward_to_label
+
+        # Expiry Date is conditionally required (validated in clean()).
+        self.fields["expiry_date"].required = False
+        self.fields["expiry_date"].widget.attrs["min"] = timezone.localdate().isoformat()
+
+        summary_error_message = _(
+            "Summary cannot exceed %(max_length)s characters."
+        ) % {"max_length": self.SUMMARY_MAX_LENGTH}
+        summary_field = self.fields["summary"]
+        summary_field.max_length = self.SUMMARY_MAX_LENGTH
+        summary_field.error_messages["max_length"] = summary_error_message
+        summary_field.widget.attrs.update(
+            {
+                "data-maxlength": str(self.SUMMARY_MAX_LENGTH),
+                "data-maxlength-message": summary_error_message,
+                "maxlength": str(self.SUMMARY_MAX_LENGTH),
+            }
+        )
+
+        isc_user_qs = self.fields["forward_to"].queryset
+        if self.instance and self.instance.pk:
+            saved_forward = self.instance.forward_to.filter(
+                groups__name=ISC_GROUP_NAME, is_active=True
+            ).distinct()
+            if saved_forward.exists():
+                self.initial["forward_to"] = list(
+                    saved_forward.values_list("pk", flat=True)
+                )
+            else:
+                self.initial["forward_to"] = list(
+                    isc_user_qs.values_list("pk", flat=True)
+                )
+            if hasattr(self.instance, "ticket") and self.instance.ticket:
+                self.fields["priority"].initial = self.instance.ticket.priority
+                self.fields["deadline"].initial = self.instance.ticket.deadline
+        else:
+            self.initial["forward_to"] = list(isc_user_qs.values_list("pk", flat=True))
+
+    @staticmethod
+    def _employee_email(employee):
+        if not employee:
+            return ""
+        for getter in (
+            lambda e: e.employee_work_info.email,
+            lambda e: e.employee_user_id.email,
+            lambda e: e.email,
+        ):
+            try:
+                email = getter(employee) or ""
+                if email:
+                    return email
+            except Exception:
+                continue
+        return ""
+
+    def _forward_to_label(self, user):
+        try:
+            full_name = user.employee_get.get_full_name()
+            if full_name:
+                return full_name
+        except Exception:
+            pass
+        return user.get_full_name() or user.username
+
+    def clean_summary(self):
+        summary = (self.cleaned_data.get("summary") or "").strip()
+        if not summary:
+            raise forms.ValidationError(_("This field is required."))
+        if len(summary) > self.SUMMARY_MAX_LENGTH:
+            raise forms.ValidationError(
+                _("Summary cannot exceed %(max_length)s characters.")
+                % {"max_length": self.SUMMARY_MAX_LENGTH}
+            )
+        return summary
+
+    def clean_categorisation_reason(self):
+        value = (self.cleaned_data.get("categorisation_reason") or "").strip()
+        if not value:
+            raise forms.ValidationError(_("This field is required."))
+        return value
+
+    def clean_services_impacted(self):
+        value = (self.cleaned_data.get("services_impacted") or "").strip()
+        if not value:
+            raise forms.ValidationError(_("This field is required."))
+        return value
+
+    def clean_deadline(self):
+        deadline = self.cleaned_data.get("deadline")
+        if deadline is None:
+            return deadline
+        if deadline < timezone.localdate():
+            raise forms.ValidationError(_("Due date cannot be in the past."))
+        return deadline
+
+    def clean_expiry_date(self):
+        expiry_date = self.cleaned_data.get("expiry_date")
+        if expiry_date is None:
+            return expiry_date
+        if expiry_date < timezone.localdate():
+            raise forms.ValidationError(_("Expiry date cannot be in the past."))
+        return expiry_date
+
+    def clean(self):
+        cleaned_data = super().clean()
+        change_type = cleaned_data.get("change_type")
+        if change_type == "temporary" and not cleaned_data.get("expiry_date"):
+            self.add_error(
+                "expiry_date",
+                _("Expiry Date is required for a temporary change."),
+            )
+        elif change_type == "permanent":
+            # Expiry Date is hidden for a permanent change.
+            cleaned_data["expiry_date"] = None
+        return cleaned_data
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        employee = self.cleaned_data.get("employee")
+        instance.user_id = self._employee_email(employee)
+        if commit:
+            instance.save()
+            instance.forward_to.set(self.cleaned_data.get("forward_to", []))
+        return instance
+
+
+class ChangeImplementerForm(forms.ModelForm):
+    """
+    Section 2 — Change Implementer. Hidden/read-only until the Divisional Head
+    has approved (enforced in the view). ``Implementer Name`` / ``Division`` are
+    auto-populated from the resolved implementer's profile in the view.
+    """
+
+    OVERVIEW_MAX_LENGTH = ChangeRequest.IMPLEMENTATION_OVERVIEW_MAX_LENGTH
+
+    implementer = forms.ModelChoiceField(
+        queryset=Employee.objects.none(),
+        required=False,
+        label=_("Change Implementer"),
+        widget=forms.Select(attrs={"class": "oh-select oh-select-2 w-100"}),
+    )
+
+    class Meta:
+        model = ChangeRequest
+        fields = [
+            "is_self_implementer",
+            "implementer",
+            "implementation_overview",
+            "effort_estimate",
+            "special_support",
+            "special_support_description",
+            "other_resources",
+            "alternatives",
+            "system_outage",
+            "scheduled_outage_date",
+            "scheduled_outage_time",
+            "business_impact",
+        ]
+        widgets = {
+            "is_self_implementer": forms.Select(
+                attrs={
+                    "class": "oh-select w-100",
+                    "onchange": "changeRequestToggleImplementer(this)",
+                }
+            ),
+            "implementation_overview": forms.Textarea(
+                attrs={"class": "oh-input w-100", "rows": 4}
+            ),
+            "effort_estimate": forms.TextInput(attrs={"class": "oh-input w-100"}),
+            "special_support": forms.Select(
+                attrs={
+                    "class": "oh-select w-100",
+                    "onchange": "changeRequestToggleSupport(this)",
+                }
+            ),
+            "special_support_description": forms.Textarea(
+                attrs={"class": "oh-input w-100", "rows": 2}
+            ),
+            "other_resources": forms.Textarea(
+                attrs={"class": "oh-input w-100", "rows": 2}
+            ),
+            "alternatives": forms.Textarea(
+                attrs={"class": "oh-input w-100", "rows": 2}
+            ),
+            "system_outage": forms.Select(
+                attrs={"class": "oh-select w-100"}
+            ),
+            "scheduled_outage_date": forms.DateInput(
+                attrs={"class": "oh-input w-100", "type": "date"}
+            ),
+            "scheduled_outage_time": forms.TimeInput(
+                attrs={"class": "oh-input w-100", "type": "time"}, format="%H:%M"
+            ),
+            "business_impact": forms.Textarea(
+                attrs={"class": "oh-input w-100", "rows": 2}
+            ),
+        }
+
+    def __init__(self, *args, request=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.request = request
+        self.fields["implementer"].queryset = Employee.objects.filter(is_active=True)
+        for name in (
+            "is_self_implementer",
+            "implementation_overview",
+            "effort_estimate",
+            "special_support",
+            "system_outage",
+            "scheduled_outage_date",
+            "scheduled_outage_time",
+            "business_impact",
+        ):
+            self.fields[name].required = True
+        overview = self.fields["implementation_overview"]
+        overview.widget.attrs.update(
+            {
+                "data-maxlength": str(self.OVERVIEW_MAX_LENGTH),
+                "maxlength": str(self.OVERVIEW_MAX_LENGTH),
+            }
+        )
+
+    def clean(self):
+        cleaned_data = super().clean()
+        required_message = _("This field is required.")
+        if cleaned_data.get("is_self_implementer") == "no" and not cleaned_data.get(
+            "implementer"
+        ):
+            self.add_error("implementer", required_message)
+        if cleaned_data.get("special_support") == "yes" and not (
+            cleaned_data.get("special_support_description") or ""
+        ).strip():
+            self.add_error("special_support_description", required_message)
+        for name in (
+            "implementation_overview",
+            "effort_estimate",
+            "business_impact",
+        ):
+            if not (cleaned_data.get(name) or "").strip():
+                self.add_error(name, required_message)
+        return cleaned_data
+
+
+class ISOEvaluationForm(forms.ModelForm):
+    """Stage 2 — ISO Officer evaluation & approval of a Change Request."""
+
+    COMMENTS_MAX_LENGTH = ChangeRequest.COMMENTS_MAX_LENGTH
+
+    class Meta:
+        model = ChangeRequest
+        fields = [
+            "iso_complies",
+            "iso_impact",
+            "iso_risk_assessment",
+            "iso_approval",
+            "iso_comments",
+        ]
+        widgets = {
+
+            "iso_complies": forms.Select(
+                attrs={"class": "oh-select w-100"}
+            ),
+            "iso_impact": forms.Textarea(attrs={"class": "oh-input w-100", "rows": 2}),
+            "iso_risk_assessment": forms.Textarea(
+                attrs={"class": "oh-input w-100", "rows": 2}
+            ),
+            "iso_approval": forms.Select(
+                attrs={"class": "oh-select w-100"}
+            ),
+            "iso_comments": forms.Textarea(
+                attrs={"class": "oh-input w-100", "rows": 2}
+            ),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for name in ("iso_complies", "iso_impact", "iso_risk_assessment", "iso_approval"):
+            self.fields[name].required = True
+        self.fields["iso_comments"].required = False
+        self.fields["iso_comments"].widget.attrs.update(
+            {"maxlength": str(self.COMMENTS_MAX_LENGTH)}
+        )
+
+    def clean(self):
+        cleaned_data = super().clean()
+        required_message = _("This field is required.")
+        for name in ("iso_impact", "iso_risk_assessment"):
+            if not (cleaned_data.get(name) or "").strip():
+                self.add_error(name, required_message)
+        return cleaned_data
+
+
+class ISCApprovalForm(forms.ModelForm):
+    """Stage 3 — ISC approval of a Change Request (Major / Emergency only)."""
+
+    COMMENTS_MAX_LENGTH = ChangeRequest.COMMENTS_MAX_LENGTH
+
+    class Meta:
+        model = ChangeRequest
+        fields = ["isc_approval", "isc_comments"]
+        widgets = {
+            "isc_approval": forms.Select(attrs={"class": "oh-select w-100"}),
+            "isc_comments": forms.Textarea(
+                attrs={"class": "oh-input w-100", "rows": 2}
+            ),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["isc_approval"].required = True
+        self.fields["isc_comments"].required = False
+        self.fields["isc_comments"].widget.attrs.update(
+            {"maxlength": str(self.COMMENTS_MAX_LENGTH)}
+        )
+
+
+class ChangeReleaseForm(forms.ModelForm):
+    """
+    Change Release section. Editable by any ticket participant once all required
+    approvals are complete. All fields are required to close the ticket.
+    """
+
+    RELEASE_TEXT_MAX_LENGTH = ChangeRequest.RELEASE_TEXT_MAX_LENGTH
+
+    class Meta:
+        model = ChangeRequest
+        fields = [
+            "test_plan",
+            "test_results",
+            "rollback_plan",
+            "uat_accepted",
+            "released_to_production",
+            "acceptance_of_completion",
+        ]
+        widgets = {
+            "test_plan": forms.Textarea(attrs={"class": "oh-input w-100", "rows": 3}),
+            "test_results": forms.Textarea(
+                attrs={"class": "oh-input w-100", "rows": 3}
+            ),
+            "rollback_plan": forms.Textarea(
+                attrs={"class": "oh-input w-100", "rows": 3}
+            ),
+            "uat_accepted": forms.Select(attrs={"class": "oh-select w-100"}),
+            "released_to_production": forms.Select(
+                attrs={"class": "oh-select w-100"}
+            ),
+            "acceptance_of_completion": forms.Select(
+                attrs={"class": "oh-select w-100"}
+            ),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for name in self.fields:
+            self.fields[name].required = True
+        for name in ("test_plan", "test_results", "rollback_plan"):
+            self.fields[name].widget.attrs.update(
+                {"maxlength": str(self.RELEASE_TEXT_MAX_LENGTH)}
+            )
+
+    def clean(self):
+        cleaned_data = super().clean()
+        required_message = _("This field is required.")
+        for name in ("test_plan", "test_results", "rollback_plan"):
+            if not (cleaned_data.get(name) or "").strip():
+                self.add_error(name, required_message)
+        return cleaned_data
+
+
 class ISOReviewForm(forms.Form):
     """
     Form used by ISO/Admin to approve or reject a Password Reset request.
-
-    A comment (iso_feedback) is now MANDATORY for both actions:
       * Approve → the Review Comment is required (spec §4).
       * Reject  → the Reason for Rejection is required (unchanged).
     """

@@ -64,6 +64,24 @@ def leave_reset():
             leave_type.save()
 
 
+def leave_approval_reminder():
+    """
+    For every leave request that is still in the "requested" state, remind the
+    employee that their request is awaiting approval and send the approver(s)
+    (reporting manager or the designated conditional-approval managers) a daily
+    reminder to action it, until the request is approved in the system.
+    """
+    from leave.models import LeaveRequest
+    from leave.threading import LeaveMailSendThread
+
+    pending_requests = LeaveRequest.objects.filter(status="requested")
+    for leave_request in pending_requests:
+        try:
+            LeaveMailSendThread(None, leave_request, type="reminder").start()
+        except Exception:
+            pass
+
+
 if not any(
     cmd in sys.argv
     for cmd in ["makemigrations", "migrate", "compilemessages", "flush", "shell"]
@@ -73,5 +91,6 @@ if not any(
     """
     scheduler = BackgroundScheduler()
     scheduler.add_job(leave_reset, "interval", seconds=20)
+    scheduler.add_job(leave_approval_reminder, "cron", hour=8, minute=0)
 
     scheduler.start()

@@ -22,7 +22,7 @@ from django import template
 from django.contrib import messages
 from django.contrib.auth import login
 from django.contrib.auth.models import User
-from django.core.mail import EmailMessage, send_mail
+from django.core.mail import EmailMessage, EmailMultiAlternatives
 from django.core.paginator import Paginator
 from django.db.models import ProtectedError
 from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
@@ -35,6 +35,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods, require_POST
 
 from base.backends import ConfiguredEmailBackend
+from base.email_handlers import attach_inline_logo, render_branded_email
 from base.methods import (
     closest_numbers,
     generate_pdf,
@@ -686,14 +687,25 @@ def email_send(request):
                 new_portal.save()
             else:
                 OnboardingPortal(candidate_id=candidate, token=token).save()
-            html_message = render_to_string(
-                "onboarding/mail_templates/default.html",
-                {
-                    "portal": f"{protocol}://{host}/onboarding/user-creation/{token}",
-                    "instance": candidate,
-                    "host": host,
-                    "protocol": protocol,
-                },
+            company = None
+            try:
+                company = candidate.recruitment_id.company_id
+            except Exception:
+                company = None
+            html_message = render_branded_email(
+                recipient_name=candidate.name,
+                title="Congratulations on your selection",
+                content=(
+                    "Your dedication is valued, and we wish you continued success. "
+                    "If you have questions or need assistance, feel free to ask. "
+                    "Best wishes for your journey! Kindly complete your profile "
+                    "when convenient."
+                ),
+                button_label="Complete Profile",
+                button_url=f"{protocol}://{host}/onboarding/user-creation/{token}",
+                company_name=str(company) if company else "",
+                host=host,
+                protocol=protocol,
                 request=request,
             )
             email = EmailMessage(
@@ -703,6 +715,7 @@ def email_send(request):
             )
             email.content_subtype = "html"
             email.attachments = attachments
+            attach_inline_logo(email)
             try:
                 email.send()
                 # to check ajax or not
@@ -1607,14 +1620,27 @@ def onboarding_send_mail(request, candidate_id):
     if request.method == "POST":
         subject = request.POST["subject"]
         body = request.POST["body"]
+        from django.utils.html import strip_tags
+
+        branded_body = render_branded_email(
+            recipient_name=candidate.name,
+            content=body,
+            content_is_html=True,
+            company_name=str(candidate.recruitment_id.company_id)
+            if getattr(candidate, "recruitment_id", None)
+            and candidate.recruitment_id.company_id
+            else "",
+        )
         with contextlib.suppress(Exception):
-            res = send_mail(
+            email = EmailMultiAlternatives(
                 subject,
-                body,
+                strip_tags(body),
                 display_email_name,
                 [candidate_mail],
-                fail_silently=False,
             )
+            email.attach_alternative(branded_body, "text/html")
+            attach_inline_logo(email)
+            res = email.send(fail_silently=False)
             if res == 1:
                 messages.success(request, _("Mail sent successfully"))
             else:

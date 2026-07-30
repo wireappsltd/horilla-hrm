@@ -147,6 +147,21 @@ urlpatterns = [
         views.user_leave_cancel,
         name="user-request-cancel",
     ),
+    path(
+        "user-request-cancellation-request/<int:id>",
+        views.user_leave_cancellation_request,
+        name="user-request-cancellation-request",
+    ),
+    path(
+        "cancellation-request-approve/<int:id>",
+        views.cancellation_request_approve,
+        name="cancellation-request-approve",
+    ),
+    path(
+        "cancellation-request-reject/<int:id>",
+        views.cancellation_request_reject,
+        name="cancellation-request-reject",
+    ),
     path("one-request-view/<int:id>", views.one_request_view, name="one-request-view"),
     path("user-request-filter", views.user_request_filter, name="user-request-filter"),
     path("user-request-one/<int:id>", views.user_request_one, name="user-request-one"),
@@ -291,6 +306,11 @@ urlpatterns = [
         "employee-available-leave-count",
         views.employee_available_leave_count,
         name="employee-available-leave-count",
+    ),
+    path(
+        "employee-leave-count",
+        views.employee_leave_count,
+        name="employee-leave-count",
     ),
     path(
         "leave-request-add-comment/<int:leave_id>/",

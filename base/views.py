@@ -11,7 +11,6 @@ import random
 import threading
 import uuid
 from datetime import datetime, timedelta
-from email.mime.image import MIMEImage
 from os import path
 from urllib.parse import parse_qs, unquote, urlencode, urlparse
 
@@ -1404,12 +1403,30 @@ def send_otp(request):
     display_email_name = email_backend.dynamic_from_email_with_display_name
 
     otp_code = set_otp(request)
+    from base.email_handlers import attach_inline_logo, render_branded_email
+
+    company = employee.get_company() if hasattr(employee, "get_company") else None
+    branded_body = render_branded_email(
+        recipient_name=employee.get_full_name(),
+        title="Your verification code",
+        content=(
+            f"Your one-time verification code is: {otp_code}\n\n"
+            "This code is valid for a limited time. If you did not try to sign in, "
+            "please ignore this email."
+        ),
+        company_name=str(company) if company else "",
+        host=request.get_host(),
+        protocol="https" if request.is_secure() else "http",
+        request=request,
+    )
     email = EmailMessage(
         subject="Your OTP Code",
-        body=f"Your OTP code is {otp_code}",
+        body=branded_body,
         from_email=display_email_name,
         to=[email],
     )
+    email.content_subtype = "html"
+    attach_inline_logo(email)
     thread = threading.Thread(target=email.send)
     thread.start()
 
@@ -2088,33 +2105,25 @@ def mail_server_test_email(request):
             email_to = form.cleaned_data["to_email"]
             subject = _("Test mail from Horilla")
 
-            # HTML content
-            html_content = f"""
-            <html>
-                <body style="font-family: Arial, sans-serif; margin: 0; padding: 0;">
-                    <table align="center" width="600" cellpadding="0" cellspacing="0" border="0" style="border: 1px solid #e0e0e0; border-radius: 10px; overflow: hidden;">
-                        <tr>
-                            <td align="center" bgcolor="#4CAF50" style="padding: 20px 0;">
-                                <h1 style="color: #ffffff; margin: 0;">{company_name}</h1>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td style="padding: 20px;">
-                                <h3 style="color: #4CAF50;">Email tested successfully</h3>
-                                <b><p style="font-size: 14px;">Hi,<br>
-                                    This email is being sent as part of mail sever testing from {company_name}.</p></b>
-                                <img src="cid:unique_image_id" alt="Test Image" style="width: 200px; height: auto; margin: 20px 0;">
-                            </td>
-                        </tr>
-                        <tr>
-                            <td bgcolor="#f0f0f0" style="padding: 10px; text-align: center;">
-                                <p style="font-size: 12px; color: black;">&copy; {datetime.today().year} {company_name}</p>
-                            </td>
-                        </tr>
-                    </table>
-                </body>
-            </html>
-            """
+            # Build the standardized branded email so the mail-server test
+            # matches the look & feel of every other Horilla email. The
+            # wording is specific to the mail-server test feature.
+            from base.email_handlers import (
+                attach_inline_logo,
+                render_branded_email,
+            )
+
+            html_content = render_branded_email(
+                title="Mail server test successful",
+                content=(
+                    "This message confirms that your Horilla mail server "
+                    "configuration is working correctly. You are receiving it "
+                    "as part of a mail server test, so no further action is "
+                    "required."
+                ),
+                company_name=company_name,
+                request=request,
+            )
 
             # Plain text content (fallback for email clients that do not support HTML)
             text_content = strip_tags(html_content)
@@ -2135,10 +2144,8 @@ def mail_server_test_email(request):
                 )
                 msg.attach_alternative(html_content, "text/html")
 
-                with open(image_path, "rb") as img:
-                    msg_img = MIMEImage(img.read())
-                    msg_img.add_header("Content-ID", "<unique_image_id>")
-                    msg.attach(msg_img)
+                # Attach the inline WireApps logo used by the branded template.
+                attach_inline_logo(msg)
 
                 msg.send()
 

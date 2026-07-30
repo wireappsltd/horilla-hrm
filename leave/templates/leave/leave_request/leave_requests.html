@@ -17,6 +17,12 @@
     {% endif %}
 
     <div class="d-flex flex-row-reverse mb-2">
+        <span class="me-3"
+            hx-get="{% url 'request-filter' %}?cancellation_status=requested" hx-target="#leaveRequest"
+            style="cursor: pointer">
+            <span class="oh-dot oh-dot--small me-1" style="background-color:#ff9146"></span>
+            {% trans "Cancellation Requested" %}
+        </span>
         <span class="me-3 review_ongoing"
             onclick="$('[name=status]').val('rejected');$('[name=status]').first().change();$('.filterButton').click()"
             style="cursor: pointer">
@@ -169,7 +175,15 @@
                                     {{leave_request.multiple_approvals.approved|length}} / {{leave_request.multiple_approvals.managers|length}} {% trans "Approved" %}
                                 </div>
                             {% else %}
-                                {{leave_request.get_status_display}}
+                                {% if leave_request.cancellation_status == 'requested' %}
+                                    {% trans "Cancellation Requested" %}
+                                {% elif leave_request.cancellation_status == 'approved' %}
+                                    {% trans "Cancelled" %}
+                                {% elif leave_request.cancellation_status == 'rejected' %}
+                                    {{leave_request.get_status_display}} - {% trans "Cancellation Rejected" %}
+                                {% else %}
+                                    {{leave_request.get_status_display}}
+                                {% endif %}
                             {% endif %}
                         </div>
                         {% if not dashboard %}
@@ -239,7 +253,20 @@
                         {% if request.user|is_reportingmanager or perms.leave.change_leaverequest or request.user|is_leave_approval_manager%}
                             <div class="oh-sticky-table__td oh-sticky-table__right" onclick="event.stopPropagation()">
                                 <div class="oh-btn-group">
-                                    {% if leave_request.status == 'cancelled' %}
+                                    {% if leave_request.cancellation_status == 'requested' %}
+                                        <a type="submit" data-toggle="oh-modal-toggle" data-target="#cancellationReviewModal"
+                                            hx-get="{% url 'cancellation-request-approve' leave_request.id %}?{{pd}}"
+                                            hx-target="#cancellationReviewForm"
+                                            title="{% trans 'Approve cancellation request' %}" class="oh-btn oh-btn--success w-100">
+                                            <ion-icon class="me-1" name="checkmark-outline"></ion-icon>
+                                        </a>
+                                        <a type="submit" data-toggle="oh-modal-toggle" data-target="#cancellationReviewModal"
+                                            hx-get="{% url 'cancellation-request-reject' leave_request.id %}?{{pd}}"
+                                            hx-target="#cancellationReviewForm"
+                                            title="{% trans 'Reject cancellation request' %}" class="oh-btn oh-btn--danger w-100">
+                                            <ion-icon class="me-1" name="close-circle-outline"></ion-icon>
+                                        </a>
+                                    {% elif leave_request.status == 'cancelled' and leave_request.cancellation_status != 'approved' %}
                                         <a type="submit" data-toggle="oh-modal-toggle" data-target="#rejectModal"
                                             hx-get="{% url 'request-cancel' leave_request.id %}?{{pd}}" hx-target="#rejectForm"
                                             title="{% trans 'Approve cancellation request' %}" class="oh-btn oh-btn--warning w-100" ;>
@@ -264,10 +291,15 @@
                                                 <ion-icon class="me-1" name="checkmark-outline"></ion-icon>
                                             </a>
                                         {% endif %}
-                                        {% if leave_request.status == 'requested' %}
+                                        {% if leave_request.status == 'requested' or leave_request.status == 'approved' %}
                                             <a type="submit" data-toggle="oh-modal-toggle" data-target="#rejectModal"
                                                 hx-get="{% url 'request-cancel' leave_request.id %}?{{pd}}" hx-target="#rejectForm"
-                                                title="{% trans 'Reject' %}" class="oh-btn oh-btn--danger w-100">
+                                                {% if leave_request.status == 'approved' %}
+                                                    title="{% trans 'Cancel' %}"
+                                                {% else %}
+                                                    title="{% trans 'Reject' %}"
+                                                {% endif %}
+                                                class="oh-btn oh-btn--danger w-100">
                                                 <ion-icon class="me-1" name="close-circle-outline"></ion-icon>
                                             </a>
                                         {% else %}

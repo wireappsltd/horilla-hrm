@@ -688,6 +688,44 @@ class RejectForm(forms.Form):
         fields = ["reject_reason"]
 
 
+class CancellationRequestForm(forms.Form):
+    """
+    Form used by an employee to request the cancellation of an already
+    approved leave request (including leaves whose date has already passed).
+    """
+
+    reason = forms.CharField(
+        label=_("Cancellation Reason"),
+        widget=forms.Textarea(
+            attrs={
+                "rows": 4,
+                "class": "p-4 oh-input w-100",
+                "placeholder": _("Reason for requesting cancellation"),
+            }
+        ),
+    )
+
+
+class CancellationReviewForm(forms.Form):
+    """
+    Form used by HR/Admin to approve or reject an employee's leave
+    cancellation request. A note is mandatory for both actions.
+    """
+
+    note = forms.CharField(
+        label=_("Note"),
+        required=True,
+        widget=forms.Textarea(
+            attrs={
+                "rows": 4,
+                "class": "p-4 oh-input w-100",
+                "placeholder": _("Add a note explaining your decision"),
+            }
+        ),
+    )
+
+
+
 class UserLeaveRequestCreationForm(BaseModelForm):
     start_date = forms.DateField(widget=forms.DateInput(attrs={"type": "date"}))
     end_date = forms.DateField(widget=forms.DateInput(attrs={"type": "date"}))

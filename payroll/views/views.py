@@ -720,8 +720,11 @@ def view_payslip_pdf(request, payslip_id):
                     _("Failed to generate the payslip PDF."), status=500
                 )
 
-            # Build a safe file name for the downloaded payslip
-            file_name = f"payslip_{payslip.get_payslip_title()}.pdf"
+            employee_name = payslip.employee_id.get_full_name() or ""
+            employee_name = "".join(employee_name.split())
+            month_name = start_date.strftime("%B")
+            file_name = f"{employee_name}_{month_name}.pdf"
+            # Sanitize any remaining unsafe characters
             file_name = file_name.replace(" ", "_").replace("/", "-")
 
             log_activity(

@@ -6,7 +6,7 @@ from django.apps import apps
 from django.db import models
 from django.contrib import messages
 from django.contrib.auth.models import User
-from django.core.mail import send_mail
+from django.core.mail import EmailMultiAlternatives
 from django.core.paginator import Paginator
 from django.http import HttpResponse, JsonResponse, HttpResponseBadRequest
 from django.shortcuts import redirect, render
@@ -15,6 +15,7 @@ from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 
 from base.context_processors import intial_notice_period
+from base.email_handlers import attach_inline_logo, render_branded_email
 from base.methods import closest_numbers, eval_validate, paginator_qry, sortby
 from base.models import Department, JobPosition
 from base.views import general_settings
@@ -533,7 +534,7 @@ def add_employee(request):
                 EmployeeTask.objects.get_or_create(
                     employee_id=instance,
                     task_id=task,
-                    defaults={"status": "todo"}
+                    defaults={"status": "pending"}
                 )
 
             if stage.type == "fnf":
@@ -734,7 +735,7 @@ def change_stage(request):
             EmployeeTask.objects.get_or_create(
                 employee_id=employee,
                 task_id=task,
-                defaults={"status": "todo"}
+                defaults={"status": "pending"}
             )
 
     stage_forms = {}
@@ -1078,6 +1079,29 @@ def update_task_status(request, *args, **kwargs):
         redirect=reverse("offboarding-pipeline"),
         icon="information",
     )
+    # Notify the offboarding employees when their clearance is approved/rejected
+    if status in ("approved", "rejected"):
+        for emp_task in employee_task:
+            try:
+                recipient = emp_task.employee_id.employee_id.employee_user_id
+                if not recipient:
+                    continue
+                notify.send(
+                    request.user.employee_get,
+                    recipient=recipient,
+                    verb=(
+                        f'Your clearance "{emp_task.task_id.title}" has been '
+                        f"{status}"
+                    ),
+                    verb_ar=f"",
+                    verb_de=f"",
+                    verb_es=f"",
+                    verb_fr=f"",
+                    redirect=reverse("offboarding-pipeline"),
+                    icon="information",
+                )
+            except Exception:
+                pass
     stage = OffboardingStage.objects.get(id=stage_id)
     stage_forms = {}
     stage_forms[str(stage.offboarding_id.id)] = StageSelectForm(
@@ -1397,6 +1421,22 @@ def create_resignation_request(request):
                     "Status": form.instance.get_status_display(),
                 },
             )
+            from django.utils.html import strip_tags
+
+            resign_company = None
+            try:
+                resign_company = (
+                    employee.get_company() if hasattr(employee, "get_company") else None
+                )
+            except Exception:
+                resign_company = None
+            resignation_content = (
+                f"A new resignation request has been submitted.\n\n"
+                f"Employee: {employee}\n"
+                f"Planned Last Working Day: {planned_to_leave_on}\n"
+                f"Exit Reason: {exit_reason}\n"
+                f"Description: {strip_tags(description) if description else ''}"
+            )
             for user in hr_users:
                 notify.send(
                     sender=employee,
@@ -1407,19 +1447,27 @@ def create_resignation_request(request):
                 )
 
                 if user.email:
-                    send_mail(
+                    try:
+                        recipient_name = user.employee_get.get_full_name()
+                    except Exception:
+                        recipient_name = user.get_full_name() or user.username
+                    resignation_email = EmailMultiAlternatives(
                         subject=f"New resignation letter from {employee}",
-                        message=description,
-                        from_email='tech@wireapps.co.uk',
-                        recipient_list=[user.email],
-                        fail_silently=True,
-                        html_message=render_to_string("emails/resignation_request.html", {
-                            "employee": employee,
-                            "description": description,
-                            "planned_to_leave_on": planned_to_leave_on,
-                            "exit_reason": exit_reason,
-                        })
+                        body=strip_tags(resignation_content),
+                        from_email="tech@wireapps.co.uk",
+                        to=[user.email],
                     )
+                    resignation_email.attach_alternative(
+                        render_branded_email(
+                            recipient_name=recipient_name,
+                            title="New resignation request",
+                            content=resignation_content,
+                            company_name=str(resign_company) if resign_company else "",
+                        ),
+                        "text/html",
+                    )
+                    attach_inline_logo(resignation_email)
+                    resignation_email.send(fail_silently=True)
 
             messages.success(request, _("Resignation letter saved"))
             return HttpResponse("<script>window.location.reload()</script>")

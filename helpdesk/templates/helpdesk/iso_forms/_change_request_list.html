@@ -1,0 +1,143 @@
+{% load i18n %}
+
+{% if change_requests %}
+    <div class="oh-table_sticky--wrapper">
+        <div id="change-request-table" data-table-name="change_request_table">
+            <div class="oh-sticky-table">
+                <div class="oh-sticky-table__table">
+                    <div class="oh-sticky-table__thead">
+                        <div class="oh-sticky-table__tr">
+                            <div class="oh-sticky-table__th iso-col--ticket">{% trans "Ticket ID" %}</div>
+                            <div class="oh-sticky-table__th iso-col--platform">{% trans "Categorisation" %}</div>
+                            <div class="oh-sticky-table__th iso-col--user">{% trans "Requester" %}</div>
+                            <div class="oh-sticky-table__th iso-col--status">{% trans "Status" %}</div>
+                            <div class="oh-sticky-table__th iso-col--updated">{% trans "Updated" %}</div>
+                            <div class="oh-sticky-table__th oh-sticky-table__right iso-col--actions">{% trans "Actions" %}</div>
+                        </div>
+                    </div>
+                    <div class="oh-sticky-table__tbody">
+                        {% for cr in change_requests %}
+                            <div class="oh-sticky-table__tr"
+                                onclick="window.location.href = '{% url 'ticket-detail' cr.ticket.id %}'"
+                                style="cursor:pointer;"
+                            >
+                                <div class="oh-sticky-table__sd iso-col--ticket
+                                    {% if cr.status == 'PENDING' %}row-status--blue
+                                    {% elif cr.status == 'REJECTED' %}row-status--red
+                                    {% elif cr.status == 'CLOSED' %}row-status--grey
+                                    {% elif cr.status == 'FULLY_APPROVED' or cr.status == 'ISO_APPROVED' or cr.status == 'IN_RELEASE' %}row-status--yellowgreen
+                                    {% else %}row-status--orange{% endif %}"
+                                >
+                                    <span class="d-flex justify-content-between align-items-center">
+                                        {{ cr.ticket.ticket_type.prefix }}{{ cr.ticket.id|stringformat:"03d" }}
+                                    </span>
+                                </div>
+                                <div class="oh-sticky-table__td iso-col--platform">
+                                    <span class="iso-ellipsis" title="{{ cr.get_categorisation_display }}">{{ cr.get_categorisation_display }}</span>
+                                </div>
+                                <div class="oh-sticky-table__td iso-col--user">
+                                    <span class="iso-ellipsis" title="{{ cr.ticket.employee_id.get_full_name|default:cr.user_id }}">
+                                        {{ cr.ticket.employee_id.get_full_name|default:cr.user_id }}
+                                    </span>
+                                </div>
+                                <div class="oh-sticky-table__td iso-col--status">
+                                    {% if cr.status == 'PENDING' %}
+                                        <span class="oh-badge oh-badge--iso-pending">{{ cr.get_status_display }}</span>
+                                    {% elif cr.status == 'REJECTED' %}
+                                        <span class="oh-badge oh-badge--iso-rejected">{{ cr.get_status_display }}</span>
+                                    {% elif cr.status == 'CLOSED' %}
+                                        <span class="oh-badge oh-badge--iso-closed">{{ cr.get_status_display }}</span>
+                                    {% elif cr.status == 'FULLY_APPROVED' or cr.status == 'ISO_APPROVED' or cr.status == 'IN_RELEASE' %}
+                                        <span class="oh-badge oh-badge--iso-awaiting">{{ cr.get_status_display }}</span>
+                                    {% else %}
+                                        <span class="oh-badge oh-badge--iso-action">{{ cr.get_status_display }}</span>
+                                    {% endif %}
+                                </div>
+                                <div class="oh-sticky-table__td iso-col--updated">{{ cr.updated_at|date:"M d, Y H:i" }}</div>
+                                <div class="oh-sticky-table__td oh-sticky-table__right iso-col--actions" onclick="event.stopPropagation()">
+                                    <div class="oh-btn-group">
+
+                                        {# ── Edit / Withdraw (only PENDING, owner or ISC) ── #}
+                                        {% if cr.status == 'PENDING' %}
+                                            {% if is_isc_member or current_employee == cr.ticket.employee_id %}
+                                                <button
+                                                    class="oh-btn oh-btn--light-bkg p-3 w-50"
+                                                    title="{% trans 'Edit' %}"
+                                                    hx-get="{% url 'change-request-update' cr.id %}"
+                                                    hx-target="#changeRequestModalTarget"
+                                                    hx-swap="innerHTML"
+                                                    data-toggle="oh-modal-toggle"
+                                                    data-target="#changeRequestModal"
+                                                >
+                                                    <ion-icon name="create-outline"></ion-icon>
+                                                </button>
+                                            {% endif %}
+                                            {% if current_employee == cr.ticket.employee_id %}
+                                                <form
+                                                    action="{% url 'change-request-withdraw' cr.id %}"
+                                                    class="w-50"
+                                                    onsubmit="return confirm('{% trans "Withdraw this change request?" %}');"
+                                                    method="post"
+                                                    onclick="event.stopPropagation()"
+                                                    style="display:contents;"
+                                                >
+                                                    {% csrf_token %}
+                                                    <button type="submit" class="oh-btn oh-btn--warning-outline oh-btn--light-bkg p-3 w-100" title="{% trans 'Withdraw' %}">
+                                                        <ion-icon name="close-circle-outline"></ion-icon>
+                                                    </button>
+                                                </form>
+                                            {% endif %}
+                                        {% endif %}
+
+                                        {# ── Stage 1: Divisional Head (IS Council) approve / reject (PENDING) ── #}
+                                        {% if cr.status == 'PENDING' and is_isc_member and current_employee != cr.ticket.employee_id %}
+                                            <button type="button" class="oh-btn oh-btn--light-bkg p-3 w-50" title="{% trans 'Approve (Divisional Head)' %}"
+                                                onclick="event.stopPropagation(); openApproveModal('{% url 'change-request-dh-review' cr.id %}', '{{ cr.ticket.ticket_type.prefix }}{{ cr.ticket.id|stringformat:"03d" }}');"
+                                                style="color: green;">
+                                                <ion-icon name="checkmark-outline"></ion-icon>
+                                            </button>
+                                            <button type="button" class="oh-btn oh-btn--danger-outline oh-btn--light-bkg p-3 w-50" title="{% trans 'Reject (Divisional Head)' %}"
+                                                onclick="event.stopPropagation(); openRejectModal('{% url 'change-request-dh-review' cr.id %}', '{{ cr.ticket.ticket_type.prefix }}{{ cr.ticket.id|stringformat:"03d" }}');">
+                                                <ion-icon name="close-outline"></ion-icon>
+                                            </button>
+                                        {% endif %}
+
+                                        {# ── Open to review (any non-terminal, non-pending stage) ── #}
+                                        {% if cr.status != 'PENDING' and cr.status != 'CLOSED' and cr.status != 'REJECTED' %}
+                                            <a class="oh-btn oh-btn--light-bkg p-3 w-50"
+                                                href="{% url 'ticket-detail' cr.ticket.id %}"
+                                                title="{% trans 'Open' %}"
+                                                onclick="event.stopPropagation()"
+                                                style="color: dodgerblue;">
+                                                <ion-icon name="open-outline"></ion-icon>
+                                            </a>
+                                        {% endif %}
+
+                                        {# ── Delete (IS Council / superuser) ── #}
+                                        {% if is_isc_member %}
+                                            <form action="{% url 'change-request-delete' cr.id %}" class="w-50"
+                                                onsubmit="return confirm('{% trans "Delete this change request?" %}');"
+                                                method="post" onclick="event.stopPropagation()" style="display:contents;">
+                                                {% csrf_token %}
+                                                <button type="submit" class="oh-btn oh-btn--danger-outline oh-btn--light-bkg p-3 w-100" title="{% trans 'Delete' %}">
+                                                    <ion-icon name="trash-outline"></ion-icon>
+                                                </button>
+                                            </form>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+{% else %}
+    <div class="py-5 d-flex flex-column align-items-center text-center text-muted">
+        <ion-icon name="git-branch-outline" style="font-size:42px;"></ion-icon>
+        <p class="mt-2 mb-0">{% trans "No change requests found." %}</p>
+        <small>{% trans "Click Create above to submit a new change request." %}</small>
+    </div>
+{% endif %}
+
