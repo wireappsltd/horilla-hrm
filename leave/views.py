@@ -1276,18 +1276,26 @@ def leave_request_cancel(request, id, emp_id=None):
                 leave_type_id=leave_type_id, employee_id=employee_id
             )
             if leave_request.status != "rejected":
+                was_approved = leave_request.status == "approved"
                 available_leave.available_days += leave_request.approved_available_days
                 available_leave.carryforward_days += (
                     leave_request.approved_carryforward_days
                 )
                 leave_request.approved_available_days = 0
                 leave_request.approved_carryforward_days = 0
-                leave_request.status = "rejected"
+                leave_request.status = "cancelled" if was_approved else "rejected"
                 leave_request.leave_clashes_count = 0
                 leave_request.reviewed_by = getattr(
                     request.user, "employee_get", None
                 )
                 leave_request.reviewed_at = timezone.now()
+                if was_approved:
+                    leave_request.cancellation_status = "approved"
+                    leave_request.cancellation_note = form.cleaned_data["reason"]
+                    leave_request.cancellation_reviewed_by = getattr(
+                        request.user, "employee_get", None
+                    )
+                    leave_request.cancellation_reviewed_at = timezone.now()
 
                 if leave_request.multiple_approvals() and not request.user.is_superuser:
                     conditional_requests = leave_request.multiple_approvals()
@@ -1312,22 +1320,44 @@ def leave_request_cancel(request, id, emp_id=None):
                 comment.comment = leave_request.reject_reason
                 comment.save()
 
-                messages.success(request, _("Leave request rejected successfully.."))
+                if was_approved:
+                    messages.success(
+                        request, _("Leave request cancelled successfully..")
+                    )
+                    notify_verb = "Your approved leave request has been cancelled."
+                    notify_verb_ar = "تم إلغاء طلب الإجازة المعتمد الخاص بك"
+                    notify_verb_de = "Ihr genehmigter Urlaubsantrag wurde storniert"
+                    notify_verb_es = "Su solicitud de permiso aprobada ha sido cancelada"
+                    notify_verb_fr = "Votre demande de congé approuvée a été annulée"
+                    mail_type = "cancel"
+                else:
+                    messages.success(
+                        request, _("Leave request rejected successfully..")
+                    )
+                    notify_verb = "Your leave request has been rejected."
+                    notify_verb_ar = "تم رفض طلب الإجازة الخاص بك"
+                    notify_verb_de = "Ihr Urlaubsantrag wurde abgelehnt"
+                    notify_verb_es = "Tu solicitud de permiso ha sido rechazada"
+                    notify_verb_fr = "Votre demande de congé a été rejetée"
+                    mail_type = "reject"
+
                 with contextlib.suppress(Exception):
                     notify.send(
                         request.user.employee_get,
                         recipient=leave_request.employee_id.employee_user_id,
-                        verb="Your leave request has been rejected.",
-                        verb_ar="تم رفض طلب الإجازة الخاص بك",
-                        verb_de="Ihr Urlaubsantrag wurde abgelehnt",
-                        verb_es="Tu solicitud de permiso ha sido rechazada",
-                        verb_fr="Votre demande de congé a été rejetée",
+                        verb=notify_verb,
+                        verb_ar=notify_verb_ar,
+                        verb_de=notify_verb_de,
+                        verb_es=notify_verb_es,
+                        verb_fr=notify_verb_fr,
                         icon="people-circle",
                         redirect=reverse("user-request-view")
                         + f"?id={leave_request.id}",
                     )
 
-                mail_thread = LeaveMailSendThread(request, leave_request, type="reject")
+                mail_thread = LeaveMailSendThread(
+                    request, leave_request, type=mail_type
+                )
                 mail_thread.start()
 
                 if leave_request.manager:

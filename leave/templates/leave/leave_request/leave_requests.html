@@ -291,10 +291,15 @@
                                                 <ion-icon class="me-1" name="checkmark-outline"></ion-icon>
                                             </a>
                                         {% endif %}
-                                        {% if leave_request.status == 'requested' %}
+                                        {% if leave_request.status == 'requested' or leave_request.status == 'approved' %}
                                             <a type="submit" data-toggle="oh-modal-toggle" data-target="#rejectModal"
                                                 hx-get="{% url 'request-cancel' leave_request.id %}?{{pd}}" hx-target="#rejectForm"
-                                                title="{% trans 'Reject' %}" class="oh-btn oh-btn--danger w-100">
+                                                {% if leave_request.status == 'approved' %}
+                                                    title="{% trans 'Cancel' %}"
+                                                {% else %}
+                                                    title="{% trans 'Reject' %}"
+                                                {% endif %}
+                                                class="oh-btn oh-btn--danger w-100">
                                                 <ion-icon class="me-1" name="close-circle-outline"></ion-icon>
                                             </a>
                                         {% else %}
