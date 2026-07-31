@@ -173,7 +173,7 @@ class LeaveMailSendThread(Thread):
                 f"Your leave request has been recorded in our system. "
                 f"Our HR will now review it and take necessary action. "
                 f"If you need to share any additional information or updates, "
-                f"please contact {reporting_manager} directly."
+                f"please contact {reporting_manager.get_full_name()} directly."
                 if reporting_manager
                 else (
                     "Your leave request has been recorded in our system. "
