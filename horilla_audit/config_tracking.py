@@ -34,10 +34,19 @@ _ASSET_MODULE = "asset"
 # offboarding lifecycle events instead of the generic Configuration tab.
 _OFFBOARDING_MODULE = "offboarding"
 
+# A model's audit tab follows the nav menu its edit screen lives under, so a
+# reviewer looks in the same place they made the change. "Leave Types" is the
+# only leave-domain screen under the Leave menu (leave/sidebar.py); Holidays,
+# Company Leaves and Restrict Leaves sit under the Configuration menu
+# (templates/sidebar.html), and the compensatory-leave and past-leave-restriction
+# toggles sit on the Settings page (templates/settings.html), so all of those
+# stay in the Configuration tab.
+_LEAVE_MODULE = "leave"
+
 # (app_label, model_name, module_slug, friendly_label)
 CONFIG_MODELS = [
-    # Leave settings
-    ("leave", "LeaveType", _CONFIG_MODULE, "Leave Type"),
+    # Leave — see the _LEAVE_MODULE note above for how the tab is chosen.
+    ("leave", "LeaveType", _LEAVE_MODULE, "Leave Type"),
     ("leave", "Holiday", _CONFIG_MODULE, "Holiday"),
     ("leave", "CompanyLeave", _CONFIG_MODULE, "Company Leave"),
     ("leave", "LeaveGeneralSetting", _CONFIG_MODULE, "Leave General Setting"),
@@ -94,7 +103,7 @@ CONFIG_MODELS = [
         "Check-In/Check-Out Setting",
     ),
     ("attendance", "GraceTime", _CONFIG_MODULE, "Grace Time"),
-    # Leave settings
+    # Leave settings — edited from the Settings page, so Configuration tab.
     (
         "leave",
         "EmployeePastLeaveRestrict",
