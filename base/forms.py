@@ -2580,10 +2580,15 @@ class PassWordResetForm(forms.Form):
         """
         from base.email_handlers import attach_inline_logo
 
-        subject = loader.render_to_string(subject_template_name, context)
+
+        subject = context.get("subject_override")
+        if not subject:
+            subject = loader.render_to_string(subject_template_name, context)
         # Email subject *must not* contain newlines
         subject = "".join(subject.splitlines())
-        body = loader.render_to_string(email_template_name, context)
+        body = context.get("plain_body_override")
+        if not body:
+            body = loader.render_to_string(email_template_name, context)
 
         email_message = EmailMultiAlternatives(subject, body, from_email, [to_email])
         if html_message is not None:
@@ -2698,6 +2703,16 @@ class PassWordResetForm(forms.Form):
                 host=domain,
                 protocol=protocol,
                 request=request,
+            )
+
+            context["subject_override"] = "Password reset requested"
+            context["plain_body_override"] = (
+                f"Hello {employee.get_full_name()},\n\n"
+                "We received a request to reset the password for your account. "
+                "Use the link below to choose a new password. If you did not "
+                "request this, you can safely ignore this email.\n\n"
+                f"Reset your password:\n{reset_url}\n\n"
+                "Thanks for using Horilla!\n"
             )
             self.send_mail(
                 subject_template_name,
