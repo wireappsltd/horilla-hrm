@@ -101,8 +101,37 @@ from pms.models import (
     QuestionOptions,
     QuestionTemplate,
 )
+from horilla_audit.methods import log_activity, log_form_changes
 
 logger = logging.getLogger(__name__)
+
+
+def _pms_client_ip(request):
+    """Best-effort client IP: first X-Forwarded-For hop, else REMOTE_ADDR."""
+    forwarded = request.META.get("HTTP_X_FORWARDED_FOR")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.META.get("REMOTE_ADDR", "")
+
+
+def _pms_audit(request, action, target=None, changes=None):
+    """Write a performance-module ActivityLog entry for a lifecycle event.
+
+    Thin wrapper over ``log_activity`` so every PMS event lands in the
+    "Performance" audit tab with a consistent actor and (where available) the
+    client IP stamped into ``changes``. Never blocks the request.
+    """
+    changes = dict(changes or {})
+    ip = _pms_client_ip(request)
+    if ip:
+        changes.setdefault("IP", ip)
+    log_activity(
+        request.user,
+        module="pms",
+        action=action,
+        target=target,
+        changes=changes or None,
+    )
 
 
 # objectives
@@ -133,6 +162,17 @@ def obj_form_save(request, objective_form):
     default_krs = objective_form.cleaned_data["key_result_id"]
 
     messages.success(request, _("Objective created"))
+    _pms_audit(
+        request,
+        "Objective created",
+        target=objective,
+        changes={
+            "Objective": str(objective),
+            "Managers": ", ".join(str(m) for m in objective.managers.all())
+            or None,
+            "Assignees": ", ".join(str(emp) for emp in assignees) or None,
+        },
+    )
     if assignees:
         for emp in assignees:
             emp_objective = EmployeeObjective(
@@ -211,6 +251,13 @@ def objective_update(request, obj_id):
         objective_form = ObjectiveForm(request.POST, instance=instance)
         if objective_form.is_valid():
             objective = objective_form.save()
+            log_form_changes(
+                request.user,
+                "pms",
+                "Objective updated",
+                form=objective_form,
+                target=objective,
+            )
             assignees = objective_form.cleaned_data["assignees"]
             start_date = objective_form.cleaned_data["start_date"]
             default_krs = objective_form.cleaned_data["key_result_id"]
@@ -344,6 +391,16 @@ def key_result_create(request):
                 _("Key result %(key_result)s created successfully")
                 % {"key_result": instance},
             )
+            _pms_audit(
+                request,
+                "Key result created",
+                target=instance,
+                changes={
+                    "Key result": str(instance),
+                    "Progress type": instance.get_progress_type_display(),
+                    "Target value": instance.target_value,
+                },
+            )
             mutable_get = request.GET.copy()
 
             key_result_ids = mutable_get.getlist("key_result_id", [])
@@ -395,6 +452,13 @@ def kr_create_or_update(request, kr_id=None):
             form = KRForm(request.POST, instance=key_result)
             if form.is_valid():
                 instance = form.save()
+                log_form_changes(
+                    request.user,
+                    "pms",
+                    "Key result updated",
+                    form=form,
+                    target=instance,
+                )
                 messages.success(
                     request,
                     _("Key result %(key_result)s updated successfully")
@@ -406,6 +470,16 @@ def kr_create_or_update(request, kr_id=None):
             form = KRForm(request.POST)
             if form.is_valid():
                 instance = form.save()
+                _pms_audit(
+                    request,
+                    "Key result created",
+                    target=instance,
+                    changes={
+                        "Key result": str(instance),
+                        "Progress type": instance.get_progress_type_display(),
+                        "Target value": instance.target_value,
+                    },
+                )
                 messages.success(
                     request,
                     _("Key result %(key_result)s created successfully")
@@ -470,6 +544,15 @@ def add_assignees(request, obj_id):
                     ),
                 )
             objective.save()
+            _pms_audit(
+                request,
+                "Assignees added to objective",
+                target=objective,
+                changes={
+                    "Objective": str(objective),
+                    "Assignees": ", ".join(str(emp) for emp in assignees) or None,
+                },
+            )
             messages.success(
                 request,
                 _("Objective %(objective)s Updated") % {"objective": objective},
@@ -496,7 +579,9 @@ def objective_delete(request, obj_id):
     try:
         objective = Objective.objects.get(id=obj_id)
         if not objective.employee_objective.exists():
+            details = {"Objective": str(objective), "ID": obj_id}
             objective.delete()
+            _pms_audit(request, "Objective deleted", changes=details)
             messages.success(
                 request,
                 _("Objective %(objective)s deleted") % {"objective": objective},
@@ -527,7 +612,14 @@ def objective_manager_remove(request, obj_id, manager_id):
     HttpResponse indicating success.
     """
     objective = get_object_or_404(Objective, id=obj_id)
+    manager = Employee.objects.filter(id=manager_id).first()
     objective.managers.remove(manager_id)
+    _pms_audit(
+        request,
+        "Manager removed from objective",
+        target=objective,
+        changes={"Manager": str(manager), "Objective": str(objective)},
+    )
     return HttpResponse("")
 
 
@@ -546,7 +638,14 @@ def key_result_remove(request, obj_id, kr_id):
     HttpResponse indicating success.
     """
     objective = get_object_or_404(Objective, id=obj_id)
+    key_result = KeyResult.objects.filter(id=kr_id).first()
     objective.key_result_id.remove(kr_id)
+    _pms_audit(
+        request,
+        "Key result removed from objective",
+        target=objective,
+        changes={"Key result": str(key_result), "Objective": str(objective)},
+    )
     return HttpResponse("")
 
 
@@ -565,10 +664,17 @@ def assignees_remove(request, obj_id, emp_id):
     HttpResponse indicating success.
     """
     objective = get_object_or_404(Objective, id=obj_id)
+    employee = Employee.objects.filter(id=emp_id).first()
     get_object_or_404(
         EmployeeObjective, employee_id=emp_id, objective_id=obj_id
     ).delete()
     objective.assignees.remove(emp_id)
+    _pms_audit(
+        request,
+        "Assignee removed from objective",
+        target=objective,
+        changes={"Assignee": str(employee), "Objective": str(objective)},
+    )
 
     return HttpResponse()
 
@@ -838,6 +944,15 @@ def objective_detailed_view_comment(request, id):
         form.employee_id = request.user.employee_get
         form.employee_objective_id = objective
         form.save()
+        _pms_audit(
+            request,
+            "Comment added",
+            target=objective,
+            changes={
+                "Objective": str(objective),
+                "Comment": form.comment,
+            },
+        )
 
         return redirect(objective_detailed_view_activity, id)
     return redirect(objective_detailed_view_activity, id)
@@ -921,9 +1036,19 @@ def objective_detailed_view_objective_status(request, id):
     """
 
     objective = EmployeeObjective.objects.get(id=id)
+    old_status = objective.status
     status = request.POST.get("objective_status")
     objective.status = status
     objective.save()
+    _pms_audit(
+        request,
+        "Employee objective status changed",
+        target=objective,
+        changes={
+            "Objective": str(objective.objective_id),
+            "Status": {"from": old_status, "to": objective.status},
+        },
+    )
     messages.info(
         request,
         _("Objective %(objective)s status updated")
@@ -948,6 +1073,7 @@ def objective_detailed_view_key_result_status(request, obj_id, kr_id):
     status = request.POST.get("key_result_status")
     employee_key_result = EmployeeKeyResult.objects.get(id=kr_id)
 
+    old_status = employee_key_result.status
     current_value = employee_key_result.current_value
     target_value = employee_key_result.target_value
 
@@ -956,6 +1082,15 @@ def objective_detailed_view_key_result_status(request, obj_id, kr_id):
     else:
         employee_key_result.status = status
     employee_key_result.save()
+    _pms_audit(
+        request,
+        "Employee key result status changed",
+        target=employee_key_result,
+        changes={
+            "Key result": str(employee_key_result),
+            "Status": {"from": old_status, "to": employee_key_result.status},
+        },
+    )
     messages.info(request, _("Status has been updated"))
     # return redirect(objective_detailed_view_activity, id=obj_id)
     response = redirect(objective_detailed_view_activity, id=obj_id)
@@ -977,11 +1112,21 @@ def objective_detailed_view_current_value(request, kr_id):
     if request.method == "POST":
         current_value = request.POST.get("current_value")
         employee_key_result = EmployeeKeyResult.objects.get(id=kr_id)
+        old_value = employee_key_result.current_value
         target_value = employee_key_result.target_value
         objective_id = employee_key_result.employee_objective_id.id
         if int(current_value) < target_value:
             employee_key_result.current_value = current_value
             employee_key_result.save()
+            _pms_audit(
+                request,
+                "Employee key result current value changed",
+                target=employee_key_result,
+                changes={
+                    "Key result": str(employee_key_result),
+                    "Current value": {"from": old_value, "to": current_value},
+                },
+            )
             messages.info(
                 request,
                 _("Current value of %(employee_key_result)s updated")
@@ -993,6 +1138,16 @@ def objective_detailed_view_current_value(request, kr_id):
             employee_key_result.current_value = current_value
             employee_key_result.status = "Closed"
             employee_key_result.save()
+            _pms_audit(
+                request,
+                "Employee key result current value changed",
+                target=employee_key_result,
+                changes={
+                    "Key result": str(employee_key_result),
+                    "Current value": {"from": old_value, "to": current_value},
+                    "Status": {"to": "Closed"},
+                },
+            )
             messages.info(
                 request,
                 _("Current value of %(employee_key_result)s updated")
@@ -1024,10 +1179,22 @@ def objective_archive(request, id):
     if objective.archive:
         objective.archive = False
         objective.save()
+        _pms_audit(
+            request,
+            "Objective unarchived",
+            target=objective,
+            changes={"Objective": str(objective)},
+        )
         messages.info(request, _("Objective un-archived successfully!."))
     elif not objective.archive:
         objective.archive = True
         objective.save()
+        _pms_audit(
+            request,
+            "Objective archived",
+            target=objective,
+            changes={"Objective": str(objective)},
+        )
         messages.info(request, _("Objective archived successfully!."))
     return redirect(f"/pms/objective-list-view?{request.environ['QUERY_STRING']}")
 
@@ -1093,6 +1260,16 @@ def create_employee_objective(request):
                         target_value=kr.target_value,
                         start_date=emp_obj.start_date,
                     )
+            _pms_audit(
+                request,
+                "Employee objective created",
+                target=emp_obj,
+                changes={
+                    "Objective": str(emp_obj.objective_id),
+                    "Employee": str(emp_obj.employee_id),
+                    "Status": emp_obj.status,
+                },
+            )
             messages.success(request, _("Employee objective created successfully"))
             return HttpResponse("<script>window.location.reload()</script>")
     context = {"form": form, "k_form": KRForm(), "emp_obj": True}
@@ -1135,6 +1312,13 @@ def update_employee_objective(request, emp_obj_id):
             if form.is_valid():
                 emp_obj = form.save(commit=False)
                 emp_obj.save()
+                log_form_changes(
+                    request.user,
+                    "pms",
+                    "Employee objective updated",
+                    form=form,
+                    target=emp_obj,
+                )
                 messages.success(request, _("Employee objective Updated successfully"))
                 return HttpResponse("<script>window.location.reload()</script>")
         context = {"form": form, "k_form": KRForm()}
@@ -1160,10 +1344,28 @@ def archive_employee_objective(request, emp_obj_id):
     if emp_objective.archive:
         emp_objective.archive = False
         emp_objective.save()
+        _pms_audit(
+            request,
+            "Employee objective unarchived",
+            target=emp_objective,
+            changes={
+                "Objective": str(emp_objective.objective_id),
+                "Employee": str(emp_objective.employee_id),
+            },
+        )
         messages.success(request, _("Objective un-archived successfully!."))
     elif not emp_objective.archive:
         emp_objective.archive = True
         emp_objective.save()
+        _pms_audit(
+            request,
+            "Employee objective archived",
+            target=emp_objective,
+            changes={
+                "Objective": str(emp_objective.objective_id),
+                "Employee": str(emp_objective.employee_id),
+            },
+        )
         messages.success(request, _("Objective archived successfully!."))
     return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
 
@@ -1187,8 +1389,14 @@ def delete_employee_objective(request, emp_obj_id):
     else:
         employee = emp_objective.employee_id
         objective = emp_objective.objective_id
+        details = {
+            "Objective": str(objective),
+            "Employee": str(employee),
+            "ID": emp_obj_id,
+        }
         emp_objective.delete()
         objective.assignees.remove(employee)
+        _pms_audit(request, "Employee objective deleted", changes=details)
         messages.success(request, _("Objective deleted successfully!."))
     if not single_view:
         return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
@@ -1222,8 +1430,19 @@ def change_employee_objective_status(request):
         messages.info(request, _("You dont have permission."))
     else:
         if emp_objective.status != status:
+            old_status = emp_objective.status
             emp_objective.status = status
             emp_objective.save()
+            _pms_audit(
+                request,
+                "Employee objective status changed",
+                target=emp_objective,
+                changes={
+                    "Objective": str(emp_objective.objective_id),
+                    "Employee": str(emp_objective.employee_id),
+                    "Status": {"from": old_status, "to": emp_objective.status},
+                },
+            )
             messages.success(
                 request,
                 _(
@@ -1329,6 +1548,15 @@ def key_result_creation(request, obj_id, obj_type):
                 form.start_value = form.current_value
                 form.employee_objective_id = employee_objective_id
                 form.save()
+                _pms_audit(
+                    request,
+                    "Employee key result created",
+                    target=form,
+                    changes={
+                        "Key result": str(form),
+                        "Objective": str(employee_objective_id),
+                    },
+                )
                 messages.success(request, _("Key result created"))
                 return redirect(objective_detailed_view, obj_id)
             else:
@@ -1349,6 +1577,15 @@ def key_result_creation(request, obj_id, obj_type):
                     form.employee_id = objective.employee_id
                     form.employee_objective_id = objective
                     form.save()
+                    _pms_audit(
+                        request,
+                        "Employee key result created",
+                        target=form,
+                        changes={
+                            "Key result": str(form),
+                            "Objective": str(objective),
+                        },
+                    )
                 else:
                     context["key_result_form"] = form_key_result
                     return render(
@@ -1390,6 +1627,15 @@ def key_result_creation_htmx(request, id):
             form.start_value = form.current_value
             form.employee_objective_id = objective
             form.save()
+            _pms_audit(
+                request,
+                "Employee key result created",
+                target=form,
+                changes={
+                    "Key result": str(form),
+                    "Objective": str(objective),
+                },
+            )
             messages.success(request, _("Key result created"))
             response = render(
                 request, "okr/key_result/key_result_creation_htmx.html", context
@@ -1423,6 +1669,13 @@ def key_result_update(request, id):
         )  # adding intial objective value to the form
         if key_result_form.is_valid():
             key_result_form.save()
+            log_form_changes(
+                request.user,
+                "pms",
+                "Employee key result updated",
+                form=key_result_form,
+                target=key_result,
+            )
             messages.info(request, _("Key result updated"))
             response = render(request, "okr/key_result/key_result_update.html", context)
             return HttpResponse(
@@ -1490,6 +1743,16 @@ def feedback_creation(request):
             instance = form.save()
             instance.subordinate_id.set(employees)
 
+            _pms_audit(
+                request,
+                "Feedback created",
+                target=instance,
+                changes={
+                    "Feedback": str(instance),
+                    "Employee": str(instance.employee_id),
+                    "Status": instance.status,
+                },
+            )
             messages.success(request, _("Feedback created successfully."))
             send_feedback_notifications(request, feedback=instance)
             return redirect(feedback_list_view)
@@ -1578,6 +1841,13 @@ def feedback_update(request, id):
             )
             form.cleaned_data["others_id"] = other_employees
             feedback = form.save()
+            log_form_changes(
+                request.user,
+                "pms",
+                "Feedback updated",
+                form=form,
+                target=feedback,
+            )
             messages.info(request, _("Feedback updated successfully!."))
             send_feedback_notifications(request, feedback)
             response = render(request, "feedback/feedback_update.html", context)
@@ -1936,6 +2206,15 @@ def feedback_answer_post(request, id):
                     feedback_id=feedback,
                     employee_id=request.user.employee_get,
                 )
+        _pms_audit(
+            request,
+            "Feedback answer submitted",
+            target=feedback,
+            changes={
+                "Feedback": str(feedback),
+                "Employee": str(employee),
+            },
+        )
         messages.success(
             request,
             _("Feedback %(review_cycle)s has been answered successfully!.")
@@ -1992,7 +2271,13 @@ def feedback_delete(request, id):
             or feedback.status == "Not Started"
             and not answered
         ):
+            details = {
+                "Feedback": str(feedback),
+                "Employee": str(feedback.employee_id),
+                "ID": id,
+            }
             feedback.delete()
+            _pms_audit(request, "Feedback deleted", changes=details)
             messages.success(
                 request,
                 _("Feedback %(review_cycle)s deleted successfully!")
@@ -2031,9 +2316,19 @@ def feedback_detailed_view_status(request, id):
         messages.warning(request, _("Feedback is already started"))
         return HttpResponse("<script>$('#reloadMessagesButton').click();</script>")
 
+    old_status = feedback.status
     feedback.status = status
     feedback.save()
     if (feedback.status) == status:
+        _pms_audit(
+            request,
+            "Feedback status changed",
+            target=feedback,
+            changes={
+                "Feedback": str(feedback),
+                "Status": {"from": old_status, "to": feedback.status},
+            },
+        )
         messages.success(
             request, _("Feedback status updated to  %(status)s") % {"status": _(status)}
         )
@@ -2102,10 +2397,22 @@ def feedback_archive(request, id):
     if feedback.archive:
         feedback.archive = False
         feedback.save()
+        _pms_audit(
+            request,
+            "Feedback unarchived",
+            target=feedback,
+            changes={"Feedback": str(feedback)},
+        )
         messages.info(request, _("Feedback un-archived successfully!."))
     elif not feedback.archive:
         feedback.archive = True
         feedback.save()
+        _pms_audit(
+            request,
+            "Feedback archived",
+            target=feedback,
+            changes={"Feedback": str(feedback)},
+        )
         messages.info(request, _("Feedback archived successfully!."))
     return redirect(feedback_list_view)
 
@@ -2208,6 +2515,15 @@ def question_creation(request, id):
             obj_question = form.save(commit=False)
             obj_question.template_id = question_template
             obj_question.save()
+            _pms_audit(
+                request,
+                "Question created",
+                target=obj_question,
+                changes={
+                    "Question": str(obj_question),
+                    "Template": str(question_template),
+                },
+            )
 
             if obj_question.question_type == "4":
                 # checking the question type is multichoice
@@ -2297,10 +2613,24 @@ def question_update(request, temp_id, q_id):
                 options.option_d = option_d
                 options.save()
                 form.save()
+                log_form_changes(
+                    request.user,
+                    "pms",
+                    "Question updated",
+                    form=form,
+                    target=question,
+                )
                 messages.info(request, _("Question updated successfully."))
                 return redirect(question_template_detailed_view, temp_id)
             else:
                 form.save()
+                log_form_changes(
+                    request.user,
+                    "pms",
+                    "Question updated",
+                    form=form,
+                    target=question,
+                )
                 question_options = QuestionOptions.objects.filter(question_id=question)
                 if question_options:
                     question_options.delete()
@@ -2336,8 +2666,14 @@ def question_delete(request, id):
         # Code that may trigger the FOREIGN KEY constraint failed error
         question = Question.objects.filter(id=id).first()
         temp_id = question.template_id.id
+        details = {
+            "Question": str(question),
+            "Template": str(question.template_id),
+            "ID": id,
+        }
         QuestionOptions.objects.filter(question_id=question).delete()
         question.delete()
+        _pms_audit(request, "Question deleted", changes=details)
         messages.success(request, _("Question deleted successfully!"))
         return HttpResponse("<script>reloadMessage();</script>")
 
@@ -2368,7 +2704,13 @@ def question_template_creation(request):
     if request.method == "POST":
         form = QuestionTemplateForm(request.POST)
         if form.is_valid():
-            form.save()
+            instance = form.save()
+            _pms_audit(
+                request,
+                "Question template created",
+                target=instance,
+                changes={"Template": str(instance)},
+            )
             messages.success(request, _("Question template created successfully!"))
     return render(
         request,
@@ -2462,6 +2804,13 @@ def question_template_update(request, template_id):
         form = QuestionTemplateForm(request.POST, instance=question_template)
         if form.is_valid():
             form.save()
+            log_form_changes(
+                request.user,
+                "pms",
+                "Question template updated",
+                form=form,
+                target=question_template,
+            )
             messages.success(request, _("Question template updated"))
         context["form"] = form
     return render(
@@ -2484,7 +2833,9 @@ def question_template_delete(request, template_id):
         if Feedback.objects.filter(question_template_id=question_template):
             messages.info(request, _("This template is using in a feedback"))
         else:
+            details = {"Template": str(question_template), "ID": template_id}
             question_template.delete()
+            _pms_audit(request, "Question template deleted", changes=details)
             messages.success(
                 request, _("The question template is deleted successfully !.")
             )
@@ -2544,7 +2895,13 @@ def period_create(request):
     if request.method == "POST":
         form = PeriodForm(request.POST)
         if form.is_valid():
-            form.save()
+            instance = form.save()
+            _pms_audit(
+                request,
+                "Period created",
+                target=instance,
+                changes={"Period": str(instance)},
+            )
             messages.success(request, _("Period creation was Successful "))
         else:
             context["form"] = form
@@ -2569,6 +2926,13 @@ def period_update(request, period_id):
         form = PeriodForm(request.POST, instance=period)
         if form.is_valid():
             form.save()
+            log_form_changes(
+                request.user,
+                "pms",
+                "Period updated",
+                form=form,
+                target=period,
+            )
             messages.success(request, _("Period updated  Successfully. "))
         else:
             context["form"] = form
@@ -2587,7 +2951,9 @@ def period_delete(request, period_id):
     """
     try:
         obj_period = Period.objects.get(id=period_id)
+        details = {"Period": str(obj_period), "ID": period_id}
         obj_period.delete()
+        _pms_audit(request, "Period deleted", changes=details)
         messages.success(request, _("Period deleted successfully."))
     except Period.DoesNotExist:
         messages.error(request, _("Period not found."))
@@ -2764,6 +3130,12 @@ def create_period(request):
         form = PeriodForm(data)
         if form.is_valid():
             instance = form.save()
+            _pms_audit(
+                request,
+                "Period created",
+                target=instance,
+                changes={"Period": str(instance)},
+            )
             return JsonResponse(
                 {
                     "id": instance.id,
@@ -2793,6 +3165,15 @@ def objective_bulk_archive(request):
         objective_obj = EmployeeObjective.objects.get(id=objective_id)
         objective_obj.archive = is_active
         objective_obj.save()
+        _pms_audit(
+            request,
+            "Employee objective archived" if is_active else "Employee objective unarchived",
+            target=objective_obj,
+            changes={
+                "Objective": str(objective_obj.objective_id),
+                "Employee": str(objective_obj.employee_id),
+            },
+        )
         messages.success(
             request,
             _("{objective} is {message}").format(
@@ -2814,7 +3195,13 @@ def objective_bulk_delete(request):
         try:
             objective = EmployeeObjective.objects.get(id=objective_id)
             if objective.status == "Not Started" or objective.status == "Closed":
+                details = {
+                    "Objective": str(objective.objective_id),
+                    "Employee": str(objective.employee_id),
+                    "ID": objective_id,
+                }
                 objective.delete()
+                _pms_audit(request, "Employee objective deleted", changes=details)
                 messages.success(
                     request,
                     _("%(employee)s's %(objective)s deleted")
@@ -2853,6 +3240,12 @@ def feedback_bulk_archive(request):
         feedback_id = Feedback.objects.get(id=feedback_id)
         feedback_id.archive = is_active
         feedback_id.save()
+        _pms_audit(
+            request,
+            "Feedback archived" if is_active else "Feedback unarchived",
+            target=feedback_id,
+            changes={"Feedback": str(feedback_id)},
+        )
         messages.success(
             request,
             _("{feedback} is {message}").format(feedback=feedback_id, message=message),
@@ -2862,6 +3255,14 @@ def feedback_bulk_archive(request):
         feedback_id = AnonymousFeedback.objects.get(id=feedback_id)
         feedback_id.archive = is_active
         feedback_id.save()
+        _pms_audit(
+            request,
+            "Anonymous feedback archived"
+            if is_active
+            else "Anonymous feedback unarchived",
+            target=feedback_id,
+            changes={"Feedback": feedback_id.feedback_subject},
+        )
         messages.success(
             request,
             _("{feedback} is {message}").format(
@@ -2883,7 +3284,13 @@ def feedback_bulk_delete(request):
         try:
             feedback = Feedback.objects.get(id=feedback_id)
             if feedback.status == "Closed" or feedback.status == "Not Started":
+                details = {
+                    "Feedback": str(feedback),
+                    "Employee": str(feedback.employee_id),
+                    "ID": feedback_id,
+                }
                 feedback.delete()
+                _pms_audit(request, "Feedback deleted", changes=details)
                 messages.success(
                     request,
                     _("Feedback %(review_cycle)s deleted successfully!")
@@ -3002,6 +3409,15 @@ def anonymous_feedback_add(request):
             feedback = form.save(commit=False)
             feedback.anonymous_feedback_id = anonymous_id
             feedback.save()
+            _pms_audit(
+                request,
+                "Anonymous feedback created",
+                target=feedback,
+                changes={
+                    "Feedback": feedback.feedback_subject,
+                    "Based on": feedback.based_on,
+                },
+            )
             if feedback.based_on == "employee":
                 try:
                     notify.send(
@@ -3055,6 +3471,13 @@ def edit_anonymous_feedback(request, obj_id):
                 feedback = form.save(commit=False)
                 feedback.anonymous_feedback_id = anonymous_id
                 feedback.save()
+                log_form_changes(
+                    request.user,
+                    "pms",
+                    "Anonymous feedback updated",
+                    form=form,
+                    target=feedback,
+                )
                 return HttpResponse("<script>window.location.reload();</script>")
         context = {"form": form, "create": False}
         return render(request, "anonymous/anonymous_feedback_form.html", context)
@@ -3079,10 +3502,22 @@ def archive_anonymous_feedback(request, obj_id):
         if feedback.archive:
             feedback.archive = False
             feedback.save()
+            _pms_audit(
+                request,
+                "Anonymous feedback unarchived",
+                target=feedback,
+                changes={"Feedback": feedback.feedback_subject},
+            )
             messages.info(request, _("Feedback un-archived successfully!."))
         elif not feedback.archive:
             feedback.archive = True
             feedback.save()
+            _pms_audit(
+                request,
+                "Anonymous feedback archived",
+                target=feedback,
+                changes={"Feedback": feedback.feedback_subject},
+            )
             messages.info(request, _("Feedback archived successfully!."))
 
     else:
@@ -3105,7 +3540,9 @@ def delete_anonymous_feedback(request, obj_id):
     """
     try:
         feedback = AnonymousFeedback.objects.get(id=obj_id)
+        details = {"Feedback": feedback.feedback_subject, "ID": obj_id}
         feedback.delete()
+        _pms_audit(request, "Anonymous feedback deleted", changes=details)
         messages.success(request, _("Feedback deleted successfully!"))
 
     except IntegrityError:
@@ -3167,11 +3604,21 @@ def employee_keyresult_creation(request, emp_obj_id):
         if request.method == "POST":
             emp_key_result = EmployeeKeyResultForm(request.POST)
             if emp_key_result.is_valid():
-                emp_key_result.save()
+                emp_kr_instance = emp_key_result.save()
                 emp_objective.update_objective_progress()
                 key_result = emp_key_result.cleaned_data["key_result_id"]
 
                 emp_objective.key_result_id.add(key_result)
+                _pms_audit(
+                    request,
+                    "Employee key result created",
+                    target=emp_kr_instance,
+                    changes={
+                        "Key result": str(emp_kr_instance),
+                        "Objective": str(emp_objective.objective_id),
+                        "Employee": str(employee),
+                    },
+                )
                 # assignees = emp_key_result.cleaned_data['assignees']
                 # start_date =emp_key_result.cleaned_data['start_date']
 
@@ -3228,6 +3675,13 @@ def employee_keyresult_update(request, kr_id):
         emp_key_result = EmployeeKeyResultForm(request.POST, instance=emp_kr)
         if emp_key_result.is_valid():
             emp_key_result.save()
+            log_form_changes(
+                request.user,
+                "pms",
+                "Employee key result updated",
+                form=emp_key_result,
+                target=emp_kr,
+            )
             emp_kr.employee_objective_id.update_objective_progress()
             messages.success(request, _("Key result Updated sucessfully."))
             notify.send(
@@ -3266,8 +3720,14 @@ def delete_employee_keyresult(request, kr_id):
     # employee = emp_kr.employee_id
     objective = emp_kr.employee_objective_id.objective_id
     emp_objective = emp_kr.employee_objective_id
+    details = {
+        "Key result": str(emp_kr),
+        "Objective": str(objective),
+        "ID": kr_id,
+    }
     emp_kr.delete()
     emp_objective.update_objective_progress()
+    _pms_audit(request, "Employee key result deleted", changes=details)
     # objective.assignees.remove(employee)
     messages.success(request, _("Objective deleted successfully!."))
     if request.GET.get("dashboard"):
@@ -3285,9 +3745,19 @@ def employee_keyresult_update_status(request, kr_id):
             redirect to detailed of employee objective
     """
     emp_kr = EmployeeKeyResult.objects.get(id=kr_id)
+    old_status = emp_kr.status
     status = request.POST.get("key_result_status")
     emp_kr.status = status
     emp_kr.save()
+    _pms_audit(
+        request,
+        "Employee key result status changed",
+        target=emp_kr,
+        changes={
+            "Key result": str(emp_kr),
+            "Status": {"from": old_status, "to": emp_kr.status},
+        },
+    )
     messages.success(request, _("Key result sattus changed to {}.").format(status))
     return redirect(
         f"/pms/kr-table-view/{emp_kr.employee_objective_id.id}?&objective_id={emp_kr.employee_objective_id.objective_id.id}"
@@ -3317,9 +3787,19 @@ def key_result_current_value_update(request):
                 )
             )
         ):
+            old_value = emp_kr.current_value
             emp_kr.current_value = current_value
             emp_kr.save()
             emp_kr.employee_objective_id.update_objective_progress()
+            _pms_audit(
+                request,
+                "Employee key result current value changed",
+                target=emp_kr,
+                changes={
+                    "Key result": str(emp_kr),
+                    "Current value": {"from": old_value, "to": current_value},
+                },
+            )
             return JsonResponse({"type": "sucess"})
         else:
             messages.info(request, "You dont have permission")
@@ -3411,9 +3891,25 @@ def create_meetings(request):
         initial = {}
     form = MeetingsForm(instance=instance, initial=initial)
     if request.method == "POST":
+        is_update = instance is not None
         form = MeetingsForm(request.POST, instance=instance)
         if form.is_valid():
             instance = form.save()
+            if is_update:
+                log_form_changes(
+                    request.user,
+                    "pms",
+                    "Meeting updated",
+                    form=form,
+                    target=instance,
+                )
+            else:
+                _pms_audit(
+                    request,
+                    "Meeting created",
+                    target=instance,
+                    changes={"Meeting": str(instance)},
+                )
             managers = [
                 manager.employee_user_id for manager in form.cleaned_data["manager"]
             ]
@@ -3501,6 +3997,12 @@ def archive_meetings(request, obj_id):
     meeting = Meetings.find(obj_id)
     meeting.is_active = not meeting.is_active
     meeting.save()
+    _pms_audit(
+        request,
+        "Meeting unarchived" if meeting.is_active else "Meeting archived",
+        target=meeting,
+        changes={"Meeting": str(meeting)},
+    )
     message = (
         _("Meeting unarchived successfully")
         if meeting.is_active
@@ -3522,8 +4024,15 @@ def meeting_manager_remove(request, meet_id, manager_id):
         it will redirect to view_meetings.html .
     """
     meeting = Meetings.objects.filter(id=meet_id).first()
+    manager = Employee.objects.filter(id=manager_id).first()
     meeting.manager.remove(manager_id)
     meeting.save()
+    _pms_audit(
+        request,
+        "Manager removed from meeting",
+        target=meeting,
+        changes={"Manager": str(manager), "Meeting": str(meeting)},
+    )
     messages.success(
         request, _("Manager has been successfully removed from the meeting.")
     )
@@ -3541,8 +4050,15 @@ def meeting_employee_remove(request, meet_id, employee_id):
         it will redirect to view_meetings.html .
     """
     meeting = Meetings.objects.filter(id=meet_id).first()
+    employee = Employee.objects.filter(id=employee_id).first()
     meeting.employee_id.remove(employee_id)
     meeting.save()
+    _pms_audit(
+        request,
+        "Employee removed from meeting",
+        target=meeting,
+        changes={"Employee": str(employee), "Meeting": str(meeting)},
+    )
     messages.success(
         request, _("Employee has been successfully removed from the meeting.")
     )
@@ -3606,6 +4122,15 @@ def add_response(request, obj_id):
         response = request.POST.get("response")
         meeting.response = response
         meeting.save()
+        _pms_audit(
+            request,
+            "Meeting response submitted",
+            target=meeting,
+            changes={
+                "Meeting": str(meeting),
+                "Employee": str(request.user.employee_get),
+            },
+        )
         messages.success(
             request, _("Minutes of Meeting (MoM) have been created successfully")
         )
@@ -3674,6 +4199,15 @@ def meeting_answer_post(request, id):
                     meeting_id=meeting,
                     employee_id=employee,
                 )
+        _pms_audit(
+            request,
+            "Meeting answer submitted",
+            target=meeting,
+            changes={
+                "Meeting": str(meeting),
+                "Employee": str(employee),
+            },
+        )
         messages.success(
             request,
             _("Questions for meeting %(meeting)s has been answered successfully!.")
@@ -3799,7 +4333,10 @@ def delete_bonus_point_setting(request, pk):
     Delete bonus point setting
     """
     try:
-        BonusPointSetting.objects.get(id=pk).delete()
+        bonus_setting = BonusPointSetting.objects.get(id=pk)
+        details = {"Bonus point setting": str(bonus_setting), "ID": pk}
+        bonus_setting.delete()
+        _pms_audit(request, "Bonus point setting deleted", changes=details)
         messages.success(request, "Bonus Point Setting deleted")
     except Exception as e:
         logger(e)
@@ -3815,7 +4352,9 @@ def delete_employee_bonus_point(request, pk):
     """
     try:
         bonus = EmployeeBonusPoint.objects.get(id=pk)
+        details = {"Employee bonus point": str(bonus), "ID": pk}
         bonus.delete()
+        _pms_audit(request, "Employee bonus point deleted", changes=details)
         messages.success(request, _(f"{bonus} deleted"))
     except Exception as e:
         logger(e)
@@ -3870,5 +4409,13 @@ def update_isactive_bonuspoint_setting(request, obj_id):
         bonus_point_setting.is_active = False
         messages.success(request, _("Bonus point setting deactivated successfully."))
     bonus_point_setting.save()
+    _pms_audit(
+        request,
+        "Bonus point setting activated"
+        if bonus_point_setting.is_active
+        else "Bonus point setting deactivated",
+        target=bonus_point_setting,
+        changes={"Bonus point setting": str(bonus_point_setting)},
+    )
 
     return HttpResponse("<script>$('#reloadMessagesButton').click();</script>")
