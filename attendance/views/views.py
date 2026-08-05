@@ -100,6 +100,14 @@ from attendance.models import (
     GraceTime,
     WorkRecords,
 )
+from attendance.audit import (
+    activity_details,
+    att_audit,
+    attendance_details,
+    drop_empty,
+    overtime_details,
+    status_change,
+)
 from attendance.views.handle_attendance_errors import handle_attendance_errors
 from attendance.views.process_attendance_data import process_attendance_data
 from base.forms import AttendanceAllowedIPForm, TrackLateComeEarlyOutForm
@@ -122,7 +130,7 @@ from base.models import (
 )
 from employee.filters import EmployeeFilter
 from employee.models import Employee, EmployeeWorkInformation
-from horilla_audit.methods import log_activity
+from horilla_audit.methods import log_activity, log_form_changes
 from horilla.decorators import (
     hx_request_required,
     install_required,
@@ -231,8 +239,24 @@ def attendance_create(request):
         form = AttendanceForm(request.POST)
         form = choosesubordinates(request, form, "attendance.add_attendance")
         if form.is_valid():
-            form.save()
+            instance = form.save()
             messages.success(request, _("Attendance added."))
+            audit_changes = attendance_details(instance)
+            # AttendanceForm fans out to every selected employee, creating one
+            # row each; name them all so the entry reflects the real blast
+            # radius rather than just the primary employee.
+            selected = Employee.objects.filter(
+                id__in=request.POST.getlist("employee_id")
+            )
+            if len(selected) > 1:
+                audit_changes["Employees"] = ", ".join(str(e) for e in selected)
+                audit_changes["Records created"] = str(len(selected))
+            att_audit(
+                request,
+                "Attendance record created",
+                target=instance,
+                changes=audit_changes,
+            )
             response = render(
                 request, "attendance/attendance/form.html", {"form": form}
             )
@@ -290,6 +314,11 @@ def attendance_excel(_request):
         response = HttpResponse(content_type="application/ms-excel")
         response["Content-Disposition"] = 'attachment; filename="my_excel_file.xlsx"'
         data_frame.to_excel(response, index=False)
+        att_audit(
+            _request,
+            "Attendance import template downloaded",
+            changes={"File": "my_excel_file.xlsx"},
+        )
         return response
     except Exception as exception:
         return HttpResponse(exception)
@@ -329,6 +358,16 @@ def attendance_import(request):
         "model": _("Attendance"),
         "path_info": path_info,
     }
+    att_audit(
+        request,
+        "Attendance records imported",
+        changes={
+            "File": getattr(file, "name", ""),
+            "Rows in file": str(len(attendance_dicts)),
+            "Records created": str(created_attendance_count),
+            "Rows rejected": str(len(attendance_import)),
+        },
+    )
     html = render_to_string("import_popup.html", context)
     return HttpResponse(html)
 
@@ -349,13 +388,24 @@ def attendance_export(request):
                 "export_form": AttendanceExportForm(),
             },
         )
-    return export_data(
+    # Logged only after the export succeeds, so a failed export is not
+    # recorded as a completed one.
+    response = export_data(
         request=request,
         model=Attendance,
         filter_class=AttendanceFilters,
         form_class=AttendanceExportForm,
         file_name="Attendance_export",
     )
+    att_audit(
+        request,
+        "Attendance records exported",
+        changes={
+            "File": "Attendance_export.xlsx",
+            "Filters": request.GET.urlencode() or "None",
+        },
+    )
+    return response
 
 
 @login_required
@@ -483,6 +533,13 @@ def attendance_update(request, obj_id):
                 )
             form.save()
             messages.success(request, _("Attendance Updated."))
+            log_form_changes(
+                request.user,
+                "attendance",
+                "Attendance record updated",
+                form=form,
+                target=attendance,
+            )
             urlencode = request.GET.urlencode()
             modified_url = f"/attendance/attendance-view/?{urlencode}"
             return HttpResponse(
@@ -566,8 +623,13 @@ def attendance_delete(request, obj_id):
                 overtime.overtime = format_time(total_overtime)
                 overtime.save()
             try:
+                # Snapshot before delete — the instance is unusable afterwards.
+                audit_changes = attendance_details(attendance)
                 attendance.delete()
                 messages.success(request, _("Attendance deleted."))
+                att_audit(
+                    request, "Attendance record deleted", changes=audit_changes
+                )
             except ProtectedError as e:
                 model_verbose_names_set = set()
                 for obj in e.protected_objects:
@@ -595,6 +657,7 @@ def attendance_bulk_delete(request):
     """
     success_count = 0
     error_messages = []
+    deleted = []
     ids = request.POST.getlist("ids", "[]")
     attendances = Attendance.objects.filter(id__in=ids)
     employee_ids = attendances.values_list("employee_id", flat=True)
@@ -618,7 +681,13 @@ def attendance_bulk_delete(request):
                     overtime.overtime = format_time(total_overtime)
                     overtime.save()
 
+                # Describe before delete — the instance is unusable afterwards.
+                summary = (
+                    f"ATT-{attendance.pk} {attendance.employee_id} "
+                    f"({attendance.attendance_date})"
+                )
                 attendance.delete()
+                deleted.append(summary)
                 success_count += 1
 
             except ProtectedError as e:
@@ -634,6 +703,14 @@ def attendance_bulk_delete(request):
     # Build response messages
     if success_count:
         messages.success(request, f"{success_count} attendances deleted successfully.")
+        att_audit(
+            request,
+            "Attendance records bulk deleted",
+            changes={
+                "Count": str(success_count),
+                "Attendance records": ", ".join(deleted),
+            },
+        )
     for error in error_messages:
         messages.error(request, error)
     return redirect("/attendance/attendance-search")
@@ -689,8 +766,14 @@ def attendance_overtime_create(request):
         form = AttendanceOverTimeForm(request.POST)
         form = choosesubordinates(request, form, "attendance.add_attendanceovertime")
         if form.is_valid():
-            form.save()
+            instance = form.save()
             messages.success(request, _("Attendance account added."))
+            att_audit(
+                request,
+                "Attendance account created",
+                target=instance,
+                changes=overtime_details(instance),
+            )
             response = render(
                 request, "attendance/attendance_account/form.html", {"form": form}
             )
@@ -747,13 +830,24 @@ def attendance_account_export(request):
             "attendance/attendance_account/attendance_account_export_filter.html",
             context=context,
         )
-    return export_data(
+    # Logged only after the export succeeds, so a failed export is not
+    # recorded as a completed one.
+    response = export_data(
         request=request,
         model=AttendanceOverTime,
         filter_class=AttendanceOverTimeFilter,
         form_class=AttendanceOverTimeExportForm,
         file_name="Attendance_Account",
     )
+    att_audit(
+        request,
+        "Attendance accounts exported",
+        changes={
+            "File": "Attendance_Account.xlsx",
+            "Filters": request.GET.urlencode() or "None",
+        },
+    )
+    return response
 
 
 @login_required
@@ -774,6 +868,13 @@ def attendance_overtime_update(request, obj_id):
         if form.is_valid():
             form.save()
             messages.success(request, _("Attendance account updated successfully."))
+            log_form_changes(
+                request.user,
+                "attendance",
+                "Attendance account updated",
+                form=form,
+                target=overtime,
+            )
             response = render(
                 request,
                 "attendance/attendance_account/update_form.html",
@@ -800,7 +901,10 @@ def attendance_overtime_delete(request, obj_id):
     hx_target = request.META.get("HTTP_HX_TARGET", None)
     try:
         attendance = AttendanceOverTime.objects.get(id=obj_id)
+        # Snapshot before delete — the instance is unusable afterwards.
+        audit_changes = overtime_details(attendance)
         attendance.delete()
+        att_audit(request, "Attendance account deleted", changes=audit_changes)
         if hx_target == "ot-table":
             messages.success(request, _("Hour account deleted."))
     except (AttendanceOverTime.DoesNotExist, OverflowError, ValueError):
@@ -827,10 +931,17 @@ def attendance_account_bulk_delete(request):
     """
     ids = request.POST["ids"]
     ids = json.loads(ids)
+    deleted = []
     for id in ids:
         try:
             hour_account = AttendanceOverTime.objects.get(id=id)
+            # Describe before delete — the instance is unusable afterwards.
+            summary = (
+                f"{hour_account.employee_id} "
+                f"({hour_account.month} {hour_account.year})"
+            )
             hour_account.delete()
+            deleted.append(summary)
             messages.success(
                 request,
                 _("{employee} hour account deleted.").format(
@@ -844,6 +955,15 @@ def attendance_account_bulk_delete(request):
                 request,
                 _("You cannot delete {hour_account}").format(hour_account=hour_account),
             )
+    if deleted:
+        att_audit(
+            request,
+            "Attendance accounts bulk deleted",
+            changes={
+                "Count": str(len(deleted)),
+                "Attendance accounts": ", ".join(deleted),
+            },
+        )
     return JsonResponse({"message": "Success"})
 
 
@@ -927,7 +1047,11 @@ def attendance_activity_delete(request, obj_id):
     request_copy.pop("instances_ids", None)
     previous_data = request_copy.urlencode()
     try:
-        AttendanceActivity.objects.get(id=obj_id).delete()
+        activity = AttendanceActivity.objects.get(id=obj_id)
+        # Snapshot before delete — the instance is unusable afterwards.
+        audit_changes = activity_details(activity)
+        activity.delete()
+        att_audit(request, "Attendance activity deleted", changes=audit_changes)
         messages.success(request, _("Attendance activity deleted"))
     except AttendanceActivity.DoesNotExist:
         messages.error(request, _("Attendance activity Does not exists.."))
@@ -980,6 +1104,10 @@ def attendance_activity_bulk_delete(request):
         with transaction.atomic():
             activities = AttendanceActivity.objects.filter(id__in=ids)
             count = activities.count()
+            # Describe before delete — the rows are gone afterwards.
+            deleted = [
+                f"{a.employee_id} ({a.attendance_date})" for a in activities
+            ]
             activities.delete()
 
         if count > 0:
@@ -988,6 +1116,14 @@ def attendance_activity_bulk_delete(request):
                 _("{count} attendance activities deleted successfully.").format(
                     count=count
                 ),
+            )
+            att_audit(
+                request,
+                "Attendance activities bulk deleted",
+                changes={
+                    "Count": str(count),
+                    "Activities": ", ".join(deleted),
+                },
             )
         else:
             messages.info(
@@ -1124,6 +1260,16 @@ def attendance_activity_import(request):
             }
             html = render_to_string("import_popup.html", context)
             messages.success(request, _("Attendance activity imported successfully"))
+            att_audit(
+                request,
+                "Attendance activities imported",
+                changes={
+                    "File": getattr(file, "name", ""),
+                    "Rows in file": str(len(activity_dicts)),
+                    "Records created": str(created_activity_count),
+                    "Rows rejected": str(len(import_error_dicts)),
+                },
+            )
             return HttpResponse(html)
     return render(request, "attendance/attendance_activity/import_activity.html")
 
@@ -1148,6 +1294,11 @@ def attendance_activity_import_excel(request):
         )
         response["Content-Disposition"] = 'attachment; filename="activity_excel.xlsx"'
         data_frame.to_excel(response, index=False)
+        att_audit(
+            request,
+            "Attendance activity import template downloaded",
+            changes={"File": "activity_excel.xlsx"},
+        )
         return response
 
 
@@ -1167,13 +1318,24 @@ def attendance_activity_export(request):
             "attendance/attendance_activity/export_filter.html",
             context=context,
         )
-    return export_data(
+    # Logged only after the export succeeds, so a failed export is not
+    # recorded as a completed one.
+    response = export_data(
         request=request,
         model=AttendanceActivity,
         filter_class=AttendanceActivityFilter,
         form_class=AttendanceActivityExportForm,
         file_name="Attendance_activity",
     )
+    att_audit(
+        request,
+        "Attendance activities exported",
+        changes={
+            "File": "Attendance_activity.xlsx",
+            "Filters": request.GET.urlencode() or "None",
+        },
+    )
+    return response
 
 
 @login_required
@@ -1269,7 +1431,22 @@ def late_come_early_out_delete(request, obj_id):
     request_copy.pop("instances_ids", None)
     previous_data = request_copy.urlencode()
     try:
-        AttendanceLateComeEarlyOut.objects.get(id=obj_id).delete()
+        late_come = AttendanceLateComeEarlyOut.objects.get(id=obj_id)
+        # Snapshot before delete — the instance is unusable afterwards.
+        audit_changes = drop_empty(
+            {
+                "Employee": str(late_come.employee_id),
+                "Type": late_come.get_type_display()
+                if hasattr(late_come, "get_type_display")
+                else None,
+                "Attendance date": str(
+                    getattr(late_come.attendance_id, "attendance_date", "") or ""
+                )
+                or None,
+            }
+        )
+        late_come.delete()
+        att_audit(request, "Late-in/early-out deleted", changes=audit_changes)
         messages.success(request, _("Late-in early-out deleted"))
     except AttendanceLateComeEarlyOut.DoesNotExist:
         messages.error(request, _("Late-in early-out does not exists.."))
@@ -1299,10 +1476,14 @@ def late_come_early_out_bulk_delete(request):
     """
     ids = request.POST["ids"]
     ids = json.loads(ids)
+    deleted = []
     for attendance_id in ids:
         try:
             late_come = AttendanceLateComeEarlyOut.objects.get(id=attendance_id)
+            # Describe before delete — the instance is unusable afterwards.
+            summary = str(late_come.employee_id)
             late_come.delete()
+            deleted.append(summary)
             messages.success(
                 request,
                 _("{employee} Late-in early-out deleted.").format(
@@ -1311,6 +1492,12 @@ def late_come_early_out_bulk_delete(request):
             )
         except (AttendanceLateComeEarlyOut.DoesNotExist, OverflowError, ValueError):
             messages.error(request, _("Attendance not found."))
+    if deleted:
+        att_audit(
+            request,
+            "Late-in/early-out records bulk deleted",
+            changes={"Count": str(len(deleted)), "Employees": ", ".join(deleted)},
+        )
     return JsonResponse({"message": "Success"})
 
 
@@ -1335,13 +1522,24 @@ def late_come_early_out_export(request):
             "attendance/late_come_early_out/export_filter.html",
             context=context,
         )
-    return export_data(
+    # Logged only after the export succeeds, so a failed export is not
+    # recorded as a completed one.
+    response = export_data(
         request=request,
         model=AttendanceLateComeEarlyOut,
         filter_class=LateComeEarlyOutFilter,
         form_class=LateComeEarlyOutExportForm,
         file_name="Late_come_",
     )
+    att_audit(
+        request,
+        "Late-in/early-out records exported",
+        changes={
+            "File": "Late_come_.xlsx",
+            "Filters": request.GET.urlencode() or "None",
+        },
+    )
+    return response
 
 
 @login_required
@@ -1366,19 +1564,10 @@ def validation_condition_delete(request, obj_id):
 def _log_attendance_action(request, attendance, action):
     """Record who validated/revalidated/approved an attendance and when.
 
-    Captures the actor (and timestamp via ActivityLog) plus the affected
-    employee and attendance date, surfaced in Audit Logs -> Attendance tab.
+    Delegates to the shared ``att_audit`` wrapper so these entries carry the
+    same identifying fields and client IP as the rest of the module.
     """
-    log_activity(
-        request.user,
-        module="attendance",
-        action=action,
-        target=attendance,
-        changes={
-            "Employee": str(attendance.employee_id),
-            "Attendance date": str(attendance.attendance_date),
-        },
-    )
+    att_audit(request, action, target=attendance, changes=attendance_details(attendance))
 
 
 @login_required
@@ -1623,6 +1812,16 @@ def attendance_add_to_batch(request):
                     messages.error(request, _("Something went wrong."))
                     return HttpResponse("<script>window.location.reload()</script>")
             messages.success(request, _(f"Attendances added to {batch}."))
+            att_audit(
+                request,
+                "Attendances assigned to batch",
+                target=batch,
+                changes={
+                    "Batch": str(batch),
+                    "Attendance records": ", ".join(str(i) for i in int_ids),
+                    "Count": str(len(int_ids)),
+                },
+            )
             return HttpResponse("<script>window.location.reload()</script>")
         else:
             messages.error(request, _("Something went wrong."))
@@ -2261,7 +2460,17 @@ def create_attendancerequest_comment(request, attendance_id):
         if form.is_valid():
             form.instance.employee_id = emp
             form.instance.request_id = attendance
-            form.save()
+            comment_instance = form.save()
+            att_audit(
+                request,
+                "Attendance request comment added",
+                target=comment_instance,
+                changes={
+                    "Reference": f"ATT-{attendance.pk}",
+                    "Employee": str(attendance.employee_id),
+                    "Comment": comment_instance.comment,
+                },
+            )
             comments = AttendanceRequestComment.objects.filter(
                 request_id=attendance_id
             ).order_by("-created_at")
@@ -2387,6 +2596,16 @@ def view_attendancerequest_comment(request, attendance_id):
             file_instance.save()
             attachments.append(file_instance)
         comment.files.add(*attachments)
+        att_audit(
+            request,
+            "Attendance request attachment uploaded",
+            target=comment,
+            changes={
+                "Reference": f"ATT-{attendance_id}",
+                "Files": ", ".join(str(a.file) for a in attachments),
+                "Count": str(len(attachments)),
+            },
+        )
 
     return render(
         request,
@@ -2402,8 +2621,19 @@ def delete_attendancerequest_comment(request, comment_id):
     """
     script = ""
     comment = AttendanceRequestComment.objects.get(id=comment_id)
+    # Snapshot before delete — the instance is unusable afterwards.
+    audit_changes = drop_empty(
+        {
+            "Reference": f"ATT-{comment.request_id.id}"
+            if getattr(comment, "request_id", None)
+            else None,
+            "Author": str(comment.employee_id) if comment.employee_id else None,
+            "Comment": comment.comment,
+        }
+    )
     comment.delete()
     messages.success(request, _("Comment deleted successfully!"))
+    att_audit(request, "Attendance request comment deleted", changes=audit_changes)
     return HttpResponse(script)
 
 
@@ -2414,8 +2644,18 @@ def delete_comment_file(request):
     """
     script = ""
     ids = request.GET.getlist("ids")
+    # Describe before delete — the rows are gone afterwards.
+    deleted_files = ", ".join(
+        str(attachment.file)
+        for attachment in AttendanceRequestFile.objects.filter(id__in=ids)
+    )
     AttendanceRequestFile.objects.filter(id__in=ids).delete()
     messages.success(request, _("File deleted successfully"))
+    att_audit(
+        request,
+        "Attendance request attachment deleted",
+        changes={"Files": deleted_files, "Count": str(len(ids))},
+    )
     return HttpResponse(script)
 
 
@@ -2565,6 +2805,14 @@ def work_record_export(request):
         content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
     response["Content-Disposition"] = 'attachment; filename="work_record_export.xlsx"'
+    att_audit(
+        request,
+        "Work records exported",
+        changes={
+            "File": "work_record_export.xlsx",
+            "Filters": request.GET.urlencode() or "None",
+        },
+    )
     return response
 
 

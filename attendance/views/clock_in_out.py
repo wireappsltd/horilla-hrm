@@ -30,6 +30,7 @@ from attendance.models import (
     AttendanceLateComeEarlyOut,
     GraceTime,
 )
+from attendance.audit import att_audit, attendance_details
 from attendance.views.views import attendance_validate
 from base.context_processors import (
     enable_late_come_early_out_tracking,
@@ -292,6 +293,13 @@ def clock_in(request):
                 end_time=end_time_sec,
                 in_datetime=datetime_now,
             )
+            if attendance is not None:
+                att_audit(
+                    request,
+                    "Clock-in recorded",
+                    target=attendance,
+                    changes=attendance_details(attendance),
+                )
             script = ""
             hidden_label = ""
             time_runner_enabled = timerunner_enabled(request)["enabled_timerunner"]
@@ -521,6 +529,13 @@ def clock_out(request):
         attendance = clock_out_attendance_and_activity(
             employee=employee, date_today=date_today, now=now, out_datetime=datetime_now
         )
+        if attendance is not None:
+            att_audit(
+                request,
+                "Clock-out recorded",
+                target=attendance,
+                changes=attendance_details(attendance),
+            )
         if attendance:
             early_out_instance = attendance.late_come_early_out.filter(type="early_out")
             is_night_shift = attendance.is_night_shift()

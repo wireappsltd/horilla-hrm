@@ -11,6 +11,7 @@ from django.http import HttpResponse
 from django.shortcuts import redirect, render
 from django.utils.translation import gettext_lazy as _
 
+from attendance.audit import att_audit, drop_empty
 from attendance.models import AttendanceLateComeEarlyOut
 from base.forms import PenaltyAccountForm
 from base.models import PenaltyAccounts
@@ -60,6 +61,25 @@ def cut_available_leave(request, instance_id):
 
             penalty.save()
             messages.success(request, _("Penalty/Fine added"))
+            att_audit(
+                request,
+                "Attendance penalty applied",
+                target=penalty,
+                changes=drop_empty(
+                    {
+                        "Employee": str(penalty.employee_id),
+                        "Type": instance.get_type_display(),
+                        "Attendance date": str(
+                            getattr(instance.attendance_id, "attendance_date", "") or ""
+                        )
+                        or None,
+                        "Leave days deducted": str(
+                            getattr(penalty, "minus_leaves", None) or 0
+                        ),
+                        "Penalty amount": str(penalty.penalty_amount or 0),
+                    }
+                ),
+            )
             form = PenaltyAccountForm()
     return render(
         request,
