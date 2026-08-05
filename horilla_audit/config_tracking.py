@@ -413,6 +413,144 @@ def _register_model(
             )
 
 
+# --- Roles & permissions -----------------------------------------------------
+# Granting someone a user group or a direct permission is the highest-impact
+# configuration change in the system, so it is audited explicitly here.
+#
+# These are NOT covered by registering ``auth.User`` in CONFIG_MODELS: doing so
+# would fire _post_save_handler on every User row save, including the
+# ``last_login`` write that happens on every single login, drowning the
+# Configuration tab in noise. Instead we hook only the two m2m through-tables.
+#
+# Group *definitions* and a group's *permission set* are already covered by the
+# ``auth.Group`` entry in CONFIG_MODELS; what follows covers group membership
+# and per-user permission grants, which hang off User and so were invisible.
+
+# through model -> (User-side field name, noun used in the change payload)
+_ROLE_M2M_SPECS = {}
+
+
+def _describe_user(user):
+    """Readable identity for an auth User in a role-change audit entry."""
+    employee = None
+    try:
+        employee = user.employee_get
+    except Exception:
+        employee = None
+    if employee is not None:
+        return str(employee)
+    return user.get_username()
+
+
+def _resolve_names(model, pk_set):
+    """Resolve a set of pks to display names, newest lookup errors tolerated."""
+    if not pk_set:
+        return []
+    try:
+        return sorted(str(obj) for obj in model.objects.filter(pk__in=pk_set))
+    except Exception:
+        return sorted(str(pk) for pk in pk_set)
+
+
+def _log_role_change(actor, user, noun, verb, names):
+    """Write one Configuration-tab entry for a role/permission change."""
+    if not names:
+        return
+    log_activity(
+        actor,
+        module=_CONFIG_MODULE,
+        action=f"{noun} {verb}",
+        target=user,
+        changes={
+            "User": _describe_user(user),
+            "Username": user.get_username(),
+            noun: ", ".join(names),
+        },
+    )
+
+
+def _role_m2m_changed_handler(
+    sender, instance, action, reverse, model, pk_set, **kwargs
+):
+    """Audit User<->Group and User<->Permission membership changes.
+
+    Handles both directions: ``user.groups.add(group)`` (instance is the User)
+    and ``group.user_set.add(user)`` (instance is the Group). ``clear()`` is
+    snapshotted on ``pre_clear`` because by ``post_clear`` the rows are gone.
+    """
+    spec = _ROLE_M2M_SPECS.get(sender)
+    if spec is None:
+        return
+    field_name, noun = spec
+
+    if action == "pre_clear":
+        # Snapshot what is about to be removed; logged on post_clear, by which
+        # point the through-rows no longer exist.
+        related = instance.user_set if reverse else getattr(instance, field_name)
+        try:
+            instance._audit_cleared_roles = [str(obj) for obj in related.all()]
+        except Exception:
+            instance._audit_cleared_roles = []
+        return
+
+    if action not in ("post_add", "post_remove", "post_clear"):
+        return
+
+    actor = _get_current_actor()
+    if actor is None or not getattr(actor, "is_authenticated", False):
+        # Skip non-user-driven changes (migrations, fixtures, shell, scheduler).
+        return
+
+    verb = {
+        "post_add": "granted",
+        "post_remove": "revoked",
+        "post_clear": "cleared",
+    }[action]
+    cleared = getattr(instance, "_audit_cleared_roles", []) or []
+
+    if reverse:
+        # instance is the Group/Permission; the users sit on the other side.
+        if action == "post_clear":
+            # pk_set is None here, so fall back to the pre_clear snapshot and
+            # emit a single entry naming everyone who was removed.
+            if cleared:
+                log_activity(
+                    actor,
+                    module=_CONFIG_MODULE,
+                    action=f"{noun} cleared",
+                    target=instance,
+                    changes={noun: str(instance), "Users": ", ".join(cleared)},
+                )
+            return
+        # Otherwise emit one entry per affected user, keeping entries
+        # user-centric and consistent with the forward direction.
+        for user in model.objects.filter(pk__in=pk_set or []):
+            _log_role_change(actor, user, noun, verb, [str(instance)])
+        return
+
+    names = cleared if action == "post_clear" else _resolve_names(model, pk_set)
+    _log_role_change(actor, instance, noun, verb, names)
+
+
+def register_role_tracking():
+    """Connect audit signals for group membership and per-user permissions."""
+    from django.contrib.auth import get_user_model
+
+    user_model = get_user_model()
+    targets = (
+        ("groups", "User groups"),
+        ("user_permissions", "User permissions"),
+    )
+    for field_name, noun in targets:
+        through = user_model._meta.get_field(field_name).remote_field.through
+        _ROLE_M2M_SPECS[through] = (field_name, noun)
+        m2m_changed.connect(
+            _role_m2m_changed_handler,
+            sender=through,
+            dispatch_uid=f"audit_role_{through._meta.model_name}",
+        )
+
+
 def register_config_tracking():
     """Connect signals for every model in CONFIG_MODELS."""
     for app_label, model_name, module, label in CONFIG_MODELS:
