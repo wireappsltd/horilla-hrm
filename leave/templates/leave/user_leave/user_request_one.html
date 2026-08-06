@@ -98,6 +98,68 @@
                 </div>
             {% endif %}
         {% endif %}
+        {% if leave_request.status == "approved" or leave_request.status == "rejected" or leave_request.status == "cancelled" %}
+            <div class="oh-timeoff-modal__stats-container mt-3">
+                <div class="oh-timeoff-modal__stat">
+                    <span class="oh-timeoff-modal__stat-title">
+                        {% if leave_request.status == "approved" %}{% trans "Approved By" %}
+                        {% elif leave_request.status == "rejected" %}{% trans "Rejected By" %}
+                        {% else %}{% trans "Cancelled By" %}{% endif %}
+                    </span>
+                    <span class="oh-timeoff-modal__stat-count">
+                        {% if leave_request.reviewed_by %}
+                            {{ leave_request.reviewed_by }}
+                            {% if leave_request.reviewed_by.employee_work_info.job_position_id %}
+                                <span style="font-size: 13px; color: #6c757d;">
+                                    ({{ leave_request.reviewed_by.employee_work_info.job_position_id }})
+                                </span>
+                            {% endif %}
+                        {% else %}
+                            <span class="text-muted">{% trans "Not available" %}</span>
+                        {% endif %}
+                    </span>
+                </div>
+                <div class="oh-timeoff-modal__stat">
+                    <span class="oh-timeoff-modal__stat-title">{% trans "Actioned On" %}</span>
+                    <span class="oh-timeoff-modal__stat-count">
+                        {% if leave_request.reviewed_at %}
+                            <span class="dateformat_changer">{{ leave_request.reviewed_at|date:"Y-m-d" }}</span>
+                            {{ leave_request.reviewed_at|time:"H:i" }}
+                        {% else %}
+                            <span class="text-muted">{% trans "Not available" %}</span>
+                        {% endif %}
+                    </span>
+                </div>
+            </div>
+        {% endif %}
+        <div class="oh-timeoff-modal__stats w-100 mt-3">
+            <div class="oh-timeoff-modal__stat">
+                <span class="oh-timeoff-modal__stat-title">{% trans "Audit History" %}</span>
+                {% with history=leave_request.history.all %}
+                    {% if history %}
+                        <div class="oh-timeoff-modal__stat-description">
+                            {% for record in history %}
+                                <div class="d-flex justify-content-between align-items-center py-1"
+                                     style="border-bottom: 1px solid #f0f0f0;">
+                                    <span>
+                                        <span class="oh-badge oh-badge--small">{{ record.get_status_display }}</span>
+                                        &mdash;
+                                        {{ record.history_user.get_full_name|default:record.history_user|default:"System" }}
+                                    </span>
+                                    <span class="text-muted" style="font-size: 12px; white-space: nowrap;">
+                                        {{ record.history_date|date:"Y-m-d H:i" }}
+                                    </span>
+                                </div>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <div class="oh-timeoff-modal__stat-description text-muted">
+                            {% trans "No history available." %}
+                        </div>
+                    {% endif %}
+                {% endwith %}
+            </div>
+        </div>
         {% if leave_request.cancellation_status %}
             <div class="oh-timeoff-modal__stats w-100 mt-3 p-2
                 {% if leave_request.cancellation_status == 'approved' %}row-status--gray
