@@ -25,10 +25,37 @@
         margin-right: 16px;
     }
 
+
     @media screen and (min-width: 992px) {
+
+        /* Backstop: this page is an app-like full-height panel, so the document
+           itself must never scroll. All scrolling happens inside the columns. */
+        html,
+        body {
+            height: 100% !important;
+            overflow: hidden !important;
+        }
+
+        /* No child combinators here on purpose: an intermediate wrapper would
+           silently break `>` and take the height cap with it. */
+        .oh-wrapper-main,
+        #main-section,
+        #main-section-data {
+            overflow: hidden !important;
+        }
 
         .oh-wrapper-main {
             align-items: start;
+            height: 100vh !important;
+            max-height: 100vh !important;
+        }
+
+        /* Only the OUTER #main (direct child of the wrapper) is the full
+           navbar + section column; cap it to the viewport. */
+        .oh-wrapper-main > #main {
+            height: 100vh !important;
+            max-height: 100vh !important;
+            overflow: hidden !important;
         }
 
         #sidebar {
@@ -45,30 +72,40 @@
         }
 
         #main-section {
-            height: calc(100vh - 68px);
-            overflow: hidden;
+            height: calc(100vh - 68px) !important;
+            max-height: calc(100vh - 68px) !important;
         }
 
         #main-section > #main-section-data {
-            height: 100%;
-            overflow: hidden;
+            height: calc(100vh - 68px) !important;
+            max-height: calc(100vh - 68px) !important;
         }
 
-        #main-section-data > #main {
-            height: 100%;
-            overflow: hidden;
+        /* The detail template wraps its content in its OWN #main (a second,
+           duplicate id). It must simply fill the data area — never add height.
+           Descendant selector so an extra wrapper can't break the match. */
+        #main-section-data #main {
+            height: 100% !important;
+            max-height: 100% !important;
+            overflow: hidden !important;
         }
 
+        /* --oh-helpdesk-h is measured from the viewport in JS (see the sizing
+           script at the bottom of this template). The calc() fallback keeps the
+           panel capped even if the script never runs. Do NOT go back to 100%
+           here: that reintroduces the percentage chain this bug comes from. */
         .oh-helpdesk {
-            height: 100%;
-            overflow: hidden;
+            height: var(--oh-helpdesk-h, calc(100vh - 68px)) !important;
+            max-height: var(--oh-helpdesk-h, calc(100vh - 68px)) !important;
+            overflow: hidden !important;
             grid-template-rows: 100%;
         }
 
         .oh-helpdesk__left {
             display: flex;
             flex-direction: column;
-            height: 100%;
+            height: 100% !important;
+            max-height: 100% !important;
             min-height: 0;
             overflow: hidden;
         }
@@ -84,8 +121,10 @@
             flex: 0 0 auto;
         }
 
+        /* This is the column that grows on Change Request / Incident Report. */
         .oh-helpdesk__right {
-            height: 100%;
+            height: 100% !important;
+            max-height: 100% !important;
             min-height: 0;
             overflow-y: auto;
         }
@@ -93,8 +132,16 @@
 
 
     @media screen and (max-width: 991.98px) {
+        /* Stacked layout: the document itself scrolls, so nothing may carry a
+           fixed height. A leftover fixed height is what leaves the blank white
+           band under the content at narrow widths. */
+        .oh-helpdesk,
+        .oh-helpdesk__left,
+        .oh-helpdesk__right,
         .oh-helpdesk__body {
-            height: auto;
+            height: auto !important;
+            max-height: none !important;
+            overflow: visible !important;
         }
     }
 
@@ -2587,10 +2634,59 @@
     })();
 </script>
 
+<script>
+    /* Panel sizing: measure the available height from the viewport rather than
+       inheriting it through a chain of percentage heights. If any ancestor
+       loses its definite height, the tall Change Request / Incident Report
+       column grows the document and leaves a blank white band below the app.
+       Viewport measurement cannot break that way. */
+    (function () {
+        var MIN_DESKTOP = 992;
+        var MIN_PANEL = 320;
+
+        function sizePanel() {
+            var panel = document.querySelector('.oh-helpdesk');
+            if (!panel) { return; }
+            var root = document.documentElement;
+
+            if (window.innerWidth < MIN_DESKTOP) {
+                // Stacked layout: the document scrolls, so leave heights alone.
+                root.style.removeProperty('--oh-helpdesk-h');
+                return;
+            }
+
+            // Document-relative top, so a stray scroll offset can't skew it.
+            var docTop = panel.getBoundingClientRect().top + (window.pageYOffset || 0);
+            var available = window.innerHeight - docTop;
+            if (available < MIN_PANEL) { available = MIN_PANEL; }
+            root.style.setProperty('--oh-helpdesk-h', available + 'px');
+        }
+
+        var pending = null;
+        function schedule() {
+            if (pending !== null) { return; }
+            pending = window.requestAnimationFrame(function () {
+                pending = null;
+                sizePanel();
+            });
+        }
+
+        sizePanel();
+        window.addEventListener('resize', schedule);
+        window.addEventListener('orientationchange', schedule);
+        window.addEventListener('load', function () {
+            sizePanel();
+            // Summernote and select2 initialise late and can shift the header.
+            setTimeout(sizePanel, 300);
+            setTimeout(sizePanel, 1000);
+        });
+        if (window.htmx) {
+            document.body.addEventListener('htmx:afterSwap', schedule);
+        }
+    })();
+</script>
+
 <script type="module" src="https://unpkg.com/ionicons@5.5.2/dist/ionicons/ionicons.esm.js"></script>
 <script nomodule src="https://unpkg.com/ionicons@5.5.2/dist/ionicons/ionicons.js"></script>
 
 {% endblock %}
-
-
-
