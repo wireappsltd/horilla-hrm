@@ -26,23 +26,7 @@
     }
 
     /*
-     * Endless-whitespace fix (HRMOD-561-564).
-     *
-     * The global stylesheet gives the helpdesk columns fixed heights based on
-     * a SMALL comment box (.oh-helpdesk__body = calc(100vh - 225.97px)). On the
-     * Change Request / Incident Report pages the Summernote rich-text editor
-     * makes the chatbox much taller, so the left column grows past the viewport
-     * and the whole document scrolls, leaving empty space below the panel. The
-     * taller ISO/ISC & Admin review column made it more obvious, which is why
-     * plain employees didn't see it.
-     *
-     * Fix strategy (robust, does NOT rely on a height:100% ancestor chain that
-     * may not resolve in every build):
-     *   1. Pin the panel + both columns to a viewport-based height directly.
-     *   2. Let each column scroll INTERNALLY (overflow-y: auto).
-     *   3. Lock the document itself so it can never grow past the viewport.
-     * The navbar is 65px tall + a 3px bottom border = 68px, hence 100vh - 68px.
-     */
+
     @media screen and (min-width: 992px) {
 
         /* Backstop: this page is an app-like full-height panel, so the document
