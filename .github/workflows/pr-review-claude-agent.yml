@@ -1,0 +1,137 @@
+name: PR Review with Claude
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review, reopened]
+
+jobs:
+  review-with-tracking:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write
+    steps:
+      - name: Check required secret
+        id: check-secret
+        env:
+          SECRET: ${{ secrets.WIREAPPS_KEY_GIT_REPO_PR_REVIEW }}
+        run: |
+          if [ -n "$SECRET" ]; then
+            echo "has_secret=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_secret=false" >> $GITHUB_OUTPUT
+            echo "::notice::WIREAPPS_KEY_GIT_REPO_PR_REVIEW is not configured — skipping PR review."
+          fi
+
+      - name: Check required model variable
+        if: steps.check-secret.outputs.has_secret == 'true'
+        env:
+          MODEL: ${{ vars.WIREAPPS_KEY_GIT_REPO_PR_REVIEW_MODEL }}
+        run: |
+          if [ -z "$MODEL" ]; then
+            echo "::error::WIREAPPS_KEY_GIT_REPO_PR_REVIEW_MODEL repo/org variable is not set. Refer https://platform.claude.com/docs/en/about-claude/models/overview for valid model values."
+            exit 1
+          fi
+
+      - name: Checkout repository
+        if: steps.check-secret.outputs.has_secret == 'true'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: PR Review
+        if: steps.check-secret.outputs.has_secret == 'true'
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.WIREAPPS_KEY_GIT_REPO_PR_REVIEW }}
+          track_progress: true
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
+            Horilla HRM is a Django-based Human Resource Management System — a single monolithic
+            Django project (Django 4.2) split into many apps at the repo root (`base/`, `employee/`,
+            `attendance/`, `leave/`, `payroll/`, `recruitment/`, `pms/`, `horilla_api/`, etc.), with
+            Django Templates + HTMX + jQuery/Bootstrap for the UI (no separate frontend app) and
+            Django's `TestCase` for tests, living in each app's `tests.py` or `tests/` directory.
+
+            The PR branch is already checked out in the current working directory.
+
+            ## Step 1 — Read the project's own governance docs first
+            These are the source of truth for conventions and are updated far more often than this
+            workflow file, so always defer to what they say over anything summarised below:
+            - `.claude/agents/backend-agent.md` — architecture overview, required code patterns
+              (base model, permission decorators, company scoping, API layer), and security rules
+            - `.claude/agents/external-security-auditor.md` — the full security checklist and HR-specific
+              data protection expectations (PII, payroll, biometric data)
+            - `CONTRIBUTING.md` — contribution conventions (PEP 8, commit style)
+
+            ## Step 2 — Determine what changed
+            Run `gh pr diff ${{ github.event.pull_request.number }} --name-only` to see which parts of
+            the project this PR touches:
+            - `*/models.py`, `*/migrations/` → review against the data-layer conventions below.
+            - `*/views.py`, `*/urls.py` → review against the view-layer conventions below.
+            - `horilla_api/` → review against the API-layer conventions below.
+            - `*/templates/`, `static/` → review against the template/frontend conventions below.
+            - If several layers changed together, review each and check they integrate correctly (e.g. a
+              new/changed API serializer matches its consuming template/JS, or a new permission is wired
+              through both the view and its template guard).
+
+            ## High-severity non-negotiables (always flag explicitly if violated — do not miss these)
+
+            **Models & data layer:**
+            - New models must inherit from `HorillaModel` (`horilla/models.py`).
+            - Any model reachable from a `Company` FK must set a company-scoped manager, e.g.
+              `objects = HorillaCompanyManager("company_id")` (or `"parent__company_id"` for FK
+              traversal) — `HorillaModel`'s default `objects` is a plain, unscoped `models.Manager()`.
+            - Never use `raw()`, `extra()`, or `RawSQL` — Django ORM only.
+            - Sensitive/new models should be registered with `django-auditlog` if they hold sensitive
+              data (PII, payroll, biometric).
+            - Migrations must be included for model changes; never edit a migration already applied in
+              production.
+
+            **Views & permissions:**
+            - Every view must have `@login_required` at minimum; state-changing/admin views need
+              `@permission_required(...)`, `@manager_can_enter(...)`, or `@owner_can_enter(...)` as
+              appropriate.
+            - HTMX-only partial views must also use `@hx_request_required` to block direct URL access.
+            - Never use `csrf_exempt` without a documented reason.
+            - All user-facing strings must be wrapped in `_()` (`django.utils.translation.gettext_lazy`).
+
+            **API layer (`horilla_api/`):**
+            - API views authenticate via JWT and must apply the appropriate `api_decorators` permission
+              check — API permissions must match the equivalent web view's permissions.
+            - Serializers must never expose sensitive fields (passwords, bank details, salary) to
+              unauthorized roles.
+
+            **Templates & static assets:**
+            - Never use `mark_safe()` on user input, and never use the `|safe` filter without
+              justification.
+            - Every form must include `{% csrf_token %}`.
+            - No inline JavaScript that injects unescaped user data.
+
+            **Cross-cutting:**
+            - Multi-company isolation must never be bypassed — every company-scoped query relies on
+              `CompanyMiddleware` + `HorillaCompanyManager`.
+            - File uploads must validate type and size.
+            - CSV/Excel exports must be sanitized against formula injection.
+            - Never hardcode secrets — use environment variables via `django-environ`.
+            - Never use `eval()`, `exec()`, or `subprocess` with user input.
+
+            ## What else to check
+            - Correctness: bugs, unhandled edge cases, logic errors
+            - Any other convention violation surfaced by `.claude/agents/backend-agent.md` or
+              `.claude/agents/external-security-auditor.md` beyond the list above
+            - Security: SQL injection, IDOR, exposed secrets, insecure data handling, XSS
+            - Performance: N+1 queries, missing `select_related`/`prefetch_related`, unnecessary queries
+              in loops
+            - Leftover debug code (`print()`, `pdb.set_trace()`, `console.log()`, commented-out code)
+
+            Post inline comments on specific lines where issues are found. Summarise all findings in a
+            single top-level PR comment.
+
+          # TODO: model is sourced from the WIREAPPS_KEY_GIT_REPO_PR_REVIEW_MODEL repo/org variable — refer to https://platform.claude.com/docs/en/about-claude/models/overview
+          claude_args: |
+            --model ${{ vars.WIREAPPS_KEY_GIT_REPO_PR_REVIEW_MODEL }}
+            --allowedTools "Read,Grep,Glob,mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(python manage.py:*)"
