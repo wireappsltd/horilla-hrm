@@ -21,6 +21,7 @@ from django.utils.translation import gettext_lazy as _
 
 from base.methods import get_key_instances
 from horilla.decorators import hx_request_required, login_required, permission_required
+from horilla_audit.methods import log_activity, log_form_changes
 from payroll.forms.tax_forms import FilingStatusForm, TaxBracketForm
 from payroll.models.models import FilingStatus
 from payroll.models.tax_models import TaxBracket
@@ -57,8 +58,15 @@ def create_filing_status(request):
     if request.method == "POST":
         filing_status_form = FilingStatusForm(request.POST)
         if filing_status_form.is_valid():
-            filing_status_form.save()
+            instance = filing_status_form.save()
             messages.success(request, _("Filing status created successfully "))
+            log_activity(
+                request.user,
+                module="payroll",
+                action="Filing status created",
+                target=instance,
+                changes={"Filing status": str(instance)},
+            )
             filing_status_form = FilingStatusForm()
             if len(FilingStatus.objects.filter()) == 1:
                 return HttpResponse("<script>window.location.reload()</script>")
@@ -93,6 +101,13 @@ def update_filing_status(request, filing_status_id):
         if filing_status_form.is_valid():
             filing_status_form.save()
             messages.success(request, _("Filing status updated successfully."))
+            log_form_changes(
+                request.user,
+                "payroll",
+                "Filing status updated",
+                form=filing_status_form,
+                target=filing_status,
+            )
     return render(
         request,
         "payroll/tax/filing_status_edit.html",
@@ -117,8 +132,16 @@ def filing_status_delete(request, filing_status_id):
         filing_status = FilingStatus.find(filing_status_id)
         if filing_status:
             try:
+                # Describe before delete — the instance is unusable afterwards.
+                deleted_name = str(filing_status)
                 filing_status.delete()
                 messages.info(request, _("Filing status successfully deleted."))
+                log_activity(
+                    request.user,
+                    module="payroll",
+                    action="Filing status deleted",
+                    changes={"Filing status": deleted_name},
+                )
             except ProtectedError:
                 messages.error(
                     request,
@@ -211,8 +234,20 @@ def create_tax_bracket(request, filing_status_id):
             if not max_income:
                 messages.info(request, _("The maximum income will be infinite"))
                 tax_bracket_form.instance.max_income = math.inf
-            tax_bracket_form.save()
+            instance = tax_bracket_form.save()
             messages.success(request, _("The tax bracket was created successfully."))
+            log_activity(
+                request.user,
+                module="payroll",
+                action="Tax bracket created",
+                target=instance,
+                changes={
+                    "Filing status": str(instance.filing_status_id),
+                    "Min income": str(instance.min_income),
+                    "Max income": str(instance.max_income),
+                    "Tax rate": str(instance.tax_rate),
+                },
+            )
             return redirect(create_tax_bracket, filing_status_id=filing_status_id)
 
         context["form"] = tax_bracket_form
@@ -247,6 +282,13 @@ def update_tax_bracket(request, tax_bracket_id):
                 messages.success(
                     request, _("The tax bracket has been updated successfully.")
                 )
+                log_form_changes(
+                    request.user,
+                    "payroll",
+                    "Tax bracket updated",
+                    form=tax_bracket_form,
+                    target=tax_bracket,
+                )
 
         context = {
             "form": tax_bracket_form,
@@ -270,6 +312,18 @@ def delete_tax_bracket(request, tax_bracket_id):
     :param tax_bracket_id: The ID of the tax bracket to delete.
     """
     tax_bracket = TaxBracket.find(tax_bracket_id)
+    # Snapshot before the delete — the values are needed for the audit entry
+    # and the instance is unusable afterwards.
+    audit_changes = (
+        {
+            "Filing status": str(tax_bracket.filing_status_id),
+            "Min income": str(tax_bracket.min_income),
+            "Max income": str(tax_bracket.max_income),
+            "Tax rate": str(tax_bracket.tax_rate),
+        }
+        if tax_bracket
+        else None
+    )
     filing_status_id = (
         tax_bracket.filing_status_id.id
         if tax_bracket and tax_bracket.delete()
@@ -277,6 +331,12 @@ def delete_tax_bracket(request, tax_bracket_id):
     )
     if filing_status_id:
         messages.success(request, _("Tax bracket successfully deleted."))
+        log_activity(
+            request.user,
+            module="payroll",
+            action="Tax bracket deleted",
+            changes=audit_changes,
+        )
     else:
         messages.error(request, _("Tax bracket not found"))
     return (
@@ -295,6 +355,19 @@ def update_py_code(request, pk):
     code = request.POST["code"]
     filing = FilingStatus.objects.get(pk=pk)
     if not filing.python_code == code:
+        old_code = filing.python_code
         filing.python_code = code
         filing.save()
+        # The python_code drives tax calculation, so record the full
+        # before/after rather than just noting that it changed.
+        log_activity(
+            request.user,
+            module="payroll",
+            action="Filing status tax formula updated",
+            target=filing,
+            changes={
+                "Filing status": str(filing),
+                "Python code": {"from": old_code, "to": code},
+            },
+        )
     return JsonResponse({"message": "success"})
