@@ -8,8 +8,10 @@ class HorillaAuditConfig(AppConfig):
     def ready(self):
         from horilla_audit.config_tracking import (
             register_config_tracking,
+            register_role_tracking,
             register_salary_tracking,
         )
 
         register_config_tracking()
         register_salary_tracking()
+        register_role_tracking()

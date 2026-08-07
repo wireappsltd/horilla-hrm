@@ -69,6 +69,110 @@ from leave.threading import LeaveMailSendThread
 from notifications.signals import notify
 from openpyxl import Workbook
 
+from horilla_audit.methods import log_activity, log_form_changes
+
+
+def _leave_client_ip(request):
+    """Best-effort client IP: first X-Forwarded-For hop, else REMOTE_ADDR."""
+    forwarded = request.META.get("HTTP_X_FORWARDED_FOR")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.META.get("REMOTE_ADDR", "")
+
+
+def _leave_audit(request, action, target=None, changes=None):
+    """Write a leave-module ActivityLog entry for a lifecycle event.
+
+    Thin wrapper over ``log_activity`` so every leave event lands in the "Leave"
+    audit tab with a consistent actor and (where available) the client IP
+    stamped into ``changes``. Never blocks the request — the underlying helper
+    swallows and logs its own failures.
+
+    Leave *types*, *policies* and *settings* are not logged here: they are
+    tracked automatically by ``horilla_audit.config_tracking``. Leave Types land
+    in this tab; Holidays, Company Leaves, Restrict Leaves and the leave setting
+    toggles land in the Configuration tab, matching the nav menu each screen is
+    edited from. Logging them again from the views would double every entry.
+    """
+    changes = dict(changes or {})
+    ip = _leave_client_ip(request)
+    if ip:
+        changes.setdefault("IP", ip)
+    log_activity(
+        getattr(request, "user", None),
+        module="leave",
+        action=action,
+        target=target,
+        changes=changes or None,
+    )
+
+
+def _drop_empty(details):
+    """Strip keys whose value is None so audit entries stay readable."""
+    return {key: value for key, value in details.items() if value is not None}
+
+
+def _leave_request_details(leave_request):
+    """Standard identifying fields for a leave request audit entry.
+
+    Gives every leave-request event the same shape in the audit tab: the
+    reference number, who it is for, which leave type, the dates and the
+    current status. ``Employee.__str__`` already carries the badge id, so the
+    employee name and ID travel together in one field.
+    """
+    leave_type = getattr(leave_request, "leave_type_id", None)
+    return _drop_empty(
+        {
+            "Reference": f"LR-{leave_request.pk}" if leave_request.pk else None,
+            "Employee": str(leave_request.employee_id)
+            if getattr(leave_request, "employee_id", None)
+            else None,
+            "Leave type": str(leave_type) if leave_type else None,
+            "From": str(leave_request.start_date or "") or None,
+            "To": str(leave_request.end_date or "") or None,
+            "Days": str(leave_request.requested_days or "") or None,
+            "Status": leave_request.get_status_display(),
+        }
+    )
+
+
+def _allocation_request_details(allocation):
+    """Standard identifying fields for a leave allocation request audit entry."""
+    leave_type = getattr(allocation, "leave_type_id", None)
+    return _drop_empty(
+        {
+            "Reference": f"LA-{allocation.pk}" if allocation.pk else None,
+            "Employee": str(allocation.employee_id)
+            if getattr(allocation, "employee_id", None)
+            else None,
+            "Leave type": str(leave_type) if leave_type else None,
+            "Days requested": str(allocation.requested_days or "") or None,
+            "Status": allocation.get_status_display(),
+        }
+    )
+
+
+def _available_leave_details(available_leave):
+    """Standard identifying fields for an assigned-leave/balance audit entry."""
+    leave_type = getattr(available_leave, "leave_type_id", None)
+    return _drop_empty(
+        {
+            "Employee": str(available_leave.employee_id)
+            if getattr(available_leave, "employee_id", None)
+            else None,
+            "Leave type": str(leave_type) if leave_type else None,
+            "Available days": str(available_leave.available_days),
+            "Carryforward days": str(available_leave.carryforward_days),
+            "Total leave days": str(available_leave.total_leave_days),
+        }
+    )
+
+
+def _status_change(before, after):
+    """Render a before/after status pair in the diff shape the audit UI uses."""
+    return {"Status": {"from": before, "to": after}}
+
+
 def generate_error_report(error_list, error_data, file_name):
     """
     Function used to generate error excle file for imported datas
@@ -533,6 +637,18 @@ def leave_request_creation(request, type_id=None, emp_id=None):
                 )
                 mail_thread.start()
                 messages.success(request, _("Leave request created successfully.."))
+                audit_changes = _leave_request_details(leave_request)
+                audit_changes["Reason"] = leave_request.description
+                if leave_request.leave_type_id.require_approval == "no":
+                    audit_changes["Auto-approved"] = (
+                        "Leave type does not require approval"
+                    )
+                _leave_audit(
+                    request,
+                    "Leave request created",
+                    target=leave_request,
+                    changes=audit_changes,
+                )
                 with contextlib.suppress(Exception):
                     notify.send(
                         request.user.employee_get,
@@ -686,6 +802,16 @@ def leave_requests_export(request):
             "leave/leave_request/leave_requests_export_filter.html",
             context=context,
         )
+    # Only the non-htmx branch actually streams a file back; the htmx branch
+    # above just renders the column/filter picker.
+    _leave_audit(
+        request,
+        "Leave requests exported",
+        changes={
+            "File": "Leave_requests.xlsx",
+            "Filters": request.GET.urlencode() or "None",
+        },
+    )
     return export_data(
         request=request,
         model=LeaveRequest,
@@ -830,6 +956,14 @@ def create_leave_report(request):
     }
 
     template_path = "leave/leave_request/leave_request_pdf.html"
+    _leave_audit(
+        request,
+        "Leave report exported (PDF)",
+        changes={
+            "Employees included": str(len(final_employee_data)),
+            "Company scope": str(company_id or "all"),
+        },
+    )
     return generate_leave_request_pdf(template_path, context=context, html=False)
 
 
@@ -965,6 +1099,13 @@ def leave_request_update(request, id):
             if save:
                 leave_request.save()
                 messages.success(request, _("Leave request is updated successfully.."))
+                log_form_changes(
+                    request.user,
+                    "leave",
+                    "Leave request updated",
+                    form=form,
+                    target=leave_request,
+                )
                 with contextlib.suppress(Exception):
                     notify.send(
                         request.user.employee_get,
@@ -1017,8 +1158,11 @@ def leave_request_delete(request, id):
     previous_data = request.GET.urlencode()
     try:
         leave_request = LeaveRequest.objects.get(id=id)
+        # Snapshot before delete — the instance is unusable afterwards.
+        audit_changes = _leave_request_details(leave_request)
         messages.success(request, _("Leave request deleted successfully.."))
         leave_request.delete()
+        _leave_audit(request, "Leave request deleted", changes=audit_changes)
     except (LeaveRequest.DoesNotExist, OverflowError, ValueError):
         messages.error(request, _("Leave request not found."))
     except ProtectedError:
@@ -1059,6 +1203,14 @@ def leave_request_approve(request, id, emp_id=None):
         available_leave.available_days + available_leave.carryforward_days
     )
     send_notification = False
+    # Captured before any mutation so the audit entry can report the real
+    # before/after status rather than the already-updated in-memory value.
+    status_before = leave_request.get_status_display()
+    balance_before = (
+        f"{available_leave.available_days} available / "
+        f"{available_leave.carryforward_days} carryforward"
+    )
+    approval_sequence = None
     if leave_request.status != "approved":
         # Prior- or future-year leaves must not deduct from the current year's
         # bucket — leave_taken() is year-bounded, so any deduction here would
@@ -1138,11 +1290,44 @@ def leave_request_approve(request, id, emp_id=None):
                             )
 
                     condition_approval.save()
+                    approval_sequence = condition_approval.sequence
                     if approver == conditional_requests["managers"][-1]:
                         leave_request.save()
                         available_leave.save()
                         send_notification = True
             messages.success(request, _("Leave request approved successfully.."))
+            if send_notification:
+                audit_changes = _leave_request_details(leave_request)
+                audit_changes.update(
+                    _status_change(status_before, leave_request.get_status_display())
+                )
+                audit_changes["Balance"] = {
+                    "from": balance_before,
+                    "to": (
+                        f"{available_leave.available_days} available / "
+                        f"{available_leave.carryforward_days} carryforward"
+                    ),
+                }
+                _leave_audit(
+                    request,
+                    "Leave request approved",
+                    target=leave_request,
+                    changes=audit_changes,
+                )
+            else:
+                # Multi-level approval: this manager signed off but the request
+                # stays unsaved (and therefore unapproved) until the final
+                # approver in the chain acts, so report the persisted status.
+                audit_changes = _leave_request_details(leave_request)
+                audit_changes["Status"] = status_before
+                if approval_sequence is not None:
+                    audit_changes["Approval level"] = str(approval_sequence)
+                _leave_audit(
+                    request,
+                    "Leave request approved at one level (awaiting further approval)",
+                    target=leave_request,
+                    changes=audit_changes,
+                )
             if send_notification:
                 with contextlib.suppress(Exception):
                     notify.send(
@@ -1277,6 +1462,12 @@ def leave_request_cancel(request, id, emp_id=None):
             )
             if leave_request.status != "rejected":
                 was_approved = leave_request.status == "approved"
+                # Captured before mutation for the audit before/after values.
+                status_before = leave_request.get_status_display()
+                balance_before = (
+                    f"{available_leave.available_days} available / "
+                    f"{available_leave.carryforward_days} carryforward"
+                )
                 available_leave.available_days += leave_request.approved_available_days
                 available_leave.carryforward_days += (
                     leave_request.approved_carryforward_days
@@ -1340,6 +1531,25 @@ def leave_request_cancel(request, id, emp_id=None):
                     notify_verb_es = "Tu solicitud de permiso ha sido rechazada"
                     notify_verb_fr = "Votre demande de congé a été rejetée"
                     mail_type = "reject"
+
+                audit_changes = _leave_request_details(leave_request)
+                audit_changes.update(
+                    _status_change(status_before, leave_request.get_status_display())
+                )
+                audit_changes["Reason"] = leave_request.reject_reason
+                audit_changes["Balance"] = {
+                    "from": balance_before,
+                    "to": (
+                        f"{available_leave.available_days} available / "
+                        f"{available_leave.carryforward_days} carryforward"
+                    ),
+                }
+                _leave_audit(
+                    request,
+                    "Leave request cancelled" if was_approved else "Leave request rejected",
+                    target=leave_request,
+                    changes=audit_changes,
+                )
 
                 with contextlib.suppress(Exception):
                     notify.send(
@@ -1421,6 +1631,7 @@ def user_leave_cancel(request, id):
             if request.method == "POST":
                 form = RejectForm(request.POST)
                 if form.is_valid():
+                    status_before = leave_request.get_status_display()
                     leave_request.reject_reason = form.cleaned_data["reason"]
                     leave_request.status = "cancelled"
                     leave_request.reviewed_by = getattr(
@@ -1431,6 +1642,19 @@ def user_leave_cancel(request, id):
 
                     messages.success(
                         request, _("Leave request cancelled successfully..")
+                    )
+                    audit_changes = _leave_request_details(leave_request)
+                    audit_changes.update(
+                        _status_change(
+                            status_before, leave_request.get_status_display()
+                        )
+                    )
+                    audit_changes["Reason"] = leave_request.reject_reason
+                    _leave_audit(
+                        request,
+                        "Leave request cancelled by employee",
+                        target=leave_request,
+                        changes=audit_changes,
                     )
 
                     mail_thread = LeaveMailSendThread(
@@ -1446,11 +1670,22 @@ def user_leave_cancel(request, id):
                 {"form": form, "id": id},
             )
         elif leave_request.status == "requested":
+            status_before = leave_request.get_status_display()
             leave_request.status = "cancelled"
             leave_request.reviewed_by = getattr(request.user, "employee_get", None)
             leave_request.reviewed_at = timezone.now()
             leave_request.save()
             messages.success(request, _("Leave request cancelled successfully.."))
+            audit_changes = _leave_request_details(leave_request)
+            audit_changes.update(
+                _status_change(status_before, leave_request.get_status_display())
+            )
+            _leave_audit(
+                request,
+                "Leave request cancelled by employee",
+                target=leave_request,
+                changes=audit_changes,
+            )
             return _trigger_leave_stats_refresh(
                 HttpResponse("<script>location.reload();</script>")
             )
@@ -1520,6 +1755,18 @@ def user_leave_cancellation_request(request, id):
             messages.success(
                 request, _("Cancellation request submitted successfully.")
             )
+            audit_changes = _leave_request_details(leave_request)
+            audit_changes["Cancellation status"] = {
+                "from": "None",
+                "to": leave_request.get_cancellation_status_display(),
+            }
+            audit_changes["Reason"] = leave_request.cancellation_reason
+            _leave_audit(
+                request,
+                "Leave cancellation requested",
+                target=leave_request,
+                changes=audit_changes,
+            )
             with contextlib.suppress(Exception):
                 LeaveMailSendThread(
                     request, leave_request, type="cancellation_request"
@@ -1560,6 +1807,15 @@ def cancellation_request_approve(request, id):
             available_leave = AvailableLeave.objects.get(
                 leave_type_id=leave_type_id, employee_id=employee_id
             )
+            # Captured before mutation for the audit before/after values.
+            status_before = leave_request.get_status_display()
+            cancellation_status_before = (
+                leave_request.get_cancellation_status_display()
+            )
+            balance_before = (
+                f"{available_leave.available_days} available / "
+                f"{available_leave.carryforward_days} carryforward"
+            )
             available_leave.available_days += leave_request.approved_available_days
             available_leave.carryforward_days += (
                 leave_request.approved_carryforward_days
@@ -1587,6 +1843,29 @@ def cancellation_request_approve(request, id):
             comment.save()
 
             messages.success(request, _("Leave cancellation request approved."))
+            audit_changes = _leave_request_details(leave_request)
+            audit_changes.update(
+                _status_change(status_before, leave_request.get_status_display())
+            )
+            audit_changes["Cancellation status"] = {
+                "from": cancellation_status_before,
+                "to": leave_request.get_cancellation_status_display(),
+            }
+            audit_changes["Reason"] = leave_request.cancellation_reason
+            audit_changes["Note"] = note
+            audit_changes["Balance"] = {
+                "from": balance_before,
+                "to": (
+                    f"{available_leave.available_days} available / "
+                    f"{available_leave.carryforward_days} carryforward"
+                ),
+            }
+            _leave_audit(
+                request,
+                "Leave cancellation request approved",
+                target=leave_request,
+                changes=audit_changes,
+            )
             with contextlib.suppress(Exception):
                 notify.send(
                     request.user.employee_get,
@@ -1632,6 +1911,9 @@ def cancellation_request_reject(request, id):
         form = CancellationReviewForm(request.POST)
         if form.is_valid():
             note = form.cleaned_data["note"]
+            cancellation_status_before = (
+                leave_request.get_cancellation_status_display()
+            )
             leave_request.cancellation_status = "rejected"
             leave_request.cancellation_note = note
             leave_request.cancellation_reviewed_by = getattr(
@@ -1648,6 +1930,19 @@ def cancellation_request_reject(request, id):
             comment.save()
 
             messages.success(request, _("Leave cancellation request rejected."))
+            audit_changes = _leave_request_details(leave_request)
+            audit_changes["Cancellation status"] = {
+                "from": cancellation_status_before,
+                "to": leave_request.get_cancellation_status_display(),
+            }
+            audit_changes["Reason"] = leave_request.cancellation_reason
+            audit_changes["Note"] = note
+            _leave_audit(
+                request,
+                "Leave cancellation request rejected",
+                target=leave_request,
+                changes=audit_changes,
+            )
             with contextlib.suppress(Exception):
                 notify.send(
                     request.user.employee_get,
@@ -1798,6 +2093,17 @@ def leave_assign_one(request, obj_id):
 
             employees = Employee.objects.filter(id__in=new_employees).only(
                 "id", "employee_user_id"
+            )
+            _leave_audit(
+                request,
+                "Leave type assigned to employees",
+                target=leave_type,
+                changes={
+                    "Leave type": str(leave_type),
+                    "Employees": ", ".join(str(emp) for emp in employees),
+                    "Count": str(assigned_count),
+                    "Days allocated": str(leave_type.total_days),
+                },
             )
             notifications = [
                 notify.send(
@@ -2032,6 +2338,21 @@ def leave_assign(request):
                                 redirect=reverse("user-request-view"),
                             )
                     messages.success(request, _("Leave types assigned successfully."))
+                    # new_assignments holds one row per (employee, leave type)
+                    # pair, so de-duplicate the employee names for readability.
+                    assigned_employees = dict.fromkeys(
+                        str(assignment.employee_id)
+                        for assignment in new_assignments
+                    )
+                    _leave_audit(
+                        request,
+                        "Leave types assigned to employees",
+                        changes={
+                            "Leave types": ", ".join(str(lt) for lt in leave_types),
+                            "Employees": ", ".join(assigned_employees),
+                            "Assignments created": str(len(new_assignments)),
+                        },
+                    )
 
             if info_messages:
                 messages.info(
@@ -2070,8 +2391,34 @@ def available_leave_update(request, id):
     if request.method == "POST":
         form = AvailableLeaveUpdateForm(request.POST, instance=leave_assign)
         if form.is_valid():
+            # Snapshot the balance before saving so the audit entry can show the
+            # adjustment as before -> after alongside the employee/leave type.
+            balance_before = {
+                "Available days": str(leave_assign.available_days),
+                "Carryforward days": str(leave_assign.carryforward_days),
+                "Total leave days": str(leave_assign.total_leave_days),
+            }
             available_leave = form.save()
             messages.success(request, _("Available leaves updated successfully..."))
+            audit_changes = {
+                "Employee": str(available_leave.employee_id),
+                "Leave type": str(available_leave.leave_type_id),
+            }
+            balance_after = {
+                "Available days": str(available_leave.available_days),
+                "Carryforward days": str(available_leave.carryforward_days),
+                "Total leave days": str(available_leave.total_leave_days),
+            }
+            for label, before in balance_before.items():
+                after = balance_after[label]
+                if before != after:
+                    audit_changes[label] = {"from": before, "to": after}
+            _leave_audit(
+                request,
+                "Leave balance adjusted",
+                target=available_leave,
+                changes=audit_changes,
+            )
             with contextlib.suppress(Exception):
                 notify.send(
                     request.user.employee_get,
@@ -2108,8 +2455,12 @@ def leave_assign_delete(request, obj_id):
     pd = request.GET.urlencode()
 
     try:
-        AvailableLeave.objects.get(id=obj_id).delete()
+        assigned_leave = AvailableLeave.objects.get(id=obj_id)
+        # Snapshot before delete — the instance is unusable afterwards.
+        audit_changes = _available_leave_details(assigned_leave)
+        assigned_leave.delete()
         messages.success(request, _("Assigned leave successfully deleted."))
+        _leave_audit(request, "Assigned leave deleted", changes=audit_changes)
     except AvailableLeave.DoesNotExist:
         messages.error(request, _("Assigned leave not found."))
     except ProtectedError:
@@ -2138,16 +2489,29 @@ def leave_assign_bulk_delete(request):
     ids = request.POST["ids"]
     ids = json.loads(ids)
     count = 0
+    deleted = []
     for assigned_leave_id in ids:
         try:
             assigned_leave = AvailableLeave.objects.get(id=assigned_leave_id)
+            # Describe before delete — the instance is unusable afterwards.
+            summary = (
+                f"{assigned_leave.employee_id} / {assigned_leave.leave_type_id} "
+                f"({assigned_leave.total_leave_days} days)"
+            )
             assigned_leave.delete()
+            deleted.append(summary)
             count += 1
         except Exception as e:
             messages.error(request, _("Assigned leave not found."))
     messages.success(
         request, _("{} assigned leaves deleted successfully ").format(count)
     )
+    if deleted:
+        _leave_audit(
+            request,
+            "Assigned leaves bulk deleted",
+            changes={"Count": str(count), "Assigned leaves": ", ".join(deleted)},
+        )
     return JsonResponse({"message": "Success"})
 
 
@@ -2169,6 +2533,11 @@ def assign_leave_type_excel(_request):
             'attachment; filename="assign_leave_type_excel.xlsx"'
         )
         data_frame.to_excel(response, index=False)
+        _leave_audit(
+            _request,
+            "Assigned leave import template downloaded",
+            changes={"File": "assign_leave_type_excel.xlsx"},
+        )
         return response
     except Exception as exception:
         return HttpResponse(exception)
@@ -2282,6 +2651,16 @@ def assign_leave_type_import(request):
             "model": _("Assigned Leaves"),
             "path_info": path_info,
         }
+        _leave_audit(
+            request,
+            "Assigned leaves imported",
+            changes={
+                "File": getattr(file, "name", ""),
+                "Rows in file": str(len(assign_leave_dicts)),
+                "Assignments created": str(len(assign_leave_list)),
+                "Rows rejected": str(len(error_list)),
+            },
+        )
         html = render_to_string("import_popup.html", context)
         return HttpResponse(html)
 
@@ -2301,6 +2680,16 @@ def assigned_leaves_export(request):
             "leave/leave_assign/assigned_leaves_export_form.html",
             context=content,
         )
+    # Only the non-htmx branch actually streams a file back; the htmx branch
+    # above just renders the column/filter picker.
+    _leave_audit(
+        request,
+        "Assigned leaves exported",
+        changes={
+            "File": "Assign_Leave.xlsx",
+            "Filters": request.GET.urlencode() or "None",
+        },
+    )
     return export_data(
         request=request,
         model=AvailableLeave,
@@ -2672,6 +3061,18 @@ def user_leave_request(request, id):
                 )
                 mail_thread.start()
                 messages.success(request, _("Leave request created successfully.."))
+                audit_changes = _leave_request_details(leave_request)
+                audit_changes["Reason"] = leave_request.description
+                if leave_request.leave_type_id.require_approval == "no":
+                    audit_changes["Auto-approved"] = (
+                        "Leave type does not require approval"
+                    )
+                _leave_audit(
+                    request,
+                    "Leave applied",
+                    target=leave_request,
+                    changes=audit_changes,
+                )
                 with contextlib.suppress(Exception):
                     notify.send(
                         request.user.employee_get,
@@ -2809,6 +3210,13 @@ def user_request_update(request, id):
                         messages.success(
                             request, _("Leave request updated successfully..")
                         )
+                        log_form_changes(
+                            request.user,
+                            "leave",
+                            "Leave request updated",
+                            form=form,
+                            target=leave_request,
+                        )
                     else:
                         form.add_error(
                             None,
@@ -2864,8 +3272,11 @@ def user_request_delete(request, id):
     try:
         leave_request = LeaveRequest.objects.get(id=id)
         if request.user.employee_get == leave_request.employee_id:
+            # Snapshot before delete — the instance is unusable afterwards.
+            audit_changes = _leave_request_details(leave_request)
             messages.success(request, _("Leave request deleted successfully.."))
             leave_request.delete()
+            _leave_audit(request, "Leave request deleted", changes=audit_changes)
     except LeaveRequest.DoesNotExist:
         messages.error(request, _("User has no leave request.."))
     except ProtectedError:
@@ -3700,6 +4111,18 @@ def leave_request_create(request):
                             )
 
                     messages.success(request, _("Leave request created successfully.."))
+                    audit_changes = _leave_request_details(leave_request)
+                    audit_changes["Reason"] = leave_request.description
+                    if leave_request.leave_type_id.require_approval == "no":
+                        audit_changes["Auto-approved"] = (
+                            "Leave type does not require approval"
+                        )
+                    _leave_audit(
+                        request,
+                        "Leave request created",
+                        target=leave_request,
+                        changes=audit_changes,
+                    )
                     with contextlib.suppress(Exception):
                         notify.send(
                             request.user.employee_get,
@@ -3880,6 +4303,14 @@ def leave_allocation_request_create(request):
             leave_allocation_request.skip_history = False
             leave_allocation_request.save()
             messages.success(request, _("New Leave allocation request is created"))
+            audit_changes = _allocation_request_details(leave_allocation_request)
+            audit_changes["Reason"] = leave_allocation_request.description
+            _leave_audit(
+                request,
+                "Leave allocation requested",
+                target=leave_allocation_request,
+                changes=audit_changes,
+            )
             with contextlib.suppress(Exception):
                 notify.send(
                     request.user.employee_get,
@@ -4028,6 +4459,13 @@ def leave_allocation_request_update(request, req_id):
                 messages.success(
                     request, _("Leave allocation request is updated successfully.")
                 )
+                log_form_changes(
+                    request.user,
+                    "leave",
+                    "Leave allocation request updated",
+                    form=form,
+                    target=leave_allocation_request,
+                )
                 with contextlib.suppress(Exception):
                     notify.send(
                         request.user.employee_get,
@@ -4091,11 +4529,30 @@ def leave_allocation_request_approve(request, req_id):
                 leave_type_id=leave_allocation_request.leave_type_id,
                 employee_id=employee,
             )
+        # Captured before mutation for the audit before/after values.
+        status_before = leave_allocation_request.get_status_display()
+        balance_before = available_leave.available_days
         available_leave.available_days += leave_allocation_request.requested_days
         available_leave.save()
         leave_allocation_request.status = "approved"
         leave_allocation_request.save()
         messages.success(request, _("Leave allocation request approved successfully"))
+        audit_changes = _allocation_request_details(leave_allocation_request)
+        audit_changes.update(
+            _status_change(
+                status_before, leave_allocation_request.get_status_display()
+            )
+        )
+        audit_changes["Available days"] = {
+            "from": str(balance_before),
+            "to": str(available_leave.available_days),
+        }
+        _leave_audit(
+            request,
+            "Leave allocation approved",
+            target=leave_allocation_request,
+            changes=audit_changes,
+        )
         with contextlib.suppress(Exception):
             notify.send(
                 request.user.employee_get,
@@ -4141,6 +4598,9 @@ def leave_allocation_request_reject(request, req_id):
         if request.method == "POST":
             form = LeaveAllocationRequestRejectForm(request.POST)
             if form.is_valid():
+                # Captured before mutation for the audit before/after values.
+                status_before = leave_allocation_request.get_status_display()
+                balance_change = None
                 leave_allocation_request.reject_reason = form.cleaned_data["reason"]
                 if leave_allocation_request.status == "approved":
                     leave_type = leave_allocation_request.leave_type_id
@@ -4149,15 +4609,37 @@ def leave_allocation_request_reject(request, req_id):
                         leave_type_id=leave_type,
                         employee_id=leave_allocation_request.employee_id,
                     ).first()
+                    balance_before = available_leave.available_days
                     available_leave.available_days = max(
                         0, available_leave.available_days - requested_days
                     )
 
                     available_leave.save()
+                    balance_change = {
+                        "from": str(balance_before),
+                        "to": str(available_leave.available_days),
+                    }
                 leave_allocation_request.status = "rejected"
                 leave_allocation_request.save()
                 messages.success(
                     request, _("Leave allocation request rejected successfully")
+                )
+                audit_changes = _allocation_request_details(leave_allocation_request)
+                audit_changes.update(
+                    _status_change(
+                        status_before,
+                        leave_allocation_request.get_status_display(),
+                    )
+                )
+                audit_changes["Reason"] = leave_allocation_request.reject_reason
+                if balance_change:
+                    # Rejecting an already-approved allocation claws the days back.
+                    audit_changes["Available days"] = balance_change
+                _leave_audit(
+                    request,
+                    "Leave allocation rejected",
+                    target=leave_allocation_request,
+                    changes=audit_changes,
                 )
                 with contextlib.suppress(Exception):
                     notify.send(
@@ -4208,9 +4690,14 @@ def leave_allocation_request_delete(request, req_id):
         leave_allocation_request = LeaveAllocationRequest.objects.get(id=req_id)
 
         if leave_allocation_request.status != "approved":
+            # Snapshot before delete — the instance is unusable afterwards.
+            audit_changes = _allocation_request_details(leave_allocation_request)
             leave_allocation_request.delete()
             messages.success(
                 request, _("Leave allocation request deleted successfully..")
+            )
+            _leave_audit(
+                request, "Leave allocation request deleted", changes=audit_changes
             )
         else:
             messages.error(request, _("Approved request can't be deleted."))
@@ -4315,12 +4802,19 @@ def leave_request_bulk_delete(request):
     ids = request.POST["ids"]
     ids = json.loads(ids)
     count = 0  # To track the number of successfully deleted requests
+    deleted = []
     for leave_request_id in ids:
         try:
             leave_request = LeaveRequest.objects.get(id=leave_request_id)
             employee = leave_request.employee_id
             if leave_request.status == "requested":
+                # Describe before delete — the instance is unusable afterwards.
+                summary = (
+                    f"LR-{leave_request.pk} {employee} "
+                    f"({leave_request.leave_type_id}, {leave_request.start_date})"
+                )
                 leave_request.delete()
+                deleted.append(summary)
                 count += 1
             else:
                 messages.error(
@@ -4334,6 +4828,11 @@ def leave_request_bulk_delete(request):
         messages.success(
             request,
             _("{count}  leave request(s) successfully deleted.".format(count=count)),
+        )
+        _leave_audit(
+            request,
+            "Leave requests bulk deleted",
+            changes={"Count": str(count), "Leave requests": ", ".join(deleted)},
         )
 
     return JsonResponse({"message": "Success"})
@@ -4397,12 +4896,19 @@ def user_request_bulk_delete(request):
     """
     ids = request.POST["ids"]
     ids = json.loads(ids)
+    deleted = []
     for leave_request_id in ids:
         try:
             leave_request = LeaveRequest.objects.get(id=leave_request_id)
             status = leave_request.status
             if leave_request.status == "requested":
+                # Describe before delete — the instance is unusable afterwards.
+                summary = (
+                    f"LR-{leave_request.pk} {leave_request.employee_id} "
+                    f"({leave_request.leave_type_id}, {leave_request.start_date})"
+                )
                 leave_request.delete()
+                deleted.append(summary)
                 messages.success(
                     request,
                     _("Leave request deleted."),
@@ -4414,6 +4920,15 @@ def user_request_bulk_delete(request):
                 )
         except Exception as e:
             messages.error(request, _("Leave request not found."))
+    if deleted:
+        _leave_audit(
+            request,
+            "Leave requests bulk deleted",
+            changes={
+                "Count": str(len(deleted)),
+                "Leave requests": ", ".join(deleted),
+            },
+        )
     return JsonResponse({"message": "Success"})
 
 
@@ -4642,6 +5157,25 @@ def cut_available_leave(request, instance_id):
             penalty.save()
             form = PenaltyAccountForm()
             messages.success(request, "Penalty/Fine added")
+            _leave_audit(
+                request,
+                "Leave penalty applied",
+                target=penalty,
+                changes=_drop_empty(
+                    {
+                        "Reference": f"LR-{instance.pk}",
+                        "Employee": str(penalty.employee_id),
+                        "Leave type": str(penalty.leave_type_id)
+                        if penalty.leave_type_id
+                        else None,
+                        "Leave days deducted": str(penalty.minus_leaves or 0),
+                        "Deducted from carryforward": "Yes"
+                        if penalty.deduct_from_carry_forward
+                        else "No",
+                        "Penalty amount": str(penalty.penalty_amount or 0),
+                    }
+                ),
+            )
     return render(
         request,
         "leave/leave_request/penalty/form.html",
@@ -4673,7 +5207,17 @@ def create_leaverequest_comment(request, leave_id):
         if form.is_valid():
             form.instance.employee_id = emp
             form.instance.request_id = leave
-            form.save()
+            comment_instance = form.save()
+            _leave_audit(
+                request,
+                "Leave request comment added",
+                target=comment_instance,
+                changes={
+                    "Reference": f"LR-{leave.pk}",
+                    "Employee": str(leave.employee_id),
+                    "Comment": comment_instance.comment,
+                },
+            )
             comments = LeaverequestComment.objects.filter(request_id=leave_id).order_by(
                 "-created_at"
             )
@@ -4809,6 +5353,16 @@ def view_leaverequest_comment(request, leave_id):
             file_instance.save()
             attachments.append(file_instance)
         comment.files.add(*attachments)
+        _leave_audit(
+            request,
+            "Leave request attachment uploaded",
+            target=comment,
+            changes={
+                "Reference": f"LR-{leave_id}",
+                "Files": ", ".join(str(a.file) for a in attachments),
+                "Count": str(len(attachments)),
+            },
+        )
 
     return render(
         request,
@@ -4839,7 +5393,17 @@ def create_allocationrequest_comment(request, leave_id):
         if form.is_valid():
             form.instance.employee_id = emp
             form.instance.request_id = leave
-            form.save()
+            comment_instance = form.save()
+            _leave_audit(
+                request,
+                "Leave allocation request comment added",
+                target=comment_instance,
+                changes={
+                    "Reference": f"LA-{leave.pk}",
+                    "Employee": str(leave.employee_id),
+                    "Comment": comment_instance.comment,
+                },
+            )
             comments = LeaveallocationrequestComment.objects.filter(
                 request_id=leave_id
             ).order_by("-created_at")
@@ -4970,6 +5534,16 @@ def view_allocationrequest_comment(request, leave_id):
             file_instance.save()
             attachments.append(file_instance)
         comment.files.add(*attachments)
+        _leave_audit(
+            request,
+            "Leave allocation request attachment uploaded",
+            target=comment,
+            changes={
+                "Reference": f"LA-{leave_id}",
+                "Files": ", ".join(str(a.file) for a in attachments),
+                "Count": str(len(attachments)),
+            },
+        )
 
     return render(
         request,
@@ -4997,8 +5571,19 @@ def delete_allocationrequest_comment(request, comment_id):
         or request.user.has_perm("leave.delete_leaveallocationrequestcomment")
         or is_reportingmanager(request)
     ):
+        # Snapshot before delete — the instance is unusable afterwards.
+        audit_changes = {
+            "Reference": f"LA-{request_id}",
+            "Author": str(comment.employee_id),
+            "Comment": comment.comment,
+        }
         comment.delete()
         messages.success(request, _("Comment deleted successfully!"))
+        _leave_audit(
+            request,
+            "Leave allocation request comment deleted",
+            changes=audit_changes,
+        )
     else:
         script = f"""
                     <span hx-get="/leave/allocation-request-view-comment/{request_id}/" hx-target="#commentContainer" hx-trigger="load"></span>
@@ -5022,8 +5607,22 @@ def delete_allocation_comment_file(request):
         or request.user.has_perm("leave.delete_leaverequestfile")
         or is_reportingmanager(request)
     ):
+        # Describe before delete — the rows are gone afterwards.
+        deleted_files = ", ".join(
+            str(attachment.file)
+            for attachment in LeaverequestFile.objects.filter(id__in=ids)
+        )
         LeaverequestFile.objects.filter(id__in=ids).delete()
         messages.success(request, _("File deleted successfully"))
+        _leave_audit(
+            request,
+            "Leave allocation request attachment deleted",
+            changes={
+                "Reference": f"LA-{leave_id}",
+                "Files": deleted_files,
+                "Count": str(len(ids)),
+            },
+        )
     else:
         messages.warning(request, _("You don't have permission"))
         script = f"""
@@ -5141,8 +5740,17 @@ def delete_leaverequest_comment(request, comment_id):
         or request.user.has_perm("leave.delete_leaverequestcomment")
         or is_reportingmanager(request)
     ):
+        # Snapshot before delete — the instance is unusable afterwards.
+        audit_changes = {
+            "Reference": f"LR-{comment.request_id.id}",
+            "Author": str(comment.employee_id),
+            "Comment": comment.comment,
+        }
         comment.delete()
         messages.success(request, _("Comment deleted successfully!"))
+        _leave_audit(
+            request, "Leave request comment deleted", changes=audit_changes
+        )
     else:
         messages.warning(request, _("You don't have permission"))
         script = f"""
@@ -5166,8 +5774,22 @@ def delete_leave_comment_file(request):
         or request.user.has_perm("leave.delete_leaverequestfile")
         or is_reportingmanager(request)
     ):
+        # Describe before delete — the rows are gone afterwards.
+        deleted_files = ", ".join(
+            str(attachment.file)
+            for attachment in LeaverequestFile.objects.filter(id__in=ids)
+        )
         LeaverequestFile.objects.filter(id__in=ids).delete()
         messages.success(request, _("File deleted successfully"))
+        _leave_audit(
+            request,
+            "Leave request attachment deleted",
+            changes={
+                "Reference": f"LR-{leave_id}",
+                "Files": deleted_files,
+                "Count": str(len(ids)),
+            },
+        )
     else:
         messages.warning(request, _("You don't have permission"))
         script = f"""
@@ -5213,8 +5835,22 @@ if apps.is_installed("attendance"):
         Used to delete attachment
         """
         ids = request.GET.getlist("ids")
+        # Describe before delete — the rows are gone afterwards.
+        deleted_files = ", ".join(
+            str(attachment.file)
+            for attachment in LeaverequestFile.objects.filter(id__in=ids)
+        )
         LeaverequestFile.objects.filter(id__in=ids).delete()
         leave_id = request.GET["leave_id"]
+        _leave_audit(
+            request,
+            "Compensatory leave attachment deleted",
+            changes={
+                "Reference": f"CL-{leave_id}",
+                "Files": deleted_files,
+                "Count": str(len(ids)),
+            },
+        )
         comments = CompensatoryLeaverequestComment.objects.all()
         if not request.user.has_perm("leave.delete_compensatoryleaverequestcomment"):
             comments = comments.filter(employee_id__employee_user_id=request.user)
@@ -5251,9 +5887,25 @@ if apps.is_installed("attendance"):
             if not request.user.has_perm("leave.delete_leaverequestcomment"):
                 comment = comment.filter(employee_id__employee_user_id=request.user)
             redirect_url = "leave-request-view-comment"
-        leave_id = comment.first().request_id.id
+        first_comment = comment.first()
+        leave_id = first_comment.request_id.id
+        # Snapshot before delete — the rows are gone afterwards.
+        audit_changes = {
+            "Reference": (
+                f"CL-{leave_id}" if request.GET.get("compensatory") else f"LR-{leave_id}"
+            ),
+            "Author": str(first_comment.employee_id),
+            "Comment": first_comment.comment,
+        }
         comment.delete()
         messages.success(request, _("Comment deleted successfully!"))
+        _leave_audit(
+            request,
+            "Compensatory leave comment deleted"
+            if request.GET.get("compensatory")
+            else "Leave request comment deleted",
+            changes=audit_changes,
+        )
         return redirect(redirect_url, leave_id)
 
     @login_required
@@ -5429,8 +6081,26 @@ if apps.is_installed("attendance"):
                 comp_req.save()
                 if comp_id != None:
                     messages.success(request, _("Compensatory Leave updated."))
+                    log_form_changes(
+                        request.user,
+                        "leave",
+                        "Compensatory leave request updated",
+                        form=form,
+                        target=comp_req,
+                    )
                 else:
                     messages.success(request, _("Compensatory Leave created."))
+                    _leave_audit(
+                        request,
+                        "Compensatory leave requested",
+                        target=comp_req,
+                        changes={
+                            "Reference": f"CL-{comp_req.pk}",
+                            "Employee": str(comp_req.employee_id),
+                            "Days requested": str(comp_req.requested_days),
+                            "Status": comp_req.get_status_display(),
+                        },
+                    )
                 return HttpResponse("<script>window.location.reload();</script>")
 
         context = {
@@ -5453,8 +6123,21 @@ if apps.is_installed("attendance"):
         and reload the list view of compensatory leave requests.
         """
         try:
-            comp_leave_req = CompensatoryLeaveRequest.objects.get(id=comp_id).delete()
+            comp_leave_req = CompensatoryLeaveRequest.objects.get(id=comp_id)
+            # Snapshot before delete — the instance is unusable afterwards.
+            audit_changes = {
+                "Reference": f"CL-{comp_leave_req.pk}",
+                "Employee": str(comp_leave_req.employee_id),
+                "Days requested": str(comp_leave_req.requested_days),
+                "Status": comp_leave_req.get_status_display(),
+            }
+            comp_leave_req.delete()
             messages.success(request, _("Compensatory leave request deleted."))
+            _leave_audit(
+                request,
+                "Compensatory leave request deleted",
+                changes=audit_changes,
+            )
 
         except:
             messages.error(request, _("Sorry, something went wrong!"))
@@ -5475,10 +6158,24 @@ if apps.is_installed("attendance"):
         try:
             comp_leave_req = CompensatoryLeaveRequest.objects.get(id=comp_id)
             if comp_leave_req.status == "requested":
+                status_before = comp_leave_req.get_status_display()
                 comp_leave_req.status = "approved"
                 comp_leave_req.assign_compensatory_leave_type()
                 comp_leave_req.save()
                 messages.success(request, _("Compensatory leave request approved."))
+                _leave_audit(
+                    request,
+                    "Compensatory leave approved",
+                    target=comp_leave_req,
+                    changes={
+                        "Reference": f"CL-{comp_leave_req.pk}",
+                        "Employee": str(comp_leave_req.employee_id),
+                        "Days requested": str(comp_leave_req.requested_days),
+                        **_status_change(
+                            status_before, comp_leave_req.get_status_display()
+                        ),
+                    },
+                )
                 with contextlib.suppress(Exception):
                     notify.send(
                         request.user.employee_get,
@@ -5531,11 +6228,26 @@ if apps.is_installed("attendance"):
             if request.method == "POST":
                 form = CompensatoryLeaveRequestRejectForm(request.POST)
                 if form.is_valid():
+                    status_before = comp_leave_req.get_status_display()
                     comp_leave_req.reject_reason = form.cleaned_data["reason"]
                     comp_leave_req.status = "rejected"
                     comp_leave_req.exclude_compensatory_leave()
                     comp_leave_req.save()
                     messages.success(request, _("Compensatory Leave request rejected."))
+                    _leave_audit(
+                        request,
+                        "Compensatory leave rejected",
+                        target=comp_leave_req,
+                        changes={
+                            "Reference": f"CL-{comp_leave_req.pk}",
+                            "Employee": str(comp_leave_req.employee_id),
+                            "Days requested": str(comp_leave_req.requested_days),
+                            "Reason": comp_leave_req.reject_reason,
+                            **_status_change(
+                                status_before, comp_leave_req.get_status_display()
+                            ),
+                        },
+                    )
                     with contextlib.suppress(Exception):
                         notify.send(
                             request.user.employee_get,
@@ -5621,6 +6333,16 @@ if apps.is_installed("attendance"):
                 file_instance.save()
                 attachments.append(file_instance)
             comment.files.add(*attachments)
+            _leave_audit(
+                request,
+                "Compensatory leave attachment uploaded",
+                target=comment,
+                changes={
+                    "Reference": f"CL-{comp_leave_id}",
+                    "Files": ", ".join(str(a.file) for a in attachments),
+                    "Count": str(len(attachments)),
+                },
+            )
 
         return render(
             request,
@@ -5652,7 +6374,17 @@ if apps.is_installed("attendance"):
             if form.is_valid():
                 form.instance.employee_id = emp
                 form.instance.request_id = comp_leave
-                form.save()
+                comment_instance = form.save()
+                _leave_audit(
+                    request,
+                    "Compensatory leave comment added",
+                    target=comment_instance,
+                    changes={
+                        "Reference": f"CL-{comp_leave.pk}",
+                        "Employee": str(comp_leave.employee_id),
+                        "Comment": comment_instance.comment,
+                    },
+                )
                 comments = CompensatoryLeaverequestComment.objects.filter(
                     request_id=comp_leave
                 ).order_by("-created_at")
@@ -6063,6 +6795,16 @@ def monthly_leave_report(request):
     response['Content-Disposition'] = f'attachment; filename="monthly_leave_report.xlsx"'
 
     wb.save(response)
+    _leave_audit(
+        request,
+        "Monthly leave report exported (Excel)",
+        changes={
+            "File": "monthly_leave_report.xlsx",
+            "From": start,
+            "To": end,
+            "Leave requests included": str(len(leaves)),
+        },
+    )
     return response
 
 @login_required
@@ -6152,6 +6894,16 @@ def monthly_leave_report_pdf(request):
         return HttpResponse(_("Failed to generate PDF report."), status=500)
 
     resp["Content-Disposition"] = 'attachment; filename="monthly_leave_report.pdf"'
+    _leave_audit(
+        request,
+        "Monthly leave report exported (PDF)",
+        changes={
+            "File": "monthly_leave_report.pdf",
+            "From": start,
+            "To": end,
+            "Leave requests included": str(len(leaves)),
+        },
+    )
     return resp
 
 
@@ -6281,6 +7033,17 @@ def force_carryforward_reset(request):
             affected += 1
 
     _qa_log("=== force_carryforward_reset END affected=%d errors=%d ===" % (affected, len(errors)))
+
+    if affected:
+        _leave_audit(
+            request,
+            "Leave carryforward reset forced (bulk balance adjustment)",
+            changes={
+                "Leave types affected": str(type_count),
+                "Balances updated": str(affected),
+                "Errors": str(len(errors)),
+            },
+        )
 
     if type_count == 0:
         return JsonResponse(
@@ -6423,6 +7186,17 @@ def force_carryforward_expire(request):
         "=== force_carryforward_expire END affected_rows=%d types=%d errors=%d ==="
         % (affected_rows, affected_types, len(errors))
     )
+
+    if affected_rows:
+        _leave_audit(
+            request,
+            "Leave carryforward expiry forced (bulk balance adjustment)",
+            changes={
+                "Leave types affected": str(affected_types),
+                "Balances updated": str(affected_rows),
+                "Errors": str(len(errors)),
+            },
+        )
 
     if type_count == 0:
         return JsonResponse(
@@ -6758,6 +7532,19 @@ def recalculate_leave_balances(request):
         "cf_fixed=%d expired_cf_fixed=%d errors=%d ==="
         % (total, avail_fixed, cf_fixed, expired_cf_fixed, len(errors))
     )
+
+    if avail_fixed or cf_fixed or expired_cf_fixed:
+        _leave_audit(
+            request,
+            "Leave balances recalculated (bulk balance adjustment)",
+            changes={
+                "Rows inspected": str(total),
+                "Available days corrected": str(avail_fixed),
+                "Carryforward days corrected": str(cf_fixed),
+                "Expired carryforward corrected": str(expired_cf_fixed),
+                "Errors": str(len(errors)),
+            },
+        )
 
     return JsonResponse(
         {

@@ -49,7 +49,8 @@ from base.methods import (
 )
 from base.models import EmployeeShift, EmployeeShiftDay
 from employee.models import Employee
-from horilla_audit.methods import log_activity
+from attendance.audit import att_audit, attendance_details, drop_empty, status_change
+from horilla_audit.methods import log_activity, log_form_changes
 from horilla.decorators import (
     hx_request_required,
     login_required,
@@ -196,6 +197,12 @@ def request_new(request):
             if form.new_instance is not None:
                 form.new_instance.save()
                 messages.success(request, _("New attendance request created"))
+                att_audit(
+                    request,
+                    "Attendance request created",
+                    target=form.new_instance,
+                    changes=attendance_details(form.new_instance),
+                )
                 return HttpResponse(
                     render(
                         request,
@@ -275,6 +282,12 @@ def create_batch_attendance(request):
         if form.is_valid():
             batch = form.save()
             messages.success(request, _("Attendance batch created successfully."))
+            att_audit(
+                request,
+                "Attendance batch created",
+                target=batch,
+                changes={"Batch": str(batch)},
+            )
             previous_form_data += f"&batch_attendance_id={batch.id}"
     return render(
         request,
@@ -306,9 +319,16 @@ def update_title(request):
             or request.user == batch.created_by
         ):
             title = request.POST.get("title")
+            title_before = batch.title
             batch.title = title
             batch.save()
             messages.success(request, _("Batch attendance title updated sucessfully."))
+            att_audit(
+                request,
+                "Attendance batch renamed",
+                target=batch,
+                changes={"Title": {"from": title_before, "to": title}},
+            )
         else:
             messages.info(request, _("You don't have permission."))
     except:
@@ -324,6 +344,9 @@ def delete_batch(request, batch_id):
         BatchAttendance.objects.filter(id=batch_id).first().delete()
         messages.success(
             request, _(f"{batch_name} - batch has been deleted sucessfully")
+        )
+        att_audit(
+            request, "Attendance batch deleted", changes={"Batch": batch_name}
         )
     except ProtectedError as e:
         model_verbose_names_set = set()
@@ -505,22 +528,22 @@ def validate_attendance_request(request, attendance_id):
     )
 
 
-def _log_attendance_decision(request, attendance, decision):
+def _log_attendance_decision(request, attendance, decision, extra=None):
     """Record who approved/rejected/cancelled an attendance request.
 
-    Captures the actor (and timestamp via ActivityLog) plus the affected
-    employee and attendance date. Call before the row is deleted so the target
-    pk is still valid.
+    Delegates to the shared ``att_audit`` wrapper so these entries carry the
+    same identifying fields and client IP as the rest of the module. Call
+    before the row is deleted so the target pk is still valid.
     """
-    log_activity(
-        request.user,
-        module="attendance",
-        action=f"Attendance request {decision}",
+    changes = attendance_details(attendance)
+    if attendance.request_description:
+        changes["Reason"] = attendance.request_description
+    changes.update(extra or {})
+    att_audit(
+        request,
+        f"Attendance request {decision}",
         target=attendance,
-        changes={
-            "Employee": str(attendance.employee_id),
-            "Attendance date": str(attendance.attendance_date),
-        },
+        changes=changes,
     )
 
 
@@ -971,6 +994,15 @@ def edit_validate_attendance(request, attendance_id):
                 instance.is_validate_request_approved = False
                 instance.is_validate_request = True
                 instance.save()
+            audit_changes = attendance_details(attendance)
+            if instance.request_description:
+                audit_changes["Reason"] = instance.request_description
+            att_audit(
+                request,
+                "Attendance request edited",
+                target=attendance,
+                changes=audit_changes,
+            )
             return HttpResponse(
                 f"""
                                 <script>
