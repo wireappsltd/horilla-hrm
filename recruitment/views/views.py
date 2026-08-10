@@ -43,6 +43,7 @@ from django.views.decorators.http import require_http_methods
 from base.backends import ConfiguredEmailBackend
 from base.context_processors import check_candidate_self_tracking
 from base.countries import country_arr, s_a, states
+from base.email_handlers import attach_inline_logo, render_branded_email
 from base.forms import MailTemplateForm
 from base.methods import (
     eval_validate,
@@ -2056,14 +2057,27 @@ def send_acknowledgement(request):
         )
         render_bdy = template_bdy.render(context)
         to = candidate.email
+        branded_body = render_branded_email(
+            recipient_name=candidate.name,
+            content=render_bdy,
+            content_is_html=True,
+            company_name=str(candidate.recruitment_id.company_id)
+            if getattr(candidate, "recruitment_id", None)
+            and candidate.recruitment_id.company_id
+            else "",
+            request=request,
+        )
         email = EmailMessage(
             subject=subject,
-            body=render_bdy,
+            body=branded_body,
             to=[to],
         )
         email.content_subtype = "html"
 
         email.attachments = attachments
+        # Attach the inline WireApps logo so the acknowledgement email keeps the
+        # same standardized branded look as every other Horilla email.
+        attach_inline_logo(email)
         try:
             email.send()
             messages.success(request, "Mail sent to candidate")

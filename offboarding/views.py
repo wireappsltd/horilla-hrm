@@ -1,12 +1,13 @@
 import json
 from datetime import datetime, timedelta
+from threading import Thread
 from urllib.parse import parse_qs
 
 from django.apps import apps
-from django.db import models
+from django.db import models, transaction
 from django.contrib import messages
 from django.contrib.auth.models import User
-from django.core.mail import send_mail
+from django.core.mail import EmailMultiAlternatives
 from django.core.paginator import Paginator
 from django.http import HttpResponse, JsonResponse, HttpResponseBadRequest
 from django.shortcuts import redirect, render
@@ -15,6 +16,7 @@ from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 
 from base.context_processors import intial_notice_period
+from base.email_handlers import attach_inline_logo, render_branded_email
 from base.methods import closest_numbers, eval_validate, paginator_qry, sortby
 from base.models import Department, JobPosition
 from base.views import general_settings
@@ -28,6 +30,7 @@ from horilla.decorators import (
 )
 from horilla.group_by import group_by_queryset as group_by
 from horilla.methods import get_horilla_model_class
+from horilla_audit.methods import log_activity, log_form_changes
 from notifications.signals import notify
 from offboarding.decorators import (
     any_manager_can_enter,
@@ -75,6 +78,202 @@ from django.shortcuts import get_object_or_404, render, redirect
 from logging import getLogger
 
 logger = getLogger(__name__)
+
+CLEARANCE_FROM_EMAIL = "tech@wireapps.co.uk"
+
+
+class ClearanceStatusMailThread(Thread):
+    """Send clearance status emails off the request thread.
+
+    ``update_task_status`` supports bulk updates (many ``employee_ids`` at once)
+    and may notify both the offboarding employee and their reporting manager.
+    Sending those emails synchronously inside the request thread increases
+    response latency and timeout risk, so delivery is offloaded here.
+
+    Args:
+        emp_task_ids: iterable of ``EmployeeTask`` primary keys to notify about.
+        status: the new status value (e.g. ``"approved"``, ``"completed"``).
+    """
+
+    def __init__(self, emp_task_ids, status):
+        Thread.__init__(self)
+        self.emp_task_ids = list(emp_task_ids)
+        self.status = status
+
+    def run(self):
+        emp_tasks = EmployeeTask.objects.filter(
+            id__in=self.emp_task_ids
+        ).select_related(
+            "employee_id__employee_id",
+            "task_id",
+        )
+
+        logger.info(
+            "[ClearanceStatusMailThread] START status=%s tasks=%s",
+            self.status,
+            len(self.emp_task_ids),
+        )
+
+        sent_count = failed_count = skipped_no_email = 0
+        for emp_task in emp_tasks:
+            sent, failed, skipped = self._send_for_task(emp_task)
+            sent_count += sent
+            failed_count += failed
+            skipped_no_email += skipped
+
+        logger.info(
+            "[ClearanceStatusMailThread] DONE status=%s sent=%s failed=%s "
+            "skipped_no_email=%s",
+            self.status,
+            sent_count,
+            failed_count,
+            skipped_no_email,
+        )
+
+    def _send_for_task(self, emp_task):
+        """Send clearance emails for a single task.
+
+        Returns a ``(sent, failed, skipped_no_email)`` tuple so the caller can
+        aggregate an overall delivery summary.
+        """
+        from django.utils.html import strip_tags
+
+        status = self.status
+        try:
+            employee = emp_task.employee_id.employee_id
+        except Exception:
+            employee = None
+        if employee is None:
+            logger.warning(
+                "[ClearanceStatusMailThread] no employee for EmployeeTask id=%s; "
+                "skipping",
+                emp_task.pk,
+            )
+            return (0, 0, 0)
+
+        task_title = emp_task.task_id.title if emp_task.task_id else _("Clearance")
+        status_display = dict(EmployeeTask.statuses).get(status, status)
+
+        try:
+            company_name = employee.get_company()
+        except Exception:
+            company_name = None
+
+        reporting_manager = None
+        try:
+            reporting_manager = employee.get_reporting_manager()
+        except Exception:
+            reporting_manager = None
+
+        # (recipient_name, email, role)
+        recipients = []
+        employee_email = (
+            employee.get_mail() if hasattr(employee, "get_mail") else None
+        )
+        if employee_email:
+            recipients.append((employee.get_full_name(), employee_email, "employee"))
+
+        if reporting_manager:
+            manager_email = (
+                reporting_manager.get_mail()
+                if hasattr(reporting_manager, "get_mail")
+                else None
+            )
+            if manager_email:
+                recipients.append(
+                    (reporting_manager.get_full_name(), manager_email, "manager")
+                )
+
+        sent = failed = skipped = 0
+        for recipient_name, to_email, role in recipients:
+            if role == "employee":
+                content = (
+                    f'Your clearance "{task_title}" has been {status_display}.\n\n'
+                    f"Employee: {employee.get_full_name()}\n"
+                    f"Clearance: {task_title}\n"
+                    f"Status: {status_display}"
+                )
+                title = _("Clearance status updated")
+            else:
+                content = (
+                    f'The clearance "{task_title}" for {employee.get_full_name()} '
+                    f"has been {status_display}.\n\n"
+                    f"Employee: {employee.get_full_name()}\n"
+                    f"Clearance: {task_title}\n"
+                    f"Status: {status_display}"
+                )
+                title = _("Employee clearance status updated")
+
+            try:
+                clearance_email = EmailMultiAlternatives(
+                    subject=f'Clearance "{task_title}" has been {status_display}',
+                    body=strip_tags(content),
+                    from_email=CLEARANCE_FROM_EMAIL,
+                    to=[to_email],
+                )
+                clearance_email.attach_alternative(
+                    render_branded_email(
+                        recipient_name=recipient_name,
+                        title=title,
+                        content=content,
+                        company_name=str(company_name) if company_name else "",
+                    ),
+                    "text/html",
+                )
+                attach_inline_logo(clearance_email)
+                # fail_silently=False so SMTP failures raise and are logged below
+                # (delivery loss stays observable instead of being swallowed).
+                clearance_email.send(fail_silently=False)
+                sent += 1
+                logger.info(
+                    "[ClearanceStatusMailThread] SENT task_id=%s to=%s role=%s "
+                    "status=%s",
+                    emp_task.pk,
+                    to_email,
+                    role,
+                    status,
+                )
+            except Exception:
+                failed += 1
+                logger.exception(
+                    "[ClearanceStatusMailThread] SMTP send FAILED task_id=%s to=%s "
+                    "role=%s status=%s",
+                    emp_task.pk,
+                    to_email,
+                    role,
+                    status,
+                )
+
+        return (sent, failed, skipped)
+
+
+def _offb_client_ip(request):
+    """Best-effort client IP: first X-Forwarded-For hop, else REMOTE_ADDR."""
+    forwarded = request.META.get("HTTP_X_FORWARDED_FOR")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.META.get("REMOTE_ADDR", "")
+
+
+def _offb_audit(request, action, target=None, changes=None):
+    """Write an offboarding-module ActivityLog entry for a lifecycle event.
+
+    Thin wrapper over ``log_activity`` so every offboarding event lands in the
+    "Offboarding" audit tab with a consistent actor and (where available) the
+    client IP stamped into ``changes``. Never blocks the request — the
+    underlying helper swallows and logs its own failures.
+    """
+    changes = dict(changes or {})
+    ip = _offb_client_ip(request)
+    if ip:
+        changes.setdefault("IP", ip)
+    log_activity(
+        request.user,
+        module="offboarding",
+        action=action,
+        target=target,
+        changes=changes or None,
+    )
 
 
 def any_manager(employee: Employee):
@@ -290,9 +489,28 @@ def create_offboarding(request):
         instance = Offboarding.objects.filter(id=instance_id).first()
     form = OffboardingForm(instance=instance)
     if request.method == "POST":
+        editing = instance is not None
         form = OffboardingForm(request.POST, instance=instance)
         if form.is_valid():
             off_boarding = form.save()
+            if editing:
+                log_form_changes(
+                    request.user,
+                    "offboarding",
+                    "Offboarding updated",
+                    form=form,
+                    target=off_boarding,
+                )
+            else:
+                _offb_audit(
+                    request,
+                    "Offboarding created",
+                    target=off_boarding,
+                    changes={
+                        "Title": off_boarding.title,
+                        "Status": off_boarding.get_status_display(),
+                    },
+                )
             messages.success(request, _("Offboarding saved"))
             users = [
                 employee.employee_user_id for employee in off_boarding.managers.all()
@@ -336,9 +554,15 @@ def delete_offboarding(request, id):
                 _("Cannot delete offboarding with employees assigned"),
             )
         else:
+            offboarding_title = offboarding.title
             OffboardingTask.objects.filter(stage_id__offboarding_id=offboarding).delete()
             offboarding.delete()
             messages.success(request, _("Offboarding deleted"))
+            _offb_audit(
+                request,
+                "Offboarding deleted",
+                changes={"Title": offboarding_title},
+            )
     except (Offboarding.DoesNotExist, OverflowError):
         messages.error(request, _("Offboarding not found"))
     if request.headers.get("HX-Request"):
@@ -363,6 +587,7 @@ def create_stage(request):
     form = OffboardingStageForm(instance=instance)
     form.instance.offboarding_id = offboarding
     if request.method == "POST":
+        editing = instance is not None
         form = OffboardingStageForm(request.POST, instance=instance)
         form.instance.offboarding_id = offboarding
         if form.is_valid():
@@ -391,6 +616,16 @@ def create_stage(request):
 
             instance.save()
             instance.managers.set(form.data.getlist("managers"))
+            _offb_audit(
+                request,
+                "Offboarding stage updated" if editing else "Offboarding stage created",
+                target=instance,
+                changes={
+                    "Stage": instance.title,
+                    "Type": instance.get_type_display(),
+                    "Offboarding": str(offboarding),
+                },
+            )
             messages.success(request, _("Stage saved"))
             users = [employee.employee_user_id for employee in instance.managers.all()]
             notify.send(
@@ -434,11 +669,24 @@ def add_employee(request):
         offboarding_id=stage.offboarding_id
     )
     if request.method == "POST":
+        editing = instance is not None
         form = OffboardingEmployeeForm(request.POST, instance=instance)
         if form.is_valid():
             instance = form.save(commit=False)
             instance.stage_id = stage
             instance.save()
+            _offb_audit(
+                request,
+                "Employee updated in offboarding"
+                if editing
+                else "Employee added to offboarding",
+                target=instance,
+                changes={
+                    "Employee": str(instance.employee_id),
+                    "Stage": str(stage),
+                    "Offboarding": str(stage.offboarding_id),
+                },
+            )
 
             from django.db.models import Q
             tasks_for_stage = OffboardingTask.objects.filter(
@@ -508,8 +756,14 @@ def delete_employee(request):
     employee_ids = request.GET.getlist("employee_ids")
     instances = OffboardingEmployee.objects.filter(id__in=employee_ids)
     if instances:
+        removed_employees = ", ".join(str(e.employee_id) for e in instances)
         instances.delete()
         messages.success(request, _("Offboarding employee deleted"))
+        _offb_audit(
+            request,
+            "Employee removed from offboarding",
+            changes={"Employees": removed_employees},
+        )
         notify.send(
             request.user.employee_get,
             recipient=User.objects.filter(
@@ -542,8 +796,14 @@ def delete_stage(request):
     try:
         instances = OffboardingStage.objects.filter(id__in=ids)
         if instances:
+            stage_titles = ", ".join(instances.values_list("title", flat=True))
             instances.delete()
             messages.success(request, _("Stage deleted"))
+            _offb_audit(
+                request,
+                "Offboarding stage deleted",
+                changes={"Stages": stage_titles},
+            )
         else:
             messages.error(request, _("Stage not found"))
     except OverflowError:
@@ -565,8 +825,22 @@ def change_stage(request):
 
     # Update stage for each employee
     for employee in employees:
+        old_stage = employee.stage_id
         employee.stage_id = stage
         employee.save()
+        _offb_audit(
+            request,
+            "Offboarding stage changed",
+            target=employee,
+            changes={
+                "Employee": str(employee.employee_id),
+                "Offboarding": str(stage.offboarding_id),
+                "Stage": {
+                    "from": str(old_stage) if old_stage else None,
+                    "to": str(stage),
+                },
+            },
+        )
 
     notice_period_end_date = request.GET.get("notice_period_ends")
 
@@ -597,6 +871,7 @@ def change_stage(request):
                 )
 
     if stage.type == "archived":
+        archived_employees = ", ".join(str(e.employee_id) for e in employees)
         employee_ids = employees.values_list("employee_id__id", flat=True)
         Employee.objects.filter(
             id__in=employee_ids,
@@ -606,6 +881,15 @@ def change_stage(request):
             employee_id__in=employee_ids,
             contract_status="termination_in_progress",
         ).update(contract_status="terminated")
+        _offb_audit(
+            request,
+            "Employee deactivated (offboarding archived)",
+            changes={
+                "Employees": archived_employees,
+                "Offboarding": str(stage.offboarding_id),
+                "Contract status": {"from": "termination_in_progress", "to": "terminated"},
+            },
+        )
 
     from django.db.models import Q
     tasks_for_stage = OffboardingTask.objects.filter(
@@ -693,8 +977,21 @@ def update_last_working_date(request):
 
     try:
         employee = OffboardingEmployee.objects.get(id=employee_id)
+        old_last_working_date = employee.last_working_date
         employee.last_working_date = start_date
         employee.save(update_fields=["last_working_date"])
+        _offb_audit(
+            request,
+            "Last working date updated",
+            target=employee,
+            changes={
+                "Employee": str(employee.employee_id),
+                "Last working date": {
+                    "from": str(old_last_working_date) if old_last_working_date else None,
+                    "to": str(start_date),
+                },
+            },
+        )
     except OffboardingEmployee.DoesNotExist:
         return HttpResponseBadRequest("Employee not found")
 
@@ -741,6 +1038,15 @@ def view_notes(request, employee_id=None):
             attachment.save()
             attachments.append(attachment)
         note.attachments.add(*attachments)
+        _offb_audit(
+            request,
+            "Offboarding note attachment added",
+            target=note,
+            changes={
+                "Employee": str(note.employee_id.employee_id),
+                "Files added": len(attachments),
+            },
+        )
     offboarding_employee_id = employee_id
     employee = OffboardingEmployee.objects.get(id=offboarding_employee_id)
 
@@ -767,6 +1073,15 @@ def add_note(request):
         form.instance.employee_id = employee
         if form.is_valid():
             form.save()
+            _offb_audit(
+                request,
+                "Offboarding note added",
+                target=employee,
+                changes={
+                    "Employee": str(employee.employee_id),
+                    "Note": (form.cleaned_data.get("description") or "")[:200],
+                },
+            )
             messages.success(request, _("Note added successfully"))
             return redirect("view-offboarding-note", employee_id=employee.id)
     return render(
@@ -788,8 +1103,18 @@ def offboarding_note_delete(request, note_id):
     script = ""
     try:
         note = OffboardingNote.objects.get(id=note_id)
+        note_employee = str(note.employee_id.employee_id)
+        note_description = note.description
         note.delete()
         messages.success(request, _("The note has been successfully deleted."))
+        _offb_audit(
+            request,
+            "Offboarding note deleted",
+            changes={
+                "Employee": note_employee,
+                "Note": (note_description or "")[:200],
+            },
+        )
     except OffboardingNote.DoesNotExist:
         messages.error(request, _("Note not found."))
         script = "<script>window.location.reload()</script>"
@@ -805,8 +1130,15 @@ def delete_attachment(request):
     """
     script = ""
     ids = request.GET.getlist("ids")
-    OffboardingStageMultipleFile.objects.filter(id__in=ids).delete()
+    attachments = OffboardingStageMultipleFile.objects.filter(id__in=ids)
+    removed_count = attachments.count()
+    attachments.delete()
     messages.success(request, _("File deleted successfully"))
+    _offb_audit(
+        request,
+        "Offboarding note attachment deleted",
+        changes={"Files removed": removed_count},
+    )
     return HttpResponse(script)
 
 
@@ -839,6 +1171,15 @@ def add_task(request):
         )
         if form.is_valid():
             form.save()
+            _offb_audit(
+                request,
+                "Offboarding task added",
+                target=getattr(form, "instance", None),
+                changes={
+                    "Task": getattr(form.instance, "title", ""),
+                    "Stage ID": stage_id,
+                },
+            )
             messages.success(request, _("Task Added"))
     return render(
         request,
@@ -862,7 +1203,35 @@ def update_task_status(request, *args, **kwargs):
     employee_task = EmployeeTask.objects.filter(
         employee_id__id__in=employee_ids, task_id__id=task_id
     )
+    # choice labels are lazy (gettext_lazy) proxies — coerce to str before join
+    status_labels = {
+        k: str(v) for k, v in EmployeeTask._meta.get_field("status").choices
+    }
+    old_statuses = sorted(
+        {status_labels.get(s, str(s)) for s in employee_task.values_list("status", flat=True)}
+    )
+    task_title = ""
+    affected_employees = ", ".join(
+        str(et.employee_id.employee_id) for et in employee_task.select_related(
+            "employee_id__employee_id", "task_id"
+        )
+    )
+    first_task = employee_task.select_related("task_id").first()
+    if first_task:
+        task_title = first_task.task_id.title
     employee_task.update(status=status)
+    _offb_audit(
+        request,
+        "Offboarding task status changed",
+        changes={
+            "Task": task_title,
+            "Employees": affected_employees,
+            "Status": {
+                "from": ", ".join(old_statuses) if old_statuses else None,
+                "to": status_labels.get(status, str(status)),
+            },
+        },
+    )
     notify.send(
         request.user.employee_get,
         recipient=User.objects.filter(
@@ -878,29 +1247,38 @@ def update_task_status(request, *args, **kwargs):
         redirect=reverse("offboarding-pipeline"),
         icon="information",
     )
-    # Notify the offboarding employees when their clearance is approved/rejected
-    if status in ("approved", "rejected"):
+    # Notify the offboarding employees when their clearance is
+    # approved/rejected/completed
+    if status in ("approved", "rejected", "completed"):
+        clearance_task_ids = []
         for emp_task in employee_task:
+            clearance_task_ids.append(emp_task.pk)
             try:
                 recipient = emp_task.employee_id.employee_id.employee_user_id
-                if not recipient:
-                    continue
-                notify.send(
-                    request.user.employee_get,
-                    recipient=recipient,
-                    verb=(
-                        f'Your clearance "{emp_task.task_id.title}" has been '
-                        f"{status}"
-                    ),
-                    verb_ar=f"",
-                    verb_de=f"",
-                    verb_es=f"",
-                    verb_fr=f"",
-                    redirect=reverse("offboarding-pipeline"),
-                    icon="information",
-                )
+                if recipient:
+                    notify.send(
+                        request.user.employee_get,
+                        recipient=recipient,
+                        verb=(
+                            f'Your clearance "{emp_task.task_id.title}" has been '
+                            f"{status}"
+                        ),
+                        verb_ar=f"",
+                        verb_de=f"",
+                        verb_es=f"",
+                        verb_fr=f"",
+                        redirect=reverse("offboarding-pipeline"),
+                        icon="information",
+                    )
             except Exception:
-                pass
+                logger.exception("Failed to send clearance status notification")
+
+        if clearance_task_ids:
+            transaction.on_commit(
+                lambda: ClearanceStatusMailThread(
+                    clearance_task_ids, status
+                ).start()
+            )
     stage = OffboardingStage.objects.get(id=stage_id)
     stage_forms = {}
     stage_forms[str(stage.offboarding_id.id)] = StageSelectForm(
@@ -938,6 +1316,15 @@ def task_assign(request):
             assigned_task.save()
         except:
             pass
+    _offb_audit(
+        request,
+        "Offboarding task assigned",
+        target=task,
+        changes={
+            "Task": task.title,
+            "Assigned to": ", ".join(str(e.employee_id) for e in employees),
+        },
+    )
     offboarding = employees.first().stage_id.offboarding_id
     stage_forms = {}
     stage_forms[str(offboarding.id)] = StageSelectForm(offboarding=offboarding)
@@ -969,8 +1356,14 @@ def delete_task(request):
             request, _("Cannot delete task(s) because they are assigned to employees.")
         )
     elif tasks.exists():
+        deleted_titles = ", ".join(tasks.values_list("title", flat=True))
         tasks.delete()
         messages.success(request, _("Task deleted"))
+        _offb_audit(
+            request,
+            "Offboarding task deleted",
+            changes={"Tasks": deleted_titles},
+        )
     else:
         messages.error(request, _("Task not found"))
 
@@ -1141,8 +1534,15 @@ def delete_resignation_request(request):
     This method is used to delete resignation letter instance
     """
     ids = request.GET.getlist("letter_ids")
-    ResignationLetter.objects.filter(id__in=ids).delete()
+    letters = ResignationLetter.objects.filter(id__in=ids)
+    deleted_employees = ", ".join(str(letter.employee_id) for letter in letters)
+    letters.delete()
     messages.success(request, _("Resignation letter deleted"))
+    _offb_audit(
+        request,
+        "Resignation request deleted",
+        changes={"Employees": deleted_employees},
+    )
     if request.META.get("HTTP_REFERER") and request.META.get("HTTP_REFERER").endswith(
             "employee-profile/"
     ):
@@ -1164,6 +1564,7 @@ def create_resignation_request(request):
         instance = ResignationLetter.objects.get(id=instance_id)
     form = ResignationLetterForm(instance=instance)
     if request.method == "POST":
+        editing = instance is not None
         form = ResignationLetterForm(request.POST, instance=instance)
         if form.is_valid():
             hr_users = User.objects.filter(groups__name="HR")
@@ -1184,6 +1585,35 @@ def create_resignation_request(request):
 
             print(employee, description)
             form.save()
+            _offb_audit(
+                request,
+                "Resignation request updated"
+                if editing
+                else "Resignation request submitted",
+                target=form.instance,
+                changes={
+                    "Employee": str(employee),
+                    "Exit reason": str(exit_reason) if exit_reason else None,
+                    "Planned to leave on": str(planned_to_leave_on),
+                    "Status": form.instance.get_status_display(),
+                },
+            )
+            from django.utils.html import strip_tags
+
+            resign_company = None
+            try:
+                resign_company = (
+                    employee.get_company() if hasattr(employee, "get_company") else None
+                )
+            except Exception:
+                resign_company = None
+            resignation_content = (
+                f"A new resignation request has been submitted.\n\n"
+                f"Employee: {employee}\n"
+                f"Planned Last Working Day: {planned_to_leave_on}\n"
+                f"Exit Reason: {exit_reason}\n"
+                f"Description: {strip_tags(description) if description else ''}"
+            )
             for user in hr_users:
                 notify.send(
                     sender=employee,
@@ -1194,19 +1624,27 @@ def create_resignation_request(request):
                 )
 
                 if user.email:
-                    send_mail(
+                    try:
+                        recipient_name = user.employee_get.get_full_name()
+                    except Exception:
+                        recipient_name = user.get_full_name() or user.username
+                    resignation_email = EmailMultiAlternatives(
                         subject=f"New resignation letter from {employee}",
-                        message=description,
-                        from_email='tech@wireapps.co.uk',
-                        recipient_list=[user.email],
-                        fail_silently=True,
-                        html_message=render_to_string("emails/resignation_request.html", {
-                            "employee": employee,
-                            "description": description,
-                            "planned_to_leave_on": planned_to_leave_on,
-                            "exit_reason": exit_reason,
-                        })
+                        body=strip_tags(resignation_content),
+                        from_email="tech@wireapps.co.uk",
+                        to=[user.email],
                     )
+                    resignation_email.attach_alternative(
+                        render_branded_email(
+                            recipient_name=recipient_name,
+                            title="New resignation request",
+                            content=resignation_content,
+                            company_name=str(resign_company) if resign_company else "",
+                        ),
+                        "text/html",
+                    )
+                    attach_inline_logo(resignation_email)
+                    resignation_email.send(fail_silently=True)
 
             messages.success(request, _("Resignation letter saved"))
             return HttpResponse("<script>window.location.reload()</script>")
@@ -1223,9 +1661,28 @@ def create_exit_reason(request):
     form = ResignationReasonForm(instance=instance)
 
     if request.method == "POST":
+        editing = instance is not None
         form = ResignationReasonForm(request.POST, request.FILES, instance=instance)
         if form.is_valid():
-            form.save()
+            reason = form.save()
+            if editing:
+                log_form_changes(
+                    request.user,
+                    "offboarding",
+                    "Exit reason updated",
+                    form=form,
+                    target=reason,
+                )
+            else:
+                _offb_audit(
+                    request,
+                    "Exit reason created",
+                    target=reason,
+                    changes={
+                        "Reason": reason.title,
+                        "Type": reason.get_reason_type_display(),
+                    },
+                )
             messages.success(request, _("Exit reason saved successfully"))
             return HttpResponse("<script>window.location.reload()</script>")
 
@@ -1281,12 +1738,25 @@ def update_status(request):
         for letter in letters:
             if letter.status == status:
                 continue
+            old_status = letter.get_status_display()
             letter.status = status
             letter.save()
             if status == "approved":
                 letter.to_offboarding_employee(
                     offboarding, notice_period_starts, notice_period_ends
                 )
+            _offb_audit(
+                request,
+                "Resignation request approved"
+                if status == "approved"
+                else "Resignation request rejected",
+                target=letter,
+                changes={
+                    "Employee": str(letter.employee_id),
+                    "Exit reason": str(letter.exit_reason) if letter.exit_reason else None,
+                    "Status": {"from": old_status, "to": letter.get_status_display()},
+                },
+            )
             messages.success(
                 request, f"Resignation request has been {letter.get_status_display()}"
             )
@@ -1323,6 +1793,13 @@ def enable_resignation_request(request):
     resignation_request_feature.save()
     message_text = (
         "enabled" if resignation_request_feature.resignation_request else "disabled"
+    )
+    _offb_audit(
+        request,
+        "Resignation request setting "
+        + ("enabled" if resignation_request_feature.resignation_request else "disabled"),
+        target=resignation_request_feature,
+        changes={"Resignation request": message_text},
     )
     messages.success(
         request,
@@ -1638,6 +2115,13 @@ def edit_common_task(request, task_id):
         form = TaskForm(request.POST, instance=task)
         if form.is_valid():
             form.save()
+            log_form_changes(
+                request.user,
+                "offboarding",
+                "Task template updated",
+                form=form,
+                target=task,
+            )
 
             tasks = OffboardingTask.objects.filter(is_active=True, is_fine=False)
             return render(request, "offboarding/task/common_task_list.html", {"tasks": tasks})
@@ -1659,7 +2143,13 @@ def delete_common_task(request, task_id):
             "This task is assigned to %(count)d employee(s) and cannot be deleted."
         ) % {"count": assigned_count}
     else:
+        task_title = task.title
         task.delete()
+        _offb_audit(
+            request,
+            "Task template deleted",
+            changes={"Task": task_title},
+        )
 
     task_list = OffboardingTask.objects.filter(is_active=True, is_fine=False).order_by("-id")
     paginator = Paginator(task_list, 5)
@@ -1676,6 +2166,12 @@ def create_common_task(request):
         form = TaskForm(request.POST)
         if form.is_valid():
             form.save()
+            _offb_audit(
+                request,
+                "Task template created",
+                target=getattr(form, "instance", None),
+                changes={"Task": getattr(form.instance, "title", "")},
+            )
 
             tasks = OffboardingTask.objects.filter(is_active=True, is_fine=False)
             return render(request, "offboarding/task/common_task_list.html", {"tasks": tasks})
@@ -1694,6 +2190,13 @@ def edit_resignation_reason(request, id):
         form = ResignationReasonForm(request.POST, request.FILES, instance=instance)
         if form.is_valid():
             form.save()
+            log_form_changes(
+                request.user,
+                "offboarding",
+                "Exit reason updated",
+                form=form,
+                target=instance,
+            )
             messages.success(request, _("Exit reason updated successfully"))
             return HttpResponse("<script>window.location.reload()</script>")
     return render(request, "offboarding/resignation/exit_reason_form.html", {"form": form})
@@ -1707,7 +2210,13 @@ def delete_resignation_reason(request, id):
             request, _("This resignation reason is currently in use and cannot be deleted.")
         )
     else:
+        reason_title = instance.title
         instance.delete()
         messages.success(request, _("Exit reason deleted successfully"))
+        _offb_audit(
+            request,
+            "Exit reason deleted",
+            changes={"Reason": reason_title},
+        )
     return redirect("resignation-reason-view")
 

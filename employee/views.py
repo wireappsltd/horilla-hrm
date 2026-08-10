@@ -1885,19 +1885,30 @@ _ROLE_FIELDS = (
     ("job_role", "job_role_id"),
 )
 
+# Scheduling fields assigned from the same work-info form. Logged separately
+# from _ROLE_FIELDS so a shift change reads as an assignment rather than being
+# buried inside a "Role change" entry — shift assignment is an auditable
+# attendance-scope event in its own right.
+_ASSIGNMENT_FIELDS = (
+    ("shift", "shift_id"),
+    ("work_type", "work_type_id"),
+)
+
 
 def _capture_role_fields(work_info):
-    """Snapshot the current role-related objects, for before/after diffing."""
+    """Snapshot the current role and assignment objects, for before/after diffing."""
     if work_info is None:
         return {}
-    return {attr: getattr(work_info, attr, None) for _label, attr in _ROLE_FIELDS}
+    return {
+        attr: getattr(work_info, attr, None)
+        for _label, attr in _ROLE_FIELDS + _ASSIGNMENT_FIELDS
+    }
 
 
-def _log_role_changes(request, employee, old_values, work_info):
-    """Write a 'Role change' audit entry for any reporting-manager / job-position
-    / job-role change. No entry is written when none of these changed."""
+def _field_diff(fields, old_values, work_info):
+    """Return {label: {from, to}} for the given fields that actually changed."""
     diff = {}
-    for label, attr in _ROLE_FIELDS:
+    for label, attr in fields:
         old = old_values.get(attr)
         new = getattr(work_info, attr, None)
         if old != new:
@@ -1905,13 +1916,40 @@ def _log_role_changes(request, employee, old_values, work_info):
                 "from": str(old) if old else None,
                 "to": str(new) if new else None,
             }
-    if diff:
+    return diff
+
+
+def _log_role_changes(request, employee, old_values, work_info):
+    """Audit work-info changes made through any of the four save paths.
+
+    Emits up to two entries: a 'Role change' for reporting-manager /
+    job-position / job-role, and a separate 'Shift/work type assigned' for
+    shift and work-type changes so assignments are reviewable on their own.
+    Nothing is written when neither group changed.
+    """
+    role_diff = _field_diff(_ROLE_FIELDS, old_values, work_info)
+    if role_diff:
         log_activity(
             request.user,
             module="employee",
             action="Role change",
             target=employee,
-            changes=diff,
+            changes=role_diff,
+        )
+
+    assignment_diff = _field_diff(_ASSIGNMENT_FIELDS, old_values, work_info)
+    if assignment_diff:
+        assignment_diff["Employee"] = str(employee)
+        ip = request.META.get("HTTP_X_FORWARDED_FOR")
+        ip = ip.split(",")[0].strip() if ip else request.META.get("REMOTE_ADDR", "")
+        if ip:
+            assignment_diff.setdefault("IP", ip)
+        log_activity(
+            request.user,
+            module="employee",
+            action="Shift/work type assigned",
+            target=employee,
+            changes=assignment_diff,
         )
 
 
