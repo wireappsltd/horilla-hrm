@@ -2108,7 +2108,6 @@ def mail_server_conf(request):
 def mail_server_test_email(request):
     instance_id = request.GET.get("instance_id")
     white_labelling = getattr(horilla_apps, "WHITE_LABELLING", False)
-    image_path = path.join(settings.STATIC_ROOT, "images/ui/horilla-logo.png")
     company_name = "Horilla"
 
     if white_labelling:
@@ -2124,7 +2123,6 @@ def mail_server_test_email(request):
 
         if company:
             company_name = company.company
-            image_path = path.join(settings.MEDIA_ROOT, company.icon.name)
 
     form = DynamicMailTestForm()
     if request.method == "POST":
