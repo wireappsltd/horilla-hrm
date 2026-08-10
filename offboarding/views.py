@@ -1,9 +1,10 @@
 import json
 from datetime import datetime, timedelta
+from threading import Thread
 from urllib.parse import parse_qs
 
 from django.apps import apps
-from django.db import models
+from django.db import models, transaction
 from django.contrib import messages
 from django.contrib.auth.models import User
 from django.core.mail import EmailMultiAlternatives
@@ -81,101 +82,169 @@ logger = getLogger(__name__)
 CLEARANCE_FROM_EMAIL = "tech@wireapps.co.uk"
 
 
-def send_clearance_status_email(emp_task, status):
+class ClearanceStatusMailThread(Thread):
+    """Send clearance status emails off the request thread.
+
+    ``update_task_status`` supports bulk updates (many ``employee_ids`` at once)
+    and may notify both the offboarding employee and their reporting manager.
+    Sending those emails synchronously inside the request thread increases
+    response latency and timeout risk, so delivery is offloaded here.
+
+    Args:
+        emp_task_ids: iterable of ``EmployeeTask`` primary keys to notify about.
+        status: the new status value (e.g. ``"approved"``, ``"completed"``).
     """
-    Send branded clearance notification emails to the offboarding employee and
-    their reporting manager whenever a clearance/task status is updated.
 
-    """
-    from django.utils.html import strip_tags
+    def __init__(self, emp_task_ids, status):
+        Thread.__init__(self)
+        self.emp_task_ids = list(emp_task_ids)
+        self.status = status
 
-    try:
-        employee = emp_task.employee_id.employee_id
-    except Exception:
-        employee = None
-    if employee is None:
-        return
-
-    task_title = emp_task.task_id.title if emp_task.task_id else _("Clearance")
-    status_display = dict(EmployeeTask.statuses).get(status, status)
-
-    try:
-        company_name = employee.get_company()
-    except Exception:
-        company_name = None
-
-    reporting_manager = None
-    try:
-        reporting_manager = employee.get_reporting_manager()
-    except Exception:
-        reporting_manager = None
-
-    # (recipient_employee, recipient_name, email, role)
-    recipients = []
-
-    employee_email = employee.get_mail() if hasattr(employee, "get_mail") else None
-    if employee_email:
-        recipients.append(
-            (employee, employee.get_full_name(), employee_email, "employee")
+    def run(self):
+        emp_tasks = EmployeeTask.objects.filter(
+            id__in=self.emp_task_ids
+        ).select_related(
+            "employee_id__employee_id",
+            "task_id",
         )
 
-    if reporting_manager:
-        manager_email = (
-            reporting_manager.get_mail()
-            if hasattr(reporting_manager, "get_mail")
-            else None
+        logger.info(
+            "[ClearanceStatusMailThread] START status=%s tasks=%s",
+            self.status,
+            len(self.emp_task_ids),
         )
-        if manager_email:
-            recipients.append(
-                (
-                    reporting_manager,
-                    reporting_manager.get_full_name(),
-                    manager_email,
-                    "manager",
-                )
-            )
 
-    for _recipient, recipient_name, to_email, role in recipients:
-        if role == "employee":
-            content = (
-                f'Your clearance "{task_title}" has been {status_display}.\n\n'
-                f"Employee: {employee.get_full_name()}\n"
-                f"Clearance: {task_title}\n"
-                f"Status: {status_display}"
+        sent_count = failed_count = skipped_no_email = 0
+        for emp_task in emp_tasks:
+            sent, failed, skipped = self._send_for_task(emp_task)
+            sent_count += sent
+            failed_count += failed
+            skipped_no_email += skipped
+
+        logger.info(
+            "[ClearanceStatusMailThread] DONE status=%s sent=%s failed=%s "
+            "skipped_no_email=%s",
+            self.status,
+            sent_count,
+            failed_count,
+            skipped_no_email,
+        )
+
+    def _send_for_task(self, emp_task):
+        """Send clearance emails for a single task.
+
+        Returns a ``(sent, failed, skipped_no_email)`` tuple so the caller can
+        aggregate an overall delivery summary.
+        """
+        from django.utils.html import strip_tags
+
+        status = self.status
+        try:
+            employee = emp_task.employee_id.employee_id
+        except Exception:
+            employee = None
+        if employee is None:
+            logger.warning(
+                "[ClearanceStatusMailThread] no employee for EmployeeTask id=%s; "
+                "skipping",
+                emp_task.pk,
             )
-            title = _("Clearance status updated")
-        else:
-            content = (
-                f'The clearance "{task_title}" for {employee.get_full_name()} '
-                f"has been {status_display}.\n\n"
-                f"Employee: {employee.get_full_name()}\n"
-                f"Clearance: {task_title}\n"
-                f"Status: {status_display}"
-            )
-            title = _("Employee clearance status updated")
+            return (0, 0, 0)
+
+        task_title = emp_task.task_id.title if emp_task.task_id else _("Clearance")
+        status_display = dict(EmployeeTask.statuses).get(status, status)
 
         try:
-            clearance_email = EmailMultiAlternatives(
-                subject=f'Clearance "{task_title}" has been {status_display}',
-                body=strip_tags(content),
-                from_email=CLEARANCE_FROM_EMAIL,
-                to=[to_email],
-            )
-            clearance_email.attach_alternative(
-                render_branded_email(
-                    recipient_name=recipient_name,
-                    title=title,
-                    content=content,
-                    company_name=str(company_name) if company_name else "",
-                ),
-                "text/html",
-            )
-            attach_inline_logo(clearance_email)
-            clearance_email.send(fail_silently=True)
+            company_name = employee.get_company()
         except Exception:
-            logger.exception(
-                "Failed to send clearance status email to %s", to_email
+            company_name = None
+
+        reporting_manager = None
+        try:
+            reporting_manager = employee.get_reporting_manager()
+        except Exception:
+            reporting_manager = None
+
+        # (recipient_name, email, role)
+        recipients = []
+        employee_email = (
+            employee.get_mail() if hasattr(employee, "get_mail") else None
+        )
+        if employee_email:
+            recipients.append((employee.get_full_name(), employee_email, "employee"))
+
+        if reporting_manager:
+            manager_email = (
+                reporting_manager.get_mail()
+                if hasattr(reporting_manager, "get_mail")
+                else None
             )
+            if manager_email:
+                recipients.append(
+                    (reporting_manager.get_full_name(), manager_email, "manager")
+                )
+
+        sent = failed = skipped = 0
+        for recipient_name, to_email, role in recipients:
+            if role == "employee":
+                content = (
+                    f'Your clearance "{task_title}" has been {status_display}.\n\n'
+                    f"Employee: {employee.get_full_name()}\n"
+                    f"Clearance: {task_title}\n"
+                    f"Status: {status_display}"
+                )
+                title = _("Clearance status updated")
+            else:
+                content = (
+                    f'The clearance "{task_title}" for {employee.get_full_name()} '
+                    f"has been {status_display}.\n\n"
+                    f"Employee: {employee.get_full_name()}\n"
+                    f"Clearance: {task_title}\n"
+                    f"Status: {status_display}"
+                )
+                title = _("Employee clearance status updated")
+
+            try:
+                clearance_email = EmailMultiAlternatives(
+                    subject=f'Clearance "{task_title}" has been {status_display}',
+                    body=strip_tags(content),
+                    from_email=CLEARANCE_FROM_EMAIL,
+                    to=[to_email],
+                )
+                clearance_email.attach_alternative(
+                    render_branded_email(
+                        recipient_name=recipient_name,
+                        title=title,
+                        content=content,
+                        company_name=str(company_name) if company_name else "",
+                    ),
+                    "text/html",
+                )
+                attach_inline_logo(clearance_email)
+                # fail_silently=False so SMTP failures raise and are logged below
+                # (delivery loss stays observable instead of being swallowed).
+                clearance_email.send(fail_silently=False)
+                sent += 1
+                logger.info(
+                    "[ClearanceStatusMailThread] SENT task_id=%s to=%s role=%s "
+                    "status=%s",
+                    emp_task.pk,
+                    to_email,
+                    role,
+                    status,
+                )
+            except Exception:
+                failed += 1
+                logger.exception(
+                    "[ClearanceStatusMailThread] SMTP send FAILED task_id=%s to=%s "
+                    "role=%s status=%s",
+                    emp_task.pk,
+                    to_email,
+                    role,
+                    status,
+                )
+
+        return (sent, failed, skipped)
 
 
 def _offb_client_ip(request):
@@ -1181,7 +1250,9 @@ def update_task_status(request, *args, **kwargs):
     # Notify the offboarding employees when their clearance is
     # approved/rejected/completed
     if status in ("approved", "rejected", "completed"):
+        clearance_task_ids = []
         for emp_task in employee_task:
+            clearance_task_ids.append(emp_task.pk)
             try:
                 recipient = emp_task.employee_id.employee_id.employee_user_id
                 if recipient:
@@ -1201,8 +1272,13 @@ def update_task_status(request, *args, **kwargs):
                     )
             except Exception:
                 logger.exception("Failed to send clearance status notification")
-            # Send branded emails to the Employee and their Reporting Manager
-            send_clearance_status_email(emp_task, status)
+
+        if clearance_task_ids:
+            transaction.on_commit(
+                lambda: ClearanceStatusMailThread(
+                    clearance_task_ids, status
+                ).start()
+            )
     stage = OffboardingStage.objects.get(id=stage_id)
     stage_forms = {}
     stage_forms[str(stage.offboarding_id.id)] = StageSelectForm(
