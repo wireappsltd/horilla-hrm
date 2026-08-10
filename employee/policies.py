@@ -21,6 +21,7 @@ from base.methods import (
     get_key_instances,
     paginator_qry,
 )
+from employee.audit import emp_audit, emp_form_audit, policy_details
 from employee.filters import DisciplinaryActionFilter, PolicyFilter
 from employee.forms import DisciplinaryActionForm, PolicyForm
 from employee.models import (
@@ -64,7 +65,27 @@ def create_policy(request):
     if request.method == "POST":
         form = PolicyForm(request.POST, request.FILES, instance=instance)
         if form.is_valid():
-            form.save()
+            # PolicyForm.save returns (instance, attachments), not the bare
+            # instance a plain ModelForm would give back.
+            saved, _attachments = form.save()
+            # One view serves both create and edit; `instance` is only set when
+            # an existing policy was loaded, so it decides which action is
+            # recorded. Edits carry the field-level diff, creates the snapshot.
+            if instance is None:
+                emp_audit(
+                    request,
+                    "Policy created",
+                    target=saved,
+                    changes=policy_details(saved),
+                )
+            else:
+                emp_form_audit(
+                    request,
+                    "Policy updated",
+                    form=form,
+                    target=saved,
+                    extra=policy_details(saved),
+                )
             messages.success(request, "Policy saved")
             form = PolicyForm()
             # return HttpResponse("<script>window.location.reload()</script>")
@@ -115,10 +136,22 @@ def delete_policies(request):
     """
     try:
         ids = request.GET.getlist("ids")
+        # Snapshot before the queryset delete: afterwards there is nothing left
+        # to describe which policies went. One entry each, so a bulk delete is
+        # traceable policy by policy rather than as a single count. The
+        # instances are kept alongside their details because a queryset delete
+        # leaves the in-memory objects' pks intact, so each entry can still
+        # carry a target rather than only a reference string.
+        doomed = [
+            (policy, policy_details(policy))
+            for policy in Policy.objects.filter(id__in=ids)
+        ]
         count, dict = Policy.objects.filter(id__in=ids).delete()
         if count == 0:
             messages.error(request, _("Policies Not Found"))
         else:
+            for policy, details in doomed:
+                emp_audit(request, "Policy deleted", target=policy, changes=details)
             messages.success(request, "Policies deleted")
     except ValueError:
         messages.error(request, _("Policies Not Found"))
@@ -141,6 +174,11 @@ def add_attachment(request):
         attachments.append(attachment)
     policy = Policy.objects.get(id=policy_id)
     policy.attachments.add(*attachments)
+    details = policy_details(policy)
+    details["Attachments added"] = ", ".join(
+        attachment.attachment.name.rsplit("/", 1)[-1] for attachment in attachments
+    )
+    emp_audit(request, "Policy attachment added", target=policy, changes=details)
     messages.success(request, "Attachments added")
     return render(request, "policies/attachments.html", {"policy": policy})
 
@@ -154,7 +192,17 @@ def remove_attachment(request):
     ids = request.GET.getlist("ids")
     policy_id = request.GET["policy_id"]
     policy = Policy.objects.get(id=policy_id)
+    # Names captured before the delete — afterwards the rows are gone and the
+    # entry could only say "some attachments were removed".
+    removed = [
+        attachment.attachment.name.rsplit("/", 1)[-1]
+        for attachment in PolicyMultipleFile.objects.filter(id__in=ids)
+    ]
     PolicyMultipleFile.objects.filter(id__in=ids).delete()
+    if removed:
+        details = policy_details(policy)
+        details["Attachments removed"] = ", ".join(removed)
+        emp_audit(request, "Policy attachment deleted", target=policy, changes=details)
     return render(request, "policies/attachments.html", {"policy": policy})
 
 
