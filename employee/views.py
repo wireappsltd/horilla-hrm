@@ -2962,6 +2962,27 @@ def work_info_import(request):
                 else None
             )
 
+            # Every bulk_create_* helper above uses QuerySet.bulk_create(),
+            # which does not emit post_save, so config_tracking never sees the
+            # departments, job positions, job roles, work types, shifts and
+            # employee types this import creates. Log the import explicitly or
+            # it leaves no audit trail at all.
+            if created_count > 0:
+                log_activity(
+                    request.user,
+                    module="employee",
+                    action="Employees imported",
+                    changes={
+                        "File": getattr(file, "name", ""),
+                        "Rows in file": str(created_count + len(error_list)),
+                        "Employees created": str(created_count),
+                        "Rows rejected": str(len(error_list)),
+                        "Note": (
+                            "May also have created departments, job positions, "
+                            "job roles, work types, shifts and employee types"
+                        ),
+                    },
+                )
             context = {
                 "created_count": created_count,
                 "total_count": created_count + len(error_list),
