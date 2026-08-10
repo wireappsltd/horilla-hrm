@@ -6,6 +6,7 @@ This module is used to map url pattens with django views or methods
 
 import csv
 import json
+import logging
 import os
 import random
 import threading
@@ -190,6 +191,8 @@ from horilla_audit.methods import log_activity, log_login
 from horilla_audit.models import AccountBlockUnblock, AuditTag, HistoryTrackingFields
 from notifications.models import Notification
 from notifications.signals import notify
+
+logger = logging.getLogger(__name__)
 
 
 def custom404(request):
@@ -883,7 +886,28 @@ class HorillaPasswordResetView(PasswordResetView):
                 "html_email_template_name": self.html_email_template_name,
                 "extra_email_context": self.extra_email_context,
             }
-            form.save(**opts)
+            try:
+                form.save(**opts)
+            except Exception as e:
+                logger.exception("Password reset email failed for %s", username)
+                log_activity(
+                    self.request.user,
+                    module="password_reset",
+                    action="Password reset failed",
+                    target=user,
+                    changes={
+                        "target_user": username,
+                        "request_type": "self",
+                        "status": "Failed",
+                        "reason": type(e).__name__,
+                    },
+                )
+                messages.error(
+                    self.request,
+                    _("Could not send the password reset email. Please try again later."),
+                )
+                return redirect("forgot-password")
+
             log_activity(
                 self.request.user,
                 module="password_reset",
@@ -982,6 +1006,10 @@ class EmployeePasswordResetView(PasswordResetView):
             return HttpResponseRedirect(self.request.META.get("HTTP_REFERER", "/"))
 
         except Exception as e:
+            logger.exception(
+                "Admin-initiated password reset failed for %s",
+                form.cleaned_data.get("email") if form.is_valid() else None,
+            )
             log_activity(
                 self.request.user,
                 module="password_reset",
@@ -990,7 +1018,7 @@ class EmployeePasswordResetView(PasswordResetView):
                     "target_user": form.cleaned_data.get("email") if form.is_valid() else None,
                     "request_type": "admin",
                     "status": "Failed",
-                    "reason": str(e)[:200],
+                    "reason": type(e).__name__,
                 },
             )
             messages.error(self.request, f"Something went wrong.....")

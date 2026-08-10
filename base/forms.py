@@ -2642,13 +2642,15 @@ class PassWordResetForm(forms.Form):
         """
         username = self.cleaned_data["email"]
         user = User.objects.get(username=username)
-        employee = user.employee_get
-        email = employee.email
+
+        employee = getattr(user, "employee_get", None)
+        email = getattr(employee, "email", None) if employee else user.email
         work_mail = None
-        try:
-            work_mail = employee.employee_work_info.email
-        except Exception as e:
-            pass
+        if employee is not None:
+            try:
+                work_mail = employee.employee_work_info.email
+            except Exception as e:
+                pass
         if work_mail:
             email = work_mail
 
@@ -2689,8 +2691,11 @@ class PassWordResetForm(forms.Form):
             company = (
                 employee.get_company() if hasattr(employee, "get_company") else None
             )
+            recipient_name = (
+                employee.get_full_name() if employee is not None else user.username
+            )
             branded_html = render_branded_email(
-                recipient_name=employee.get_full_name(),
+                recipient_name=recipient_name,
                 title="Password reset requested",
                 content=(
                     "We received a request to reset the password for your account. "
@@ -2707,7 +2712,7 @@ class PassWordResetForm(forms.Form):
 
             context["subject_override"] = "Password reset requested"
             context["plain_body_override"] = (
-                f"Hello {employee.get_full_name()},\n\n"
+                f"Hello {recipient_name},\n\n"
                 "We received a request to reset the password for your account. "
                 "Use the link below to choose a new password. If you did not "
                 "request this, you can safely ignore this email.\n\n"
