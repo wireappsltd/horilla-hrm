@@ -1178,8 +1178,9 @@ def update_task_status(request, *args, **kwargs):
         redirect=reverse("offboarding-pipeline"),
         icon="information",
     )
-    # Notify the offboarding employees when their clearance is approved/rejected
-    if status in ("approved", "rejected"):
+    # Notify the offboarding employees when their clearance is
+    # approved/rejected/completed
+    if status in ("approved", "rejected", "completed"):
         for emp_task in employee_task:
             try:
                 recipient = emp_task.employee_id.employee_id.employee_user_id
