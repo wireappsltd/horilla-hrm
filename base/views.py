@@ -883,7 +883,27 @@ class HorillaPasswordResetView(PasswordResetView):
                 "html_email_template_name": self.html_email_template_name,
                 "extra_email_context": self.extra_email_context,
             }
-            form.save(**opts)
+            try:
+                form.save(**opts)
+            except Exception as e:
+                log_activity(
+                    self.request.user,
+                    module="password_reset",
+                    action="Password reset failed",
+                    target=user,
+                    changes={
+                        "target_user": username,
+                        "request_type": "self",
+                        "status": "Failed",
+                        "reason": str(e)[:200],
+                    },
+                )
+                messages.error(
+                    self.request,
+                    _("Could not send the password reset email. Please try again later."),
+                )
+                return redirect("forgot-password")
+
             log_activity(
                 self.request.user,
                 module="password_reset",
