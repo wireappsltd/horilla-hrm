@@ -2796,8 +2796,15 @@ def employee_work_info_view_update(request, obj_id):
         messages.info(request, _("You don't have permission to access this employee."))
         return redirect(employee_view)
     form = EmployeeForm(instance=work_information.employee_id)
+    # An employee may have no bank details row yet. The reverse accessor raises
+    # RelatedObjectDoesNotExist rather than returning None, which 500s the whole
+    # work-info update before the form is ever saved — so the update silently
+    # fails and no audit entry is written. Look the row up defensively, the way
+    # the sibling create view already does.
     bank_form = EmployeeBankDetailsUpdateForm(
-        instance=work_information.employee_id.employee_bank_details
+        instance=EmployeeBankDetails.objects.filter(
+            employee_id=work_information.employee_id
+        ).first()
     )
     old_role_values = _capture_role_fields(work_information)
     work_form = EmployeeWorkInformationUpdateForm(
@@ -2878,8 +2885,12 @@ def employee_bank_details_view_update(request, obj_id):
         messages.info(request, _("You don't have permission to access this employee."))
         return redirect(employee_view)
     form = EmployeeForm(instance=employee_bank_instance.employee_id)
+    # Same hazard in the other direction: an employee with bank details but no
+    # work information row would 500 here before the bank update could save.
     work_form = EmployeeWorkInformationUpdateForm(
-        instance=employee_bank_instance.employee_id.employee_work_info
+        instance=EmployeeWorkInformation.objects.filter(
+            employee_id=employee_bank_instance.employee_id
+        ).first()
     )
     bank_form = EmployeeBankDetailsUpdateForm(
         request.POST, instance=employee_bank_instance
