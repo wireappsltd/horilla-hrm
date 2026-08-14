@@ -11,7 +11,7 @@ from django.apps import apps
 from django.conf import settings
 from django.contrib.auth.models import Group
 from django.contrib.staticfiles import finders
-from django.core.exceptions import ObjectDoesNotExist
+from django.core.exceptions import FieldDoesNotExist, ObjectDoesNotExist
 from django.core.paginator import Paginator
 from django.db import models
 from django.db.models import ForeignKey, ManyToManyField, OneToOneField, Q
@@ -234,16 +234,22 @@ def sortby(request, queryset, key):
             ordering["ordering"] = ""
             order = f"-{sortby}"
 
-        for part in field_parts:
-            field = model_meta.get_field(part)
-            if isinstance(field, models.ForeignKey):
+        for index, part in enumerate(field_parts):
+            try:
+                field = model_meta.get_field(part)
+            except FieldDoesNotExist:
+                # Invalid field path, skip ordering instead of raising a 500
+                break
+            is_last = index == len(field_parts) - 1
+            if not is_last and field.is_relation:
                 model_meta = field.related_model._meta
+                continue
+            if isinstance(field, models.CharField):
+                queryset = queryset.annotate(lower_title=Lower(sortby))
+                queryset = queryset.order_by(f"{ordering['ordering']}lower_title")
             else:
-                if isinstance(field, models.CharField):
-                    queryset = queryset.annotate(lower_title=Lower(sortby))
-                    queryset = queryset.order_by(f"{ordering['ordering']}lower_title")
-                else:
-                    queryset = queryset.order_by(f'{ordering["ordering"]}{sortby}')
+                queryset = queryset.order_by(f'{ordering["ordering"]}{sortby}')
+            break
 
         orderingList = [item for item in orderingList if item["id"] != id]
         orderingList.append(ordering)
