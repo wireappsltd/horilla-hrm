@@ -27,7 +27,7 @@ from horilla.horilla_apps import TWO_FACTORS_AUTHENTICATION
 from horilla.horilla_settings import APPS
 from horilla.methods import (
     get_horilla_model_class,
-    is_full_page_navigation,
+    is_ajax_partial_request,
     session_expired_response,
 )
 from horilla_documents.models import DocumentRequest
@@ -285,7 +285,7 @@ class InactivityTimeoutMiddleware:
                 )
                 login_redirect = redirect("login")
                 location = login_redirect["Location"]
-                if not is_full_page_navigation(request):
+                if is_ajax_partial_request(request):
                     return session_expired_response(location)
                 return login_redirect
 

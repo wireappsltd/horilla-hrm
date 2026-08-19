@@ -47,6 +47,36 @@ def is_full_page_navigation(request):
     return "text/html" in accept
 
 
+def is_ajax_partial_request(request):
+
+    headers = request.headers
+
+    # HTMX requests.
+    if headers.get("HX-Request"):
+        return True
+
+    # jQuery / classic XMLHttpRequest.
+    if headers.get("x-requested-with") == "XMLHttpRequest":
+        return True
+
+    # Modern browsers advertise programmatic fetch()/XHR via Fetch Metadata.
+    # ``navigate`` is a real page navigation; cors/same-origin/no-cors are
+    # issued by fetch()/XHR partial requests.
+    sec_fetch_mode = headers.get("Sec-Fetch-Mode")
+    if sec_fetch_mode:
+        return sec_fetch_mode != "navigate"
+
+    # ``Sec-Fetch-Dest`` is ``document``/``iframe`` for full-page loads and
+    # ``empty`` for programmatic fetch/XHR requests.
+    sec_fetch_dest = headers.get("Sec-Fetch-Dest")
+    if sec_fetch_dest:
+        return sec_fetch_dest not in ("document", "iframe", "frame")
+
+    # No AJAX/HTMX or Fetch Metadata signal at all: treat it as a normal
+    # navigation so the caller issues a standard 302 login redirect.
+    return False
+
+
 def session_expired_response(location):
     """
     Build a response that forces the browser to perform a *full-page* redirect
