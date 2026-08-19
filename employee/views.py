@@ -2081,29 +2081,22 @@ def employee_filter_view(request):
     else:
         orderby = request.GET.get("orderby")
 
+        # Legacy aliases that map a simple key to its real (relation) lookup path.
         ORDERBY_FIELD_MAP = {
             "reporting_manager_id": "employee_work_info__reporting_manager",
         }
 
-        if orderby:
-            clean = orderby.lstrip("-")
-
-            mapped = ORDERBY_FIELD_MAP.get(clean)
-
-            if mapped:
-                if orderby.startswith("-"):
-                    orderby = f"-{mapped}"
-                else:
-                    orderby = mapped
-
-                employees = employees.order_by(orderby)
-
-            else:
-                try:
-                    Employee._meta.get_field(clean)
-                    employees = employees.order_by(orderby)
-                except FieldDoesNotExist:
-                    employees = employees.order_by("id")
+        clean = (orderby or "").lstrip("-")
+        if orderby and clean in ORDERBY_FIELD_MAP:
+            mapped = ORDERBY_FIELD_MAP[clean]
+            mapped = f"-{mapped}" if orderby.startswith("-") else mapped
+            employees = employees.order_by(mapped)
+        else:
+            # Use the shared helper so related-field lookups
+            # (e.g. "employee_work_info__date_joining") are traversed correctly,
+            # asc/desc toggling works, and invalid keys degrade gracefully instead
+            # of silently falling back to ordering by id.
+            employees = sortby(request, employees, "orderby")
         employees = paginator_qry(employees, page_number)
 
     return render(
