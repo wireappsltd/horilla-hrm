@@ -65,6 +65,13 @@ from base.models import (
     WorkTypeRequest,
 )
 from base.views import generate_error_report
+from employee.audit import (
+    BANK_MASK_FIELDS,
+    emp_audit,
+    emp_form_audit,
+    employee_details,
+    work_info_details,
+)
 from employee.filters import DocumentRequestFilter, EmployeeFilter, EmployeeReGroup
 from employee.forms import (
     BonusPointAddForm,
@@ -119,7 +126,7 @@ from horilla.filters import HorillaPaginator
 from horilla.group_by import group_by_queryset
 from horilla.horilla_settings import HORILLA_DATE_FORMATS
 from horilla.methods import get_horilla_model_class
-from horilla_audit.methods import log_activity, log_form_changes
+from horilla_audit.methods import mask_sensitive
 from horilla_audit.models import AccountBlockUnblock, HistoryTrackingFields
 from horilla_documents.forms import (
     DocumentForm,
@@ -320,12 +327,12 @@ def self_info_update(request):
                 if not inst.badge_id:
                     inst.badge_id = badge_id
                 inst.save()
-                log_form_changes(
-                    request.user,
-                    module="employee",
-                    action="Personal information updated",
+                emp_form_audit(
+                    request,
+                    "Personal information updated",
                     form=form,
                     target=inst,
+                    extra=employee_details(inst),
                 )
                 messages.success(request, _("Profile updated."))
                 return redirect("employee-profile")
@@ -340,13 +347,13 @@ def self_info_update(request):
                 bank = bank_form.save(commit=False)
                 bank.employee_id = employee
                 bank.save()
-                log_form_changes(
-                    request.user,
-                    module="employee",
-                    action="Bank information updated",
+                emp_form_audit(
+                    request,
+                    "Bank information updated",
                     form=bank_form,
                     target=employee,
-                    mask_fields=("account_number", "swift_code"),
+                    mask_fields=BANK_MASK_FIELDS,
+                    extra=employee_details(employee),
                 )
                 messages.success(request, _("Bank details updated."))
                 return redirect("employee-profile")
@@ -1084,13 +1091,13 @@ def employee_profile_bank_details(request):
         bank_info = form.save(commit=False)
         bank_info.employee_id = employee
         bank_info.save()
-        log_form_changes(
-            request.user,
-            module="employee",
-            action="Bank information updated",
+        emp_form_audit(
+            request,
+            "Bank information updated",
             form=form,
             target=employee,
-            mask_fields=("account_number", "swift_code"),
+            mask_fields=BANK_MASK_FIELDS,
+            extra=employee_details(employee),
         )
         messages.success(request, _("Bank details updated"))
     else:
@@ -1114,12 +1121,12 @@ def employee_profile_update(request):
             form = EmployeeForm(request.POST, request.FILES, instance=employee)
             if form.is_valid():
                 form.save()
-                log_form_changes(
-                    request.user,
-                    module="employee",
-                    action="Personal information updated",
+                emp_form_audit(
+                    request,
+                    "Personal information updated",
                     form=form,
                     target=employee,
+                    extra=employee_details(employee),
                 )
                 messages.success(request, _("Profile updated."))
     return redirect("/employee/employee-profile")
@@ -1420,6 +1427,42 @@ def view_employee_bulk_update(request):
             return redirect(employee_view)
 
 
+def _bulk_snapshot(queryset, attr, key_attr):
+    """Map employee id -> readable value of ``attr``, for before/after diffing.
+
+    ``key_attr`` is "pk" on Employee rows and "employee_id_id" on the related
+    work-info / bank-detail rows, so every snapshot is keyed by employee no
+    matter which table the field lives on. FK attributes named with an ``_id``
+    suffix return the related object, so ``str()`` renders a name rather than a
+    bare pk. Pass a freshly built queryset for the "after" side — an evaluated
+    queryset caches its rows and would report pre-update values.
+    """
+    snapshot = {}
+    for obj in queryset:
+        value = getattr(obj, attr, None)
+        snapshot[getattr(obj, key_attr)] = (
+            str(value) if value not in (None, "") else None
+        )
+    return snapshot
+
+
+def _bulk_field_label(name):
+    """Humanise a bulk-update field name for display in the audit diff."""
+    base = name[:-3] if name.endswith("_id") else name
+    return base.replace("_", " ").capitalize()
+
+
+def _accumulate_bulk_diff(diffs, label, before, after):
+    """Fold one field's before/after snapshots into the per-employee diff map."""
+    for emp_id, new_value in after.items():
+        old_value = before.get(emp_id)
+        if old_value != new_value:
+            diffs.setdefault(emp_id, {})[label] = {
+                "from": old_value,
+                "to": new_value,
+            }
+
+
 @login_required
 @permission_required("employee.change_employee")
 def save_employee_bulk_update(request):
@@ -1446,6 +1489,10 @@ def save_employee_bulk_update(request):
             except (ValueError, OverflowError):
                 employee_list.remove(id)
 
+        # Per-employee field diffs accumulated across every updated field, so a
+        # bulk edit produces one entry per employee listing everything that
+        # changed rather than one entry per field.
+        bulk_diffs = {}
         for field in update_fields:
             parts = str(field).split("__")
             if parts[-1]:
@@ -1461,7 +1508,26 @@ def save_employee_bulk_update(request):
                             wi.employee_id_id: wi.job_role_id
                             for wi in employee_queryset.select_related("job_role_id")
                         }
+                    before = _bulk_snapshot(
+                        employee_queryset, parts[-1], "employee_id_id"
+                    )
                     employee_queryset.update(**{parts[-1]: value})
+                    # Job role already gets its own "Role change" entry below,
+                    # so it is left out of the generic diff to avoid logging the
+                    # same change twice.
+                    if not role_change:
+                        _accumulate_bulk_diff(
+                            bulk_diffs,
+                            _bulk_field_label(parts[-1]),
+                            before,
+                            _bulk_snapshot(
+                                EmployeeWorkInformation.objects.filter(
+                                    employee_id__in=employee_list
+                                ),
+                                parts[-1],
+                                "employee_id_id",
+                            ),
+                        )
                     if role_change:
                         from base.models import JobRole
 
@@ -1471,19 +1537,26 @@ def save_employee_bulk_update(request):
                         for emp_id, old_role in old_roles_by_emp.items():
                             if old_role != new_role:
                                 emp = Employee.objects.filter(pk=emp_id).first()
-                                log_activity(
-                                    request.user,
-                                    module="employee",
-                                    action="Role change",
+                                emp_audit(
+                                    request,
+                                    "Role change",
                                     target=emp,
                                     changes={
                                         "job_role": {
                                             "from": str(old_role) if old_role else None,
                                             "to": str(new_role) if new_role else None,
-                                        }
+                                        },
+                                        "Employee": str(emp) if emp else None,
                                     },
                                 )
                 elif parts[0] == "employee_bank_details":
+                    before = _bulk_snapshot(
+                        EmployeeBankDetails.objects.filter(
+                            employee_id__in=employee_list
+                        ),
+                        parts[-1],
+                        "employee_id_id",
+                    )
                     for id in employee_list:
 
                         employee_queryset = EmployeeBankDetails.objects.filter(
@@ -1491,10 +1564,36 @@ def save_employee_bulk_update(request):
                         )
                         value = dict_value.get(parts[-1])
                         employee_queryset.update(**{parts[-1]: value})
+                    after = _bulk_snapshot(
+                        EmployeeBankDetails.objects.filter(
+                            employee_id__in=employee_list
+                        ),
+                        parts[-1],
+                        "employee_id_id",
+                    )
+                    if parts[-1] in BANK_MASK_FIELDS:
+                        before = {k: mask_sensitive(v) for k, v in before.items()}
+                        after = {k: mask_sensitive(v) for k, v in after.items()}
+                    _accumulate_bulk_diff(
+                        bulk_diffs, _bulk_field_label(parts[-1]), before, after
+                    )
                 else:
                     employee_queryset = Employee.objects.filter(id__in=employee_list)
                     value = dict_value.get(field)
+                    before = _bulk_snapshot(employee_queryset, field, "pk")
                     employee_queryset.update(**{field: value})
+                    _accumulate_bulk_diff(
+                        bulk_diffs,
+                        _bulk_field_label(field),
+                        before,
+                        _bulk_snapshot(
+                            Employee.objects.filter(id__in=employee_list), field, "pk"
+                        ),
+                    )
+        for emp_id, diff in bulk_diffs.items():
+            emp = Employee.objects.filter(pk=emp_id).first()
+            diff["Employee"] = str(emp) if emp else None
+            emp_audit(request, "Employee bulk updated", target=emp, changes=diff)
         if len(employee_list) > 0:
             messages.success(
                 request,
@@ -1619,12 +1718,12 @@ def employee_view_update(request, obj_id, **kwargs):
                 form = EmployeeForm(request.POST, instance=employee)
                 if form.is_valid():
                     form.save()
-                    log_form_changes(
-                        request.user,
-                        module="employee",
-                        action="Personal information updated",
+                    emp_form_audit(
+                        request,
+                        "Personal information updated",
                         form=form,
                         target=employee,
+                        extra=employee_details(employee),
                     )
                     messages.success(
                         request, _("Employee personal information updated.")
@@ -1642,6 +1741,13 @@ def employee_view_update(request, obj_id, **kwargs):
                     instance.employee_id = employee
                     instance.save()
                     instance.tags.set(request.POST.getlist("tags"))
+                    emp_form_audit(
+                        request,
+                        "Work information updated",
+                        form=work_form,
+                        target=employee,
+                        extra={"Employee": str(employee)},
+                    )
                     _log_role_changes(request, employee, old_role_values, instance)
                     notify.send(
                         request.user.employee_get,
@@ -1667,13 +1773,13 @@ def employee_view_update(request, obj_id, **kwargs):
                     instance = bank_form.save(commit=False)
                     instance.employee_id = employee
                     instance.save()
-                    log_form_changes(
-                        request.user,
-                        module="employee",
-                        action="Bank information updated",
+                    emp_form_audit(
+                        request,
+                        "Bank information updated",
                         form=bank_form,
                         target=employee,
-                        mask_fields=("account_number", "swift_code"),
+                        mask_fields=BANK_MASK_FIELDS,
+                        extra=employee_details(employee),
                     )
                     messages.success(request, _("Employee bank details updated."))
         return render(
@@ -1824,14 +1930,20 @@ def employee_create_update_personal_info(request, obj_id=None):
     if form.is_valid():
         form.save()
         if obj_id is not None:
-            log_form_changes(
-                request.user,
-                module="employee",
-                action="Personal information updated",
+            emp_form_audit(
+                request,
+                "Personal information updated",
                 form=form,
                 target=form.instance,
+                extra=employee_details(form.instance),
             )
         if obj_id is None:
+            emp_audit(
+                request,
+                "Employee created",
+                target=form.instance,
+                changes=employee_details(form.instance),
+            )
             messages.success(request, _("New Employee Added."))
             form = EmployeeForm(request.POST, instance=form.instance)
             work_form = EmployeeWorkInformationForm(
@@ -1929,28 +2041,41 @@ def _log_role_changes(request, employee, old_values, work_info):
     """
     role_diff = _field_diff(_ROLE_FIELDS, old_values, work_info)
     if role_diff:
-        log_activity(
-            request.user,
-            module="employee",
-            action="Role change",
-            target=employee,
-            changes=role_diff,
-        )
+        role_diff["Employee"] = str(employee)
+        emp_audit(request, "Role change", target=employee, changes=role_diff)
 
     assignment_diff = _field_diff(_ASSIGNMENT_FIELDS, old_values, work_info)
     if assignment_diff:
         assignment_diff["Employee"] = str(employee)
-        ip = request.META.get("HTTP_X_FORWARDED_FOR")
-        ip = ip.split(",")[0].strip() if ip else request.META.get("REMOTE_ADDR", "")
-        if ip:
-            assignment_diff.setdefault("IP", ip)
-        log_activity(
-            request.user,
-            module="employee",
-            action="Shift/work type assigned",
+        emp_audit(
+            request,
+            "Shift/work type assigned",
             target=employee,
             changes=assignment_diff,
         )
+
+
+def _log_archive_change(request, employee, was_active):
+    """Audit an employee archive / un-archive as an explicit status change.
+
+    Archiving is the module's soft delete, so it is logged as a status change
+    with both sides of the transition rather than a bare "updated". Shared by
+    the three save paths that flip ``is_active`` (single archive, bulk archive
+    and the archive-after-reassignment flow). No entry when nothing moved.
+    """
+    if was_active == employee.is_active:
+        return
+    details = employee_details(employee)
+    details["Status"] = {
+        "from": "Active" if was_active else "Inactive",
+        "to": "Active" if employee.is_active else "Inactive",
+    }
+    emp_audit(
+        request,
+        "Employee un-archived" if employee.is_active else "Employee archived",
+        target=employee,
+        changes=details,
+    )
 
 
 @login_required
@@ -2018,13 +2143,13 @@ def employee_update_bank_details(request, obj_id=None):
         bank_info = form.save(commit=False)
         bank_info.employee_id = employee
         bank_info.save()
-        log_form_changes(
-            request.user,
-            module="employee",
-            action="Bank information updated",
+        emp_form_audit(
+            request,
+            "Bank information updated",
             form=form,
             target=employee,
-            mask_fields=("account_number", "swift_code"),
+            mask_fields=BANK_MASK_FIELDS,
+            extra=employee_details(employee),
         )
         return HttpResponse(
             """
@@ -2246,10 +2371,15 @@ def employee_delete(request, obj_id):
                     if contract.contract_status != "active":
                         contract.delete()
         user = employee.employee_user_id
+        # Captured before the row goes: once deleted the identifying fields
+        # are unrecoverable, and a ProtectedError below aborts before logging
+        # so a blocked delete is never recorded as a completed one.
+        details = employee_details(employee)
         try:
             user.delete()
         except AttributeError:
             employee.delete()
+        emp_audit(request, "Employee deleted", target=employee, changes=details)
         messages.success(request, _("Employee deleted"))
 
     except Employee.DoesNotExist:
@@ -2286,8 +2416,12 @@ def employee_bulk_delete(request):
                         if contract.contract_status != "active":
                             contract.delete()
             user = employee.employee_user_id
+            details = employee_details(employee)
             user.delete()
             deleted_count += 1
+            # One entry per employee rather than a single "N deleted" summary,
+            # so each removed record is individually traceable.
+            emp_audit(request, "Employee deleted", target=employee, changes=details)
         except Employee.DoesNotExist:
             messages.error(request, _("Employee not found."))
         except ProtectedError:
@@ -2329,6 +2463,7 @@ def employee_bulk_archive(request):
                 messages.error(request, _("You can't archive the last superuser."))
                 return HttpResponse("<script>$('#filterEmployee').click();</script>")
 
+        was_active = employee.is_active
         employee.is_active = is_active
         employee.employee_user_id.is_active = is_active
         if employee.get_archive_condition() is False:
@@ -2336,6 +2471,7 @@ def employee_bulk_archive(request):
             message = _("archived")
             if is_active:
                 message = _("un-archived")
+            _log_archive_change(request, employee, was_active)
             messages.success(request, f"{employee} is {message}")
         else:
             messages.warning(request, _("Related data found for {}.").format(employee))
@@ -2352,6 +2488,7 @@ def employee_archive(request, obj_id):
             obj_id : Employee instance id
     """
     employee = Employee.objects.get(id=obj_id)
+    was_active = employee.is_active
     employee.is_active = not employee.is_active
     employee.employee_user_id.is_active = not employee.is_active
     save = True
@@ -2376,6 +2513,7 @@ def employee_archive(request, obj_id):
             message = _("Employee archived")
     if save:
         employee.save()
+        _log_archive_change(request, employee, was_active)
         messages.success(request, message)
         key = "HTTP_HX_REQUEST"
         if key not in request.META.keys():
@@ -2484,8 +2622,10 @@ def replace_employee(request, emp_id):
         messages.success(request, _("Designation changed."))
         return redirect("/offboarding/offboarding-pipeline")
     if related_models is False and title != "Change the Designations":
+        was_active = employee.is_active
         employee.is_active = False
         employee.save()
+        _log_archive_change(request, employee, was_active)
         messages.success(request, _("{} archived successfully").format(employee))
     return redirect(employee_view)
 
@@ -2503,6 +2643,7 @@ def get_manager_in(request):
         title = _("Change the Designations")
     else:
         title = _("Can't Archive")
+    was_active = employee.is_active
     employee.is_active = not employee.is_active
     employee.employee_user_id.is_active = not employee.is_active
     save = True
@@ -2515,6 +2656,7 @@ def get_manager_in(request):
             message = _("Employee archived")
     if save:
         employee.save()
+        _log_archive_change(request, employee, was_active)
         messages.success(request, message)
         key = "HTTP_HX_REQUEST"
         if key not in request.META.keys():
@@ -2614,6 +2756,12 @@ def employee_work_info_view_create(request, obj_id):
         work_info = work_form.save(commit=False)
         work_info.employee_id = employee
         work_info.save()
+        emp_audit(
+            request,
+            "Work information created",
+            target=employee,
+            changes=work_info_details(work_info),
+        )
         # New work info: every role field set goes from None -> value.
         _log_role_changes(request, employee, {}, work_info)
         messages.success(request, _("Created work information"))
@@ -2641,8 +2789,15 @@ def employee_work_info_view_update(request, obj_id):
         messages.info(request, _("You don't have permission to access this employee."))
         return redirect(employee_view)
     form = EmployeeForm(instance=work_information.employee_id)
+    # An employee may have no bank details row yet. The reverse accessor raises
+    # RelatedObjectDoesNotExist rather than returning None, which 500s the whole
+    # work-info update before the form is ever saved — so the update silently
+    # fails and no audit entry is written. Look the row up defensively, the way
+    # the sibling create view already does.
     bank_form = EmployeeBankDetailsUpdateForm(
-        instance=work_information.employee_id.employee_bank_details
+        instance=EmployeeBankDetails.objects.filter(
+            employee_id=work_information.employee_id
+        ).first()
     )
     old_role_values = _capture_role_fields(work_information)
     work_form = EmployeeWorkInformationUpdateForm(
@@ -2651,6 +2806,16 @@ def employee_work_info_view_update(request, obj_id):
     )
     if work_form.is_valid():
         updated = work_form.save()
+        # Full field-level diff, then the role/assignment entries on top: the
+        # latter stay separate so a promotion or shift change is reviewable on
+        # its own rather than buried in a long work-info diff.
+        emp_form_audit(
+            request,
+            "Work information updated",
+            form=work_form,
+            target=updated.employee_id,
+            extra={"Employee": str(updated.employee_id)},
+        )
         _log_role_changes(request, updated.employee_id, old_role_values, updated)
         messages.success(request, _("Work Information Updated Successfully"))
     return render(
@@ -2685,6 +2850,12 @@ def employee_bank_details_view_create(request, obj_id):
         bank_instance = bank_form.save(commit=False)
         bank_instance.employee_id = employee
         bank_instance.save()
+        emp_audit(
+            request,
+            "Bank information created",
+            target=employee,
+            changes=employee_details(employee),
+        )
         messages.success(request, _("Bank Details Created Successfully"))
     return render(
         request,
@@ -2707,8 +2878,12 @@ def employee_bank_details_view_update(request, obj_id):
         messages.info(request, _("You don't have permission to access this employee."))
         return redirect(employee_view)
     form = EmployeeForm(instance=employee_bank_instance.employee_id)
+    # Same hazard in the other direction: an employee with bank details but no
+    # work information row would 500 here before the bank update could save.
     work_form = EmployeeWorkInformationUpdateForm(
-        instance=employee_bank_instance.employee_id.employee_work_info
+        instance=EmployeeWorkInformation.objects.filter(
+            employee_id=employee_bank_instance.employee_id
+        ).first()
     )
     bank_form = EmployeeBankDetailsUpdateForm(
         request.POST, instance=employee_bank_instance
@@ -2717,6 +2892,14 @@ def employee_bank_details_view_update(request, obj_id):
         bank_instance = bank_form.save(commit=False)
         bank_instance.employee_id = employee_bank_instance.employee_id
         bank_instance.save()
+        emp_form_audit(
+            request,
+            "Bank information updated",
+            form=bank_form,
+            target=employee_bank_instance.employee_id,
+            mask_fields=BANK_MASK_FIELDS,
+            extra={"Employee": str(employee_bank_instance.employee_id)},
+        )
         messages.success(request, _("Bank Details Updated Successfully"))
     return render(
         request,
@@ -2736,7 +2919,14 @@ def employee_work_information_delete(request, obj_id):
     """
     try:
         employee_work = EmployeeWorkInformation.objects.get(id=obj_id)
+        # Captured before the row goes; a ProtectedError below aborts before
+        # logging so a blocked delete is never recorded as a completed one.
+        details = work_info_details(employee_work)
+        target = employee_work.employee_id
         employee_work.delete()
+        emp_audit(
+            request, "Work information deleted", target=target, changes=details
+        )
         messages.success(request, _("Employee work information deleted"))
     except EmployeeWorkInformation.DoesNotExist:
         messages.error(request, _("Employee work information not found."))
@@ -2955,6 +3145,26 @@ def work_info_import(request):
                 else None
             )
 
+            # Every bulk_create_* helper above uses QuerySet.bulk_create(),
+            # which does not emit post_save, so config_tracking never sees the
+            # departments, job positions, job roles, work types, shifts and
+            # employee types this import creates. Log the import explicitly or
+            # it leaves no audit trail at all.
+            if created_count > 0:
+                emp_audit(
+                    request,
+                    "Employees imported",
+                    changes={
+                        "File": getattr(file, "name", ""),
+                        "Rows in file": str(created_count + len(error_list)),
+                        "Employees created": str(created_count),
+                        "Rows rejected": str(len(error_list)),
+                        "Note": (
+                            "May also have created departments, job positions, "
+                            "job roles, work types, shifts and employee types"
+                        ),
+                    },
+                )
             context = {
                 "created_count": created_count,
                 "total_count": created_count + len(error_list),

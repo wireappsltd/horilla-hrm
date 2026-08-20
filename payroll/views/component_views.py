@@ -2013,8 +2013,21 @@ def delete_attachments(request, _reimbursement_id):
     This mehtod is used to delete the attachements
     """
     ids = request.GET.getlist("ids")
-    ReimbursementMultipleAttachment.objects.filter(id__in=ids).delete()
+    # Describe before delete — the rows are gone afterwards.
+    attachments = ReimbursementMultipleAttachment.objects.filter(id__in=ids)
+    deleted_files = ", ".join(str(a.attachment) for a in attachments)
+    attachments.delete()
     messages.success(request, "Attachment deleted")
+    log_activity(
+        request.user,
+        module="payroll",
+        action="Reimbursement attachment deleted",
+        changes={
+            "Reimbursement": str(_reimbursement_id),
+            "Files": deleted_files,
+            "Count": str(len(ids)),
+        },
+    )
     return redirect(view_reimbursement)
 
 

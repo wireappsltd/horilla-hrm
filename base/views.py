@@ -7735,6 +7735,21 @@ def holidays_info_import(request):
                 return HttpResponse("<script>window.location.reload()</script>")
 
             created_holidays_count = total_count - len(error_list)
+            # The importers use Holidays.objects.bulk_create(), which does not
+            # emit post_save, so config_tracking never sees these rows. Log the
+            # import explicitly or bulk-created holidays leave no audit trail.
+            if created_holidays_count > 0:
+                log_activity(
+                    request.user,
+                    module="configuration",
+                    action="Holidays imported",
+                    changes={
+                        "File": getattr(file, "name", ""),
+                        "Rows in file": str(total_count),
+                        "Holidays created": str(created_holidays_count),
+                        "Rows rejected": str(len(error_list)),
+                    },
+                )
             context = {
                 "created_count": created_holidays_count,
                 "error_count": len(error_list),

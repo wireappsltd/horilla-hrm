@@ -90,13 +90,19 @@ def _readable_value(field, value):
     return str(value)
 
 
-def log_form_changes(user, module, action, form, target=None, mask_fields=None):
+def log_form_changes(
+    user, module, action, form, target=None, mask_fields=None, extra=None
+):
     """Write an ActivityLog entry describing field-level changes from a form.
 
     Call *after* a bound ``ModelForm`` has been validated/saved. Uses
     ``form.changed_data`` to build a ``{label: {"from": old, "to": new}}`` diff
     so the audit page renders old → new values. Field names listed in
     ``mask_fields`` have both sides masked (all but last 4 chars).
+
+    ``extra`` adds flat context keys (record identifier, client IP …) alongside
+    the diff. They are only attached when something actually changed, so an
+    unchanged save stays unlogged rather than becoming a bare IP entry.
 
     No entry is written when nothing actually changed, keeping the log free of
     empty "saved but unchanged" noise.
@@ -117,6 +123,8 @@ def log_form_changes(user, module, action, form, target=None, mask_fields=None):
         label = str(getattr(field, "label", None) or name)
         diff[label] = {"from": old, "to": new}
     if diff:
+        for key, value in (extra or {}).items():
+            diff.setdefault(key, value)
         log_activity(user, module=module, action=action, target=target, changes=diff)
 
 

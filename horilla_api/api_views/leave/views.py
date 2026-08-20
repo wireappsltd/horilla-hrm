@@ -1,5 +1,6 @@
 import contextlib
 
+from django.utils import timezone
 from django.contrib.auth.decorators import permission_required
 from django.contrib.auth.models import AnonymousUser
 from django.db.models import Count
@@ -649,6 +650,17 @@ class HolidayGetUpdateDeleteAPIView(APIView):
         return Response(status=200)
 
 
+def _stamp_reviewer(request, leave_request):
+    """Record who actioned a leave request and when.
+
+    The web views set these on every approve/reject/cancel path. The API must
+    do the same or the leave request detail page shows a blank "Actioned By"
+    and "Actioned On" for anything decided from the mobile app.
+    """
+    leave_request.reviewed_by = getattr(request.user, "employee_get", None)
+    leave_request.reviewed_at = timezone.now()
+
+
 class LeaveRequestApproveAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -681,6 +693,7 @@ class LeaveRequestApproveAPIView(APIView):
             ).update(is_approved=True)
             self.leave_approve_calculation(leave_request, available_leave)
             leave_request.status = "approved"
+            _stamp_reviewer(request, leave_request)
             leave_request.save()
         else:
             conditional_requests = leave_request.multiple_approvals()
@@ -697,6 +710,7 @@ class LeaveRequestApproveAPIView(APIView):
             if approver[0] == conditional_requests["managers"][-1]:
                 self.leave_approve_calculation(leave_request, available_leave)
                 leave_request.status = "approved"
+                _stamp_reviewer(request, leave_request)
                 leave_request.save()
 
     @manager_permission_required("leave.change_leaverequest")
@@ -708,6 +722,7 @@ class LeaveRequestApproveAPIView(APIView):
             if not leave_request.multiple_approvals():
                 self.leave_approve_calculation(leave_request, available_leave)
                 leave_request.status = "approved"
+                _stamp_reviewer(request, leave_request)
                 leave_request.save()
             else:
                 self.leave_multiple_approve(request, leave_request, available_leave)
@@ -748,6 +763,7 @@ class LeaveRequestRejectAPIView(APIView):
         leave_request.approved_available_days = 0
         leave_request.approved_carryforward_days = 0
         leave_request.status = "rejected"
+        _stamp_reviewer(request, leave_request)
         leave_request.save()
 
     @manager_permission_required("leave.change_leaverequest")
@@ -792,6 +808,7 @@ class LeaveRequestCancelAPIView(APIView):
             curr_date = datetime.now().date()
             if start_date >= curr_date:
                 leave_request.status = "cancelled"
+                _stamp_reviewer(request, leave_request)
                 leave_request.save()
                 return Response(status=200)
             raise serializers.ValidationError("Nothing to cancel.")
@@ -906,6 +923,7 @@ class LeaveRequestBulkApproveDeleteAPIview(APIView):
             if total_available_leave >= leave_request.requested_days:
                 self.leave_approve_calculation(leave_request, available_leave)
                 leave_request.status = "approved"
+                _stamp_reviewer(request, leave_request)
                 leave_request.save()
         return Response(status=200)
 
