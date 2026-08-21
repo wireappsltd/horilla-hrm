@@ -14,7 +14,7 @@ from django.contrib.staticfiles import finders
 from django.core.exceptions import FieldDoesNotExist, ObjectDoesNotExist
 from django.core.paginator import Paginator
 from django.db import models
-from django.db.models import ForeignKey, ManyToManyField, OneToOneField, Q
+from django.db.models import F, ForeignKey, ManyToManyField, OneToOneField, Q
 from django.db.models.functions import Lower
 from django.forms.models import ModelChoiceField
 from django.http import HttpResponse
@@ -244,11 +244,17 @@ def sortby(request, queryset, key):
             if not is_last and field.is_relation:
                 model_meta = field.related_model._meta
                 continue
+
             if isinstance(field, models.CharField):
                 queryset = queryset.annotate(lower_title=Lower(sortby))
-                queryset = queryset.order_by(f"{ordering['ordering']}lower_title")
+                order_expr = F("lower_title")
             else:
-                queryset = queryset.order_by(f'{ordering["ordering"]}{sortby}')
+                order_expr = F(sortby)
+            descending = ordering["ordering"] == "-"
+            if descending:
+                queryset = queryset.order_by(order_expr.desc(nulls_last=True))
+            else:
+                queryset = queryset.order_by(order_expr.asc(nulls_last=True))
             break
 
         orderingList = [item for item in orderingList if item["id"] != id]
