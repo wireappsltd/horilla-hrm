@@ -68,7 +68,7 @@ SIDEBARS = [
     "recruitment",
     "onboarding",
     "employee",
-    "time_tracker",
+    # "time_tracker",  # Hidden: Time Tracker module removed from navigation/UI
     "attendance",
     "leave",
     "payroll",
