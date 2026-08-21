@@ -10,6 +10,48 @@ from employee.models import Employee
 from horilla.methods import get_horilla_model_class
 
 
+def get_selected_company(request):
+    """
+    Return the specific company id currently selected (logged in) in the
+    session, or ``None`` when no specific company context is active
+    (i.e. nothing selected or "All Company" is selected).
+    """
+    selected_company = None
+    if request is not None:
+        selected_company = request.session.get("selected_company")
+    if not selected_company or selected_company == "all":
+        return None
+    return selected_company
+
+
+def company_selection_required(request):
+    """
+    Determine whether the current user must select (log in to) a specific
+    company before they are allowed to submit a leave request.
+
+    Special privileged users who are associated with multiple companies (i.e.
+    users who are allowed to switch between companies via the company
+    selector) must have an active/specific company context. This ensures the
+    leave request is applied under the correct company.
+
+    """
+    from base.models import Company
+
+    user = getattr(request, "user", None)
+    if user is None or not getattr(user, "is_authenticated", False):
+        return False
+
+    # Only privileged users who can switch between multiple companies are
+    # affected by this requirement.
+    is_multi_company_user = user.has_perm("base.change_company") and (
+        Company.objects.count() > 1
+    )
+    if not is_multi_company_user:
+        return False
+
+    return get_selected_company(request) is None
+
+
 def calculate_requested_days(
     start_date, end_date, start_date_breakdown, end_date_breakdown
 ):

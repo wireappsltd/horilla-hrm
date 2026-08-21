@@ -59,6 +59,7 @@ from leave.methods import (
     attendance_days,
     calculate_requested_days,
     company_leave_dates_list,
+    company_selection_required,
     filter_conditional_leave_request,
     holiday_dates_list,
 
@@ -2948,6 +2949,15 @@ def user_leave_request(request, id):
         initial={"employee_id": employee, "leave_type_id": leave_type}
     )
     if request.method == "POST":
+        if company_selection_required(request):
+            messages.error(
+                request,
+                _(
+                    "You are associated with multiple companies. Please select "
+                    "your company before applying for a leave request."
+                ),
+            )
+            return HttpResponse("<script>window.location.reload();</script>")
         form = UserLeaveRequestForm(request.POST, request.FILES, employee=employee)
         start_date = datetime.strptime(request.POST.get("start_date"), "%Y-%m-%d")
         end_date = datetime.strptime(request.POST.get("end_date"), "%Y-%m-%d")
@@ -4036,6 +4046,15 @@ def leave_request_create(request):
 
     form = UserLeaveRequestCreationForm(employee=emp)
     if request.method == "POST":
+        if company_selection_required(request):
+            messages.error(
+                request,
+                _(
+                    "You are associated with multiple companies. Please select "
+                    "your company before applying for a leave request."
+                ),
+            )
+            return HttpResponse("<script>window.location.reload();</script>")
         form = UserLeaveRequestCreationForm(request.POST, request.FILES, employee=emp)
         if int(form.data["employee_id"]) == int(emp_id):
             if form.is_valid():

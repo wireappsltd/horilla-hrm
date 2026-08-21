@@ -15,7 +15,7 @@ from rest_framework.views import APIView
 from base.methods import filtersubordinates
 from horilla_api.api_serializers.leave.serializers import *
 from leave.filters import *
-from leave.methods import filter_conditional_leave_request
+from leave.methods import company_selection_required, filter_conditional_leave_request
 from leave.models import LeaveRequest
 from notifications.signals import notify
 
@@ -54,6 +54,16 @@ class EmployeeLeaveRequestGetCreateAPIView(APIView):
         return paginator.get_paginated_response(serializer.data)
 
     def post(self, request):
+        if company_selection_required(request):
+            return Response(
+                {
+                    "error": (
+                        "You are associated with multiple companies. Please select "
+                        "your company before applying for a leave request."
+                    )
+                },
+                status=400,
+            )
         employee_id = request.user.employee_get.id
         data = request.data
         if isinstance(data, QueryDict):
