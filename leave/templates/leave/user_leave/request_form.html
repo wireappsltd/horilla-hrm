@@ -207,4 +207,78 @@
             }
         });
     }
+
+    // Prevent selecting an End Date earlier than the selected Start Date.
+
+    if (!window.__leaveRequestDateRangeHandlerBound) {
+        window.__leaveRequestDateRangeHandlerBound = true;
+
+        function syncLeaveEndDateMin(startInput) {
+            if (!startInput || !startInput.form) return;
+            var endInput = startInput.form.querySelector("#id_end_date")
+                || startInput.form.querySelector('input[name="end_date"]');
+            if (!endInput) return;
+
+            var startValue = startInput.value;
+            if (startValue) {
+                endInput.min = startValue;
+                if (endInput.value && endInput.value < startValue) {
+                    endInput.value = "";
+                    endInput.dispatchEvent(new Event("change", { bubbles: true }));
+                }
+            } else {
+                // Fall back to the server-provided minimum (e.g. today) when set.
+                endInput.min = endInput.getAttribute("data-default-min") || "";
+            }
+        }
+
+        function isLeaveStartDateInput(el) {
+            if (!el || el.tagName !== "INPUT") return false;
+            return el.id === "id_start_date" || el.name === "start_date";
+        }
+
+        document.body.addEventListener("change", function (event) {
+            if (isLeaveStartDateInput(event.target)) {
+                syncLeaveEndDateMin(event.target);
+            }
+        });
+        document.body.addEventListener("input", function (event) {
+            if (isLeaveStartDateInput(event.target)) {
+                syncLeaveEndDateMin(event.target);
+            }
+        });
+
+        // Initialise on load and after every HTMX swap that brings in the form.
+        function initLeaveDateRange(root) {
+            var scope = root && root.querySelectorAll ? root : document;
+            scope.querySelectorAll("#id_start_date, input[name='start_date']").forEach(function (startInput) {
+                var endInput = startInput.form
+                    && (startInput.form.querySelector("#id_end_date")
+                        || startInput.form.querySelector('input[name="end_date"]'));
+                if (endInput && endInput.min) {
+                    endInput.setAttribute("data-default-min", endInput.min);
+                }
+                syncLeaveEndDateMin(startInput);
+            });
+        }
+
+        document.body.addEventListener("htmx:afterSwap", function (event) {
+            initLeaveDateRange(event.target);
+        });
+    }
+
+    // Run once for the current render (covers this modal and non-HTMX pages).
+    (function () {
+        document.querySelectorAll("#id_start_date, input[name='start_date']").forEach(function (startInput) {
+            var endInput = startInput.form
+                && (startInput.form.querySelector("#id_end_date")
+                    || startInput.form.querySelector('input[name="end_date"]'));
+            if (endInput && endInput.min) {
+                endInput.setAttribute("data-default-min", endInput.min);
+            }
+            if (startInput.value && endInput) {
+                endInput.min = startInput.value;
+            }
+        });
+    })();
 </script>

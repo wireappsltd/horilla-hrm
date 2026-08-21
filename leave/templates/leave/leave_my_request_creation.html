@@ -6,4 +6,29 @@
   {%csrf_token%} {{form.as_p}}
   <input type="submit" value="{% trans 'Submit' %}" class='mt-4 btn btn-success'>
 </form>
+<script>
+  // Prevent selecting an End Date earlier than the selected Start Date by
+  // keeping the End Date picker's `min` in sync with the Start Date value.
+  (function () {
+    var startInput = document.querySelector("#id_start_date, input[name='start_date']");
+    var endInput = document.querySelector("#id_end_date, input[name='end_date']");
+    if (!startInput || !endInput) return;
+    var defaultMin = endInput.min || "";
+
+    function syncEndDateMin() {
+      if (startInput.value) {
+        endInput.min = startInput.value;
+        if (endInput.value && endInput.value < startInput.value) {
+          endInput.value = "";
+        }
+      } else {
+        endInput.min = defaultMin;
+      }
+    }
+
+    startInput.addEventListener("change", syncEndDateMin);
+    startInput.addEventListener("input", syncEndDateMin);
+    syncEndDateMin();
+  })();
+</script>
 {% endblock %}
