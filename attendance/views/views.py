@@ -265,6 +265,7 @@ def attendance_create(request):
             )
         else:
             show_compensation = False
+            show_poya = False
             compensation_form = None
             attendance_date = request.POST.get("attendance_date")
             if attendance_date:
@@ -272,6 +273,7 @@ def attendance_create(request):
                     parsed_date = datetime.strptime(attendance_date, "%Y-%m-%d").date()
                     result = is_mercantile_or_poya_holiday(parsed_date)
                     show_compensation = result.get("is_mercantile_holiday", False)
+                    show_poya = result.get("is_poya_holiday", False)
                     if show_compensation:
                         compensation_form = AttendanceForm()
                 except (ValueError, TypeError):
@@ -282,6 +284,7 @@ def attendance_create(request):
                 {
                     "form": form,
                     "show_compensation": show_compensation,
+                    "show_poya": show_poya,
                     "compensation_form": compensation_form,
                 },
             )
@@ -551,6 +554,7 @@ def attendance_update(request, obj_id):
             )
         else:
             show_compensation = False
+            show_poya = False
             compensation_form = None
             attendance_date = request.POST.get("attendance_date")
             if attendance_date:
@@ -558,6 +562,7 @@ def attendance_update(request, obj_id):
                     parsed_date = datetime.strptime(attendance_date, "%Y-%m-%d").date()
                     result = is_mercantile_or_poya_holiday(parsed_date)
                     show_compensation = result.get("is_mercantile_holiday", False)
+                    show_poya = result.get("is_poya_holiday", False)
                     if show_compensation:
                         compensation_form = AttendanceForm(
                             initial={
@@ -577,10 +582,14 @@ def attendance_update(request, obj_id):
                     "urlencode": request.GET.urlencode(),
                     "obj_id": obj_id,
                     "show_compensation": show_compensation,
+                    "show_poya": show_poya,
                     "compensation_form": compensation_form,
                 },
             )
     show_compensation = attendance.is_mercantile_holiday
+    show_poya = is_mercantile_or_poya_holiday(attendance.attendance_date).get(
+        "is_poya_holiday", False
+    )
     compensation_form = AttendanceForm(instance=attendance) if show_compensation else None
     return render(
         request,
@@ -590,6 +599,7 @@ def attendance_update(request, obj_id):
             "urlencode": request.GET.urlencode(),
             "obj_id": obj_id,
             "show_compensation": show_compensation,
+            "show_poya": show_poya,
             "compensation_form": compensation_form,
         },
     )
@@ -3181,7 +3191,7 @@ def check_compensation(request):
     return render(
         request,
         "attendance/attendance/_compensation_field.html",
-        {"show_field": result["is_mercantile_holiday"], "form": form , "show_duplicate_warning":show_duplicate_warning},
+        {"show_field": result["is_mercantile_holiday"], "show_poya": result["is_poya_holiday"], "form": form , "show_duplicate_warning":show_duplicate_warning},
     )
 
 def check_attendance_duplicate(request):

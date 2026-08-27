@@ -224,6 +224,7 @@ def request_new(request):
             # Check if the submitted date is a mercantile holiday so we can
             # preserve the compensation leave toggle on validation error re-render.
             show_compensation = False
+            show_poya = False
             compensation_form = None
             show_duplicate_warning = False
             attendance_date = request.POST.get("attendance_date")
@@ -233,6 +234,7 @@ def request_new(request):
                     parsed_date = datetime.strptime(attendance_date, "%Y-%m-%d").date()
                     result = is_mercantile_or_poya_holiday(parsed_date)
                     show_compensation = result.get("is_mercantile_holiday", False)
+                    show_poya = result.get("is_poya_holiday", False)
                     if show_compensation:
                         compensation_form = AttendanceForm()
                 except (ValueError, TypeError):
@@ -249,6 +251,7 @@ def request_new(request):
                     "form": form,
                     "bulk": False,
                     "show_compensation": show_compensation,
+                    "show_poya": show_poya,
                     "compensation_form": compensation_form,
                     "show_duplicate_warning": show_duplicate_warning,
                 },
@@ -458,6 +461,9 @@ def attendance_request_changes(request, attendance_id):
                 + "<script>location.reload();</script>"
             )
     show_compensation = attendance.is_mercantile_holiday
+    show_poya = is_mercantile_or_poya_holiday(attendance.attendance_date).get(
+        "is_poya_holiday", False
+    )
     if request.method == "POST":
         attendance_date_str = request.POST.get("attendance_date")
         if attendance_date_str:
@@ -465,6 +471,7 @@ def attendance_request_changes(request, attendance_id):
                 parsed_date = datetime.strptime(attendance_date_str, "%Y-%m-%d").date()
                 result = is_mercantile_or_poya_holiday(parsed_date)
                 show_compensation = result.get("is_mercantile_holiday", False)
+                show_poya = result.get("is_poya_holiday", False)
             except (ValueError, TypeError):
                 pass
     return render(
@@ -474,6 +481,7 @@ def attendance_request_changes(request, attendance_id):
             "form": form,
             "attendance_id": attendance_id,
             "show_compensation": show_compensation,
+            "show_poya": show_poya,
         },
     )
 
@@ -978,6 +986,7 @@ def edit_validate_attendance(request, attendance_id):
     form.instance.id = attendance.id
     hx_target = request.META.get("HTTP_HX_TARGET")
     show_compensation = False
+    show_poya = False
     if request.method == "POST":
         form = AttendanceRequestForm(request.POST, instance=copy.copy(attendance))
         if form.is_valid():
@@ -1026,14 +1035,18 @@ def edit_validate_attendance(request, attendance_id):
                 parsed_date = datetime.strptime(attendance_date_str, "%Y-%m-%d").date()
                 result = is_mercantile_or_poya_holiday(parsed_date)
                 show_compensation = result.get("is_mercantile_holiday", False)
+                show_poya = result.get("is_poya_holiday", False)
             except (ValueError, TypeError):
                 pass
     else:
         show_compensation = attendance.is_mercantile_holiday
+        show_poya = is_mercantile_or_poya_holiday(attendance.attendance_date).get(
+            "is_poya_holiday", False
+        )
     return render(
         request,
         "requests/attendance/update_form.html",
-        {"form": form, "hx_target": hx_target, "show_compensation": show_compensation},
+        {"form": form, "hx_target": hx_target, "show_compensation": show_compensation, "show_poya": show_poya},
     )
 
 
