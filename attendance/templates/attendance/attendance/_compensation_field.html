@@ -5,6 +5,22 @@ This partial is rendered both as included markup (parent provides the wrapping
 check-compensation endpoint (innerHTML-swapped into the same wrapper). Do
 not re-wrap with #compensation-field-container here or the id collides.
 {% endcomment %}
+    {% if show_poya %}
+        <div class="mb-3 mt-1">
+            <div class="d-flex align-items-center gap-2 px-3 py-2"
+                 style="border:1px solid hsl(262, 52%, 84%); border-left:4px solid hsl(262, 52%, 56%); border-radius:8px; background-color:hsl(262, 52%, 97%);">
+                <i class="bi bi-moon-stars-fill" style="font-size:1.1rem; color:hsl(262, 52%, 56%);"></i>
+                <div>
+                    <span class="fw-semibold d-block" style="font-size:0.8rem; color:hsl(262, 52%, 40%);">
+                        {% trans "Poya Day" %}
+                    </span>
+                    <span style="font-size:0.72rem; color:hsl(0, 0%, 45%);">
+                        {% trans "The selected date is a Poya holiday." %}
+                    </span>
+                </div>
+            </div>
+        </div>
+    {% endif %}
     {% if show_field %}
         <div class="mb-3 mt-1">
             <div class="d-flex align-items-center mb-2 gap-1">

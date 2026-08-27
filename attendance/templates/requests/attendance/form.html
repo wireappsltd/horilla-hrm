@@ -15,8 +15,8 @@
     >
         {% csrf_token %} {{form.as_p}}
         <div id="compensation-field-container" class="mt-3">
-            {% if show_compensation %}
-                {% include "attendance/attendance/_compensation_field.html" with show_field=show_compensation form=form %}
+            {% if show_compensation or show_poya %}
+                {% include "attendance/attendance/_compensation_field.html" with show_field=show_compensation show_poya=show_poya form=form %}
             {% endif %}
         </div>
         <div class="oh-modal__dialog-footer p-0 mt-3">
