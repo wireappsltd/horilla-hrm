@@ -3028,6 +3028,33 @@ def dashboard_view(request):
 
 
 @login_required
+@permission_required("employee.view_employee")
+def probationary_view(request):
+    """
+    This view renders the Probationary performance page (scaffold shell).
+    """
+    return render(request, "performance/probationary.html")
+
+
+@login_required
+@permission_required("employee.view_employee")
+def annual_view(request):
+    """
+    This view renders the Annual performance page (scaffold shell).
+    """
+    return render(request, "performance/annual.html")
+
+
+@login_required
+@permission_required("employee.view_employee")
+def bi_annual_view(request):
+    """
+    This view renders the Bi-Annual performance page (scaffold shell).
+    """
+    return render(request, "performance/bi_annual.html")
+
+
+@login_required
 def dashboard_objective_status(request):
     """objective dashboard data"""
     is_ajax = request.headers.get("X-Requested-With") == "XMLHttpRequest"

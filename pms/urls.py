@@ -226,6 +226,9 @@ urlpatterns = [
 #     path("period-update/<int:period_id>", views.period_update, name="period-update"),
 #     path("period-change", views.period_change, name="period-change"),
     path("dashboard-view", views.dashboard_view, name="dashboard-view"),
+    path("probationary-view", views.probationary_view, name="probationary-view"),
+    path("annual-view", views.annual_view, name="annual-view"),
+    path("bi-annual-view", views.bi_annual_view, name="bi-annual-view"),
     path(
         "dashboard-objective-status",
         views.dashboard_objective_status,

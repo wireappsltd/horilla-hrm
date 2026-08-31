@@ -1,0 +1,18 @@
+{% extends 'index.html' %}
+{% block content %}
+{% load i18n %}
+<!-- End of Navigation -->
+<main :class="sidebarOpen ? 'oh-main__sidebar-visible' : ''">
+    <div class="oh-wrapper">
+        <div class="oh-card">
+            <div class="oh-card__header">
+                <h2 class="oh-card__title">{% trans "Bi-Annual" %}</h2>
+            </div>
+            <div class="oh-card__body">
+                <p class="text-muted">{% trans "Eligible employees will appear here." %}</p>
+            </div>
+        </div>
+    </div>
+</main>
+{% endblock %}
+

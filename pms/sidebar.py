@@ -16,6 +16,18 @@ SUBMENUS = [
         "menu": trans("Dashboard"),
         "redirect": reverse_lazy("dashboard-view"),
     },
+    {
+        "menu": trans("Probationary"),
+        "redirect": reverse_lazy("probationary-view"),
+    },
+    {
+        "menu": trans("Annual"),
+        "redirect": reverse_lazy("annual-view"),
+    },
+    {
+        "menu": trans("Bi-Annual"),
+        "redirect": reverse_lazy("bi-annual-view"),
+    },
 #     {
 #         "menu": trans("Objectives"),
 #         "redirect": reverse_lazy("objective-list-view"),
