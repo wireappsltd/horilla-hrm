@@ -1,3 +1,4 @@
+{% comment %} === PERFORMANCE MODULE DISABLED (HRMOD-541): template commented out; restore when reworking PMS ===
 {% extends 'settings.html' %} {% load i18n %} {% block settings %} {% load static %}
 <div class="oh-inner-sidebar-content">
   {% if perms.base.view_department %}
@@ -50,3 +51,5 @@
 </div>
 
 {% endblock settings %}
+
+{% endcomment %}

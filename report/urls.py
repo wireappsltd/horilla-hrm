@@ -75,10 +75,12 @@ if apps.is_installed("asset"):
         ]
     )
 
-if apps.is_installed("pms"):
-    urlpatterns.extend(
-        [
-            path("pms-report", pms_report.pms_report, name="pms-report"),
-            path("pms-pivot", pms_report.pms_pivot, name="pms-pivot"),
-        ]
-    )
+# Performance module disabled (HRMOD-541): PMS report/pivot disabled (views depend on
+# commented-out pms.views/pms.filters symbols).
+# if apps.is_installed("pms"):
+#     urlpatterns.extend(
+#         [
+#             path("pms-report", pms_report.pms_report, name="pms-report"),
+#             path("pms-pivot", pms_report.pms_pivot, name="pms-pivot"),
+#         ]
+#     )

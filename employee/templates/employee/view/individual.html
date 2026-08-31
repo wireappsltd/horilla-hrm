@@ -394,6 +394,7 @@
 								{% endif %}
 							{% endif %}
 
+							{% comment %} Performance module disabled (HRMOD-541): PMS Performance tab neutralized (route 'performance-tab' is commented out)
 							{% if "pms"|app_installed %}
 								{% if perms.pms.view_feedback or request.user|check_manager:employee or request.user == employee.employee_user_id %}
 									<li data-cell-index="17" data-cell-title="{% trans 'Performance' %}" class="oh-general__tab">
@@ -404,6 +405,7 @@
 									</li>
 								{% endif %}
 							{% endif %}
+							{% endcomment %}
 
 							{% if perms.auth.view_permission or perms.auth.view_group %}
 							<li data-cell-index="18" data-cell-title="{% trans 'Groups & Permissions' %}"
