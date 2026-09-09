@@ -230,6 +230,21 @@ urlpatterns = [
     path("annual-view", views.annual_view, name="annual-view"),
     path("bi-annual-view", views.bi_annual_view, name="bi-annual-view"),
     path(
+        "probation-review-list",
+        views.probation_review_list,
+        name="probation-review-list",
+    ),
+    path(
+        "generate-probation-review/<int:employee_id>",
+        views.generate_probation_review_view,
+        name="generate-probation-review",
+    ),
+    path(
+        "probation-review-form/<int:review_id>",
+        views.probation_review_form,
+        name="probation-review-form",
+    ),
+    path(
         "dashboard-objective-status",
         views.dashboard_objective_status,
         name="dashboard-objective-status",

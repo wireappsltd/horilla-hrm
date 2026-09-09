@@ -18,7 +18,7 @@ SUBMENUS = [
     },
     {
         "menu": trans("Probationary"),
-        "redirect": reverse_lazy("probationary-view"),
+        "redirect": reverse_lazy("probation-review-list"),
     },
     {
         "menu": trans("Annual"),

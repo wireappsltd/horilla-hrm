@@ -16,10 +16,16 @@ from django import forms
 from django.contrib import messages
 from django.contrib.auth.models import User
 from django.core.paginator import Paginator
+from django.db import transaction
 from django.db.models import ProtectedError, Q
 from django.db.utils import IntegrityError
 from django.forms import modelformset_factory
-from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
+from django.http import (
+    HttpResponse,
+    HttpResponseNotAllowed,
+    HttpResponseRedirect,
+    JsonResponse,
+)
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
@@ -97,11 +103,20 @@ from pms.models import (
     MeetingsAnswer,
     Objective,
     Period,
+    ProbationReview,
     Question,
     QuestionOptions,
     QuestionTemplate,
 )
 from horilla_audit.methods import log_activity, log_form_changes
+from pms.forms import ProbationReviewCriterionFormSet, ProbationReviewForm
+from pms.methods import (
+    can_edit_probation_review,
+    generate_probation_review,
+    get_probation_eligible_employees,
+)
+
+from django.core.exceptions import PermissionDenied
 
 logger = logging.getLogger(__name__)
 
@@ -3052,6 +3067,202 @@ def bi_annual_view(request):
     This view renders the Bi-Annual performance page (scaffold shell).
     """
     return render(request, "performance/bi_annual.html")
+
+
+@login_required
+@permission_required("pms.add_probationreview")
+def probation_review_list(request):
+    """
+    Probationary review list page.
+
+    Two tabs:
+        - Eligible: employees who are due (or approaching due) for a review
+          but have no active review yet (Not started -> Generate), PLUS every
+          in-progress review (Open Review) so HR can keep working on them.
+        - History: only completed reviews.
+
+    Eligibility (including tenant/company scoping and exclusion of employees
+    who already have an active review) is delegated to
+    get_probation_eligible_employees() in pms.methods.
+
+    NOTE: Date values are passed as real date objects; DD/MM/YYYY formatting
+    is a display concern handled in the template later.
+    """
+    employees = get_probation_eligible_employees()
+
+    probation_rows = []
+    # 1) Employees who are due but have no active review yet
+    #    (status "Not started" -> Generate). get_probation_eligible_employees()
+    #    already excludes anyone with an active (in-progress) review, so these
+    #    rows never duplicate the in-progress rows added below.
+    for employee in employees:
+        work_info = getattr(employee, "employee_work_info", None)
+        probation_rows.append(
+            {
+                "employee": employee,
+                "job_title": employee.get_job_position(),
+                "date_of_join": getattr(work_info, "date_joining", None),
+                "probation_due_date": getattr(employee, "probation_due_date", None),
+                # No active review -> the row shows "Not started" / Generate.
+                "review": None,
+                "review_status": None,
+            }
+        )
+
+    # 2) In-progress reviews belong in the Eligible tab too, so HR can continue
+    #    working on them (status "In Progress" -> Open Review). Only completed
+    #    reviews move to the History tab.
+    in_progress_reviews = ProbationReview.objects.filter(
+        status="in_progress"
+    ).order_by("-id")
+    for review in in_progress_reviews:
+        employee = review.employee_id
+        work_info = getattr(employee, "employee_work_info", None)
+        probation_rows.append(
+            {
+                "employee": employee,
+                "job_title": review.job_title or (
+                    employee.get_job_position() if employee else None
+                ),
+                "date_of_join": review.date_of_join
+                or getattr(work_info, "date_joining", None),
+                "probation_due_date": review.review_due_date,
+                "review": review,
+                "review_status": review.get_status_display(),
+            }
+        )
+
+    context = {
+        "probation_rows": probation_rows,
+        # History tab: only completed reviews for the current company.
+        "probation_reviews": ProbationReview.objects.filter(
+            status="completed"
+        ).order_by("-id"),
+        # Options for the "Generate" popup reviewer multi-select: every active
+        # employee (company-scoped via the Employee manager).
+        "all_employees": Employee.objects.filter(is_active=True),
+    }
+    return render(request, "performance/probation_review_list.html", context)
+
+
+@login_required
+@permission_required("pms.add_probationreview")
+def generate_probation_review_view(request, employee_id):
+    """
+    Generate (or open the existing) probationary review for an employee.
+
+    POST-only. Reviewers selected in the "Generate" popup are read from the
+    ``reviewers`` POST list (Employee ids) and assigned to the review; only
+    those reviewers (plus HR/Admin holding ``pms.change_probationreview``)
+    can later view/edit the form.
+
+    Calls generate_probation_review(), which is idempotent: if the employee
+    already has an active (non-completed) review, that existing review is
+    returned (and its reviewer set updated) instead of creating a duplicate.
+    Either way, the user is redirected to the probation review form for the
+    returned review.
+    """
+    if request.method != "POST":
+        return HttpResponseNotAllowed(["POST"])
+
+    employee = get_object_or_404(Employee, id=employee_id)
+    reviewer_ids = request.POST.getlist("reviewers")
+    reviewers = Employee.objects.filter(id__in=reviewer_ids) if reviewer_ids else None
+    review = generate_probation_review(
+        employee, created_by=request.user, reviewers=reviewers
+    )
+    return redirect("probation-review-form", review_id=review.id)
+
+
+@login_required
+def probation_review_form(request, review_id):
+    """
+    Manager-facing Probationary Review form.
+
+    Access: HR/Admin (holding ``pms.change_probationreview``) OR an assigned
+    reviewer (an employee in the review's ``reviewers`` set, as selected in
+    the Generate popup). Anyone else is denied. The editing reviewer is
+    recorded automatically via ``HorillaModel.modified_by`` on save, which
+    feeds the "Last Edited By" column and the later audit-log work.
+
+    GET:
+        Renders the outcome/confirmation form and the 11 criterion rows bound
+        to the review instance, along with the read-only auto-captured header
+        fields (employee, job title, joining date, immediate supervisor).
+
+    POST:
+        Validates the outcome form and the criterion formset. On success both
+        are saved, ``total_marks`` is recomputed as the sum of the 11 criterion
+        marks (unscored/null counted as 0, out of 50) and the review status is
+        updated. The whole save runs inside a single ``transaction.atomic()``
+        block so a partially-saved review cannot occur.
+
+    Status rule (in_progress / completed):
+        - ``completed``   : the manager explicitly submits as final
+                            (submit control ``action == "complete"``).
+        - ``in_progress`` : the review has been generated but not yet
+                            submitted as final. This is the initial state of
+                            every generated review.
+
+    NOTE: Sign-off actions (manager_signed / cto_signed and their by/at
+    fields) are intentionally NOT handled here. They will be added later as a
+    separate sign-off action; this view only edits the outcome + scoring.
+    """
+    review = get_object_or_404(ProbationReview, id=review_id)
+
+    # Access control: HR/Admin or an assigned reviewer only.
+    if not can_edit_probation_review(request.user, review):
+        raise PermissionDenied(
+            _("You are not allowed to view or edit this probationary review.")
+        )
+
+    if request.method == "POST":
+        form = ProbationReviewForm(request.POST, instance=review)
+        formset = ProbationReviewCriterionFormSet(request.POST, instance=review)
+        if form.is_valid() and formset.is_valid():
+            with transaction.atomic():
+                review = form.save()
+                formset.save()
+
+                # Recompute total marks from the (now saved) criterion rows,
+                # treating unscored (null) marks as 0.
+                criteria = review.criteria.all()
+                review.total_marks = sum(
+                    criterion.marks or 0 for criterion in criteria
+                )
+
+                # Determine in_progress / completed. A generated review is
+                # always at least "in_progress"; it only becomes "completed"
+                # when the manager explicitly submits as final.
+                is_final = request.POST.get("action") == "complete"
+                if is_final:
+                    review.status = "completed"
+                    review.review_completed = True
+                else:
+                    review.status = "in_progress"
+                    review.review_completed = False
+
+                review.save()
+
+            messages.success(request, _("Probationary review saved successfully."))
+            return redirect("probation-review-form", review_id=review.id)
+    else:
+        form = ProbationReviewForm(instance=review)
+        formset = ProbationReviewCriterionFormSet(instance=review)
+
+    context = {
+        "review": review,
+        "form": form,
+        "formset": formset,
+        # Auto-captured header fields (display-only / read-only).
+        "employee": review.employee_id,
+        "job_title": review.job_title,
+        "date_of_join": review.date_of_join,
+        "immediate_supervisor": review.immediate_supervisor,
+        "review_due_date": review.review_due_date,
+    }
+    return render(request, "performance/probation_review_form.html", context)
+
 
 
 @login_required

@@ -12,7 +12,7 @@ from django import forms
 from django.core.exceptions import ValidationError
 from django.core.files.base import File
 from django.db.models.base import Model
-from django.forms import ModelForm
+from django.forms import ModelForm, inlineformset_factory
 from django.forms.utils import ErrorList
 from django.template.loader import render_to_string
 from django.utils.translation import gettext_lazy as _
@@ -41,6 +41,8 @@ from pms.models import (
     Meetings,
     Objective,
     Period,
+    ProbationReview,
+    ProbationReviewCriterion,
     Question,
     QuestionOptions,
     QuestionTemplate,
@@ -1303,4 +1305,82 @@ def set_date_field_initial(instance):
 #             cleaned_data["employee_ids"] = employee_data
 #
 #         return cleaned_data
-#
+
+
+class ProbationReviewForm(BaseForm):
+    """
+    Manager-facing form for the outcome / confirmation section of a
+    ProbationReview.
+
+    The auto-captured header fields (employee_id, job_title, date_of_join,
+    immediate_supervisor) are display-only and populated at generation, so
+    they are excluded here. Sign-off fields (manager_signed / cto_signed and
+    their by/at fields) and total_marks are also excluded and handled
+    separately.
+
+    Date fields use the app's standard ``type=date`` widget convention;
+    DD/MM/YYYY input/display is handled at the browser/locale and template
+    level (e.g. ``|date:"d/m/Y"``), consistent with other pms forms.
+    """
+
+    class Meta:
+        """Meta class for the ProbationReviewForm."""
+
+        model = ProbationReview
+        fields = [
+            "objectives_met",
+            "objectives_action",
+            "training_needs_addressed",
+            "performance_summary",
+            "appointment_confirmed",
+            "confirmation_reasons",
+            "probation_extended",
+            "extension_reasons",
+            "extension_length_months",
+            "new_completion_date",
+            "review_date",
+        ]
+        widgets = {
+            "objectives_action": forms.Textarea(attrs={"rows": 3}),
+            "performance_summary": forms.Textarea(attrs={"rows": 3}),
+            "confirmation_reasons": forms.Textarea(attrs={"rows": 3}),
+            "extension_reasons": forms.Textarea(attrs={"rows": 3}),
+            "new_completion_date": forms.DateInput(
+                attrs={"class": "oh-input w-100", "type": "date"}
+            ),
+            "review_date": forms.DateInput(
+                attrs={"class": "oh-input w-100", "type": "date"}
+            ),
+        }
+
+
+class ProbationReviewCriterionForm(BaseForm):
+    """
+    Form for a single ProbationReviewCriterion row.
+
+    Only ``marks`` is editable (validated 1-5 by the model field). The
+    ``section``, ``title`` and ``description`` fields are display-only and
+    are rendered from the instance in the template.
+    """
+
+    class Meta:
+        """Meta class for the ProbationReviewCriterionForm."""
+
+        model = ProbationReviewCriterion
+        fields = ["marks"]
+        widgets = {
+            "marks": forms.NumberInput(
+                attrs={"class": "oh-input w-100", "min": 1, "max": 5}
+            ),
+        }
+
+
+# Inline formset for the 11 criterion rows. ``extra=0`` because the rows are
+# already created by generate_probation_review(); no new rows are added here.
+ProbationReviewCriterionFormSet = inlineformset_factory(
+    ProbationReview,
+    ProbationReviewCriterion,
+    form=ProbationReviewCriterionForm,
+    extra=0,
+    can_delete=False,
+)

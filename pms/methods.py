@@ -1,3 +1,228 @@
+"""
+pms/methods.py
+
+Service/helper functions for the pms (Performance Management) app.
+"""
+
+from datetime import date, timedelta
+
+from dateutil.relativedelta import relativedelta
+from django.db import transaction
+
+from employee.models import Employee
+from pms.models import (
+    PROBATION_REVIEW_CRITERIA_DEFINITIONS,
+    ProbationReview,
+    ProbationReviewCriterion,
+)
+
+
+def active_probation_reviews():
+    """
+    Return the queryset of "active" probation reviews.
+
+    An active review is one that is active (``is_active=True``) and not yet
+    completed. This is the single shared definition of an "active review"
+    used by both generate_probation_review() (idempotency) and
+    get_probation_eligible_employees() (exclusion), so the two stay
+    consistent.
+    """
+    return ProbationReview.objects.filter(is_active=True).exclude(status="completed")
+
+
+def probation_due_date(work_info):
+    """
+    Compute the probationary review due date for an EmployeeWorkInformation,
+    together with the source the date came from.
+
+    Rule (confirmed, unchanged): prefer the explicit ``probation_end_date``
+    when it is populated; otherwise fall back to ``date_joining + 6 months``.
+
+    Returns:
+        A ``(due_date, source)`` tuple:
+            - ``source == "probation_end_date"`` when the real
+              ``probation_end_date`` field was used.
+            - ``source == "computed"`` when the ``date_joining + 6 months``
+              fallback was used.
+        Returns ``(None, None)`` when neither can be determined (missing work
+        info / null dates), which callers treat as "not eligible / cannot
+        compute".
+    """
+    if work_info is None:
+        return (None, None)
+    if getattr(work_info, "probation_end_date", None):
+        return (work_info.probation_end_date, "probation_end_date")
+    if getattr(work_info, "date_joining", None):
+        return (work_info.date_joining + relativedelta(months=6), "computed")
+    return (None, None)
+
+
+def generate_probation_review(employee, created_by=None, reviewers=None):
+    """
+    Generate a blank probationary review for the given employee.
+
+    The review-time capture fields (job title, joining date, immediate
+    supervisor) are populated from the employee's work information. The
+    review is created in ``in_progress`` status together with the 11 unscored
+    criterion rows defined in ``PROBATION_REVIEW_CRITERIA_DEFINITIONS``.
+
+    Idempotency: if the employee already has an active (non-completed)
+    review, that existing review is returned instead of creating a
+    duplicate. When ``reviewers`` is supplied for an already-existing
+    review, the reviewer set is updated on that review (so HR can adjust who
+    is allowed to edit without creating a duplicate).
+
+    Note: this function performs no eligibility checking. It builds a
+    review for whatever employee it is given.
+
+    Args:
+        employee: The Employee instance the review is for.
+        created_by: Optional User to set as the creator on the review and
+            its criteria (audit fields).
+        reviewers: Optional iterable of Employee instances (or ids) allowed
+            to view and edit the review. HR/Admin with change permission can
+            always edit regardless of this set.
+
+    Returns:
+        The ProbationReview instance (existing or newly created).
+    """
+    # Idempotency: an "existing review" is an active, non-completed review
+    # for this employee. Completed / inactive reviews do not block a new one.
+    # Reuses the shared active-review definition (active_probation_reviews).
+    existing_review = active_probation_reviews().filter(employee_id=employee).first()
+    if existing_review:
+        # Allow HR to (re)assign reviewers on the existing review.
+        if reviewers is not None:
+            existing_review.reviewers.set(reviewers)
+        return existing_review
+
+    # Source review-time capture fields from the employee's work information.
+    # The Employee helpers and getattr fallbacks handle a missing
+    # employee_work_info or null fields without erroring.
+    work_info = getattr(employee, "employee_work_info", None)
+    job_position = employee.get_job_position()
+    reporting_manager = employee.get_reporting_manager()
+
+    with transaction.atomic():
+        review = ProbationReview(
+            employee_id=employee,
+            job_title=str(job_position) if job_position else None,
+            date_of_join=getattr(work_info, "date_joining", None),
+            immediate_supervisor=reporting_manager,
+            status="in_progress",
+        )
+        if created_by is not None:
+            review.created_by = created_by
+        review.save()
+
+        if reviewers is not None:
+            review.reviewers.set(reviewers)
+
+        criteria = [
+            ProbationReviewCriterion(
+                probation_review_id=review,
+                section=definition["section"],
+                title=definition["title"],
+                description=definition["description"],
+                marks=None,
+                created_by=created_by,
+            )
+            for definition in PROBATION_REVIEW_CRITERIA_DEFINITIONS
+        ]
+        ProbationReviewCriterion.objects.bulk_create(criteria)
+
+    return review
+
+
+def can_edit_probation_review(user, review):
+    """
+    Return True when ``user`` is allowed to view/edit ``review``.
+
+    Access is granted to:
+        - HR/Admin: any user holding the ``pms.change_probationreview``
+          permission (unchanged existing behaviour).
+        - Assigned reviewers: a user whose linked Employee is in the
+          review's ``reviewers`` set (the people HR selected in the Generate
+          popup).
+
+    Args:
+        user: The Django ``User`` from the request.
+        review: The ProbationReview being accessed.
+
+    Returns:
+        bool
+    """
+    if user.has_perm("pms.change_probationreview"):
+        return True
+    employee = getattr(user, "employee_get", None)
+    if employee is None:
+        return False
+    return review.reviewers.filter(id=employee.id).exists()
+
+
+def get_probation_eligible_employees(lookahead_days=30):
+    """
+    Return the active employees who are due (or approaching due) for a
+    probationary review.
+
+    An employee is eligible when their probation due date (see
+    ``probation_due_date``: ``probation_end_date`` when populated, else
+    ``date_joining + 6 months``) falls on or before ``today + lookahead_days``.
+
+    Rules:
+        - Only active employees with employee work information are considered.
+        - Employees whose due date cannot be computed (missing work info /
+          null dates) are excluded without erroring.
+        - Employees who already have an active (non-completed) review are
+          excluded, using the shared ``active_probation_reviews`` definition
+          so this stays consistent with generate_probation_review().
+        - The query is driven off the company-scoped ``Employee.objects``
+          manager, mirroring the pms models' tenant boundary so HR only sees
+          their own company's employees.
+
+    Each returned Employee instance is annotated with:
+        - ``probation_due_date``: the computed due date (a ``date``).
+        - ``probation_due_source``: where that date came from, either
+          ``"probation_end_date"`` (real HR-entered field) or ``"computed"``
+          (the ``date_joining + 6 months`` fallback). This lets the list show
+          HR which due dates are real vs computed fallbacks.
+
+    Args:
+        lookahead_days: How many days ahead of today to include as
+            "approaching". Defaults to 30.
+
+    Returns:
+        A list of Employee instances (annotated with ``probation_due_date``
+        and ``probation_due_source``).
+    """
+    cutoff = date.today() + timedelta(days=lookahead_days)
+
+    # Employees who already have an active (non-completed) review — excluded.
+    reviewed_employee_ids = active_probation_reviews().values_list(
+        "employee_id", flat=True
+    )
+
+    # Company-scoped active employees that have work information. Using
+    # Employee.objects (HorillaCompanyManager) keeps the tenant boundary.
+    candidates = (
+        Employee.objects.filter(is_active=True, employee_work_info__isnull=False)
+        .exclude(id__in=reviewed_employee_ids)
+        .select_related("employee_work_info")
+    )
+
+    eligible_employees = []
+    for employee in candidates:
+        work_info = getattr(employee, "employee_work_info", None)
+        due_date, due_source = probation_due_date(work_info)
+        # Null / uncomputable due dates are excluded.
+        if due_date and due_date <= cutoff:
+            employee.probation_due_date = due_date
+            employee.probation_due_source = due_source
+            eligible_employees.append(employee)
+
+    return eligible_employees
+
+
 # === PERFORMANCE MODULE DISABLED (HRMOD-541): commented out; restore when reworking PMS ===
 # from django.contrib import messages
 # from django.http import HttpResponse
