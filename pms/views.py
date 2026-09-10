@@ -3138,9 +3138,6 @@ def probation_review_list(request):
         "probation_reviews": ProbationReview.objects.filter(
             status="completed"
         ).order_by("-id"),
-        # Options for the "Generate" popup reviewer multi-select: every active
-        # employee (company-scoped via the Employee manager).
-        "all_employees": Employee.objects.filter(is_active=True),
     }
     return render(request, "performance/probation_review_list.html", context)
 
@@ -3151,26 +3148,20 @@ def generate_probation_review_view(request, employee_id):
     """
     Generate (or open the existing) probationary review for an employee.
 
-    POST-only. Reviewers selected in the "Generate" popup are read from the
-    ``reviewers`` POST list (Employee ids) and assigned to the review; only
-    those reviewers (plus HR/Admin holding ``pms.change_probationreview``)
-    can later view/edit the form.
+    POST-only. Reviewers are no longer selected here; they are chosen and
+    edited on the probation review form itself (so HR/Admin can add or change
+    them at any time, not just once at generation).
 
     Calls generate_probation_review(), which is idempotent: if the employee
     already has an active (non-completed) review, that existing review is
-    returned (and its reviewer set updated) instead of creating a duplicate.
-    Either way, the user is redirected to the probation review form for the
-    returned review.
+    returned instead of creating a duplicate. Either way, the user is
+    redirected to the probation review form for the returned review.
     """
     if request.method != "POST":
         return HttpResponseNotAllowed(["POST"])
 
     employee = get_object_or_404(Employee, id=employee_id)
-    reviewer_ids = request.POST.getlist("reviewers")
-    reviewers = Employee.objects.filter(id__in=reviewer_ids) if reviewer_ids else None
-    review = generate_probation_review(
-        employee, created_by=request.user, reviewers=reviewers
-    )
+    review = generate_probation_review(employee, created_by=request.user)
     return redirect("probation-review-form", review_id=review.id)
 
 
@@ -3245,7 +3236,7 @@ def probation_review_form(request, review_id):
                 review.save()
 
             messages.success(request, _("Probationary review saved successfully."))
-            return redirect("probation-review-form", review_id=review.id)
+            return redirect("probation-review-list")
     else:
         form = ProbationReviewForm(instance=review)
         formset = ProbationReviewCriterionFormSet(instance=review)

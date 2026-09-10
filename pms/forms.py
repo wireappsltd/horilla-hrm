@@ -1321,13 +1321,34 @@ class ProbationReviewForm(BaseForm):
     Date fields use the app's standard ``type=date`` widget convention;
     DD/MM/YYYY input/display is handled at the browser/locale and template
     level (e.g. ``|date:"d/m/Y"``), consistent with other pms forms.
+
+    ``reviewers`` (the employees allowed to view/edit this review) is editable
+    here so HR/Admin can add or change reviewers at any time after the review
+    has been generated — not just once at generation time.
     """
+
+    reviewers = forms.ModelMultipleChoiceField(
+        queryset=Employee.objects.filter(is_active=True),
+        required=False,
+        label=_("Reviewers"),
+        help_text=_(
+            "Employees allowed to view and edit this probationary review. "
+            "HR/Admin (with change permission) can always edit."
+        ),
+        widget=forms.SelectMultiple(
+            attrs={
+                "class": "oh-select oh-select-2 w-100",
+                "data-placeholder": _("Select reviewers"),
+            }
+        ),
+    )
 
     class Meta:
         """Meta class for the ProbationReviewForm."""
 
         model = ProbationReview
         fields = [
+            "reviewers",
             "objectives_met",
             "objectives_action",
             "training_needs_addressed",

@@ -49,6 +49,14 @@
                             <span class="oh-label d-block text-muted">{% trans "6-Month Review Due Date" %}</span>
                             <span class="fw-bold">{{ review_due_date|date:"d/m/Y"|default:"-" }}</span>
                         </div>
+                        <div class="col-12 col-md-6 col-lg-4 mb-3">
+                            {{ form.reviewers.label_tag }}
+                            {{ form.reviewers }}
+                            <small class="text-muted d-block">
+                                {% trans "Employees allowed to view and edit this review." %}
+                            </small>
+                            {{ form.reviewers.errors }}
+                        </div>
                     </div>
                 </div>
             </div>
@@ -146,9 +154,10 @@
                             </tbody>
                             <tfoot>
                                 <tr>
-                                    <td class="text-end fw-bold">{% trans "Total" %}</td>
-                                    <td class="fw-bold">
-                                        <span id="probation-total-value">0</span> / 50
+                                    <td class="text-end fw-bold" colspan="2" style="font-size: 1.15rem; padding: 0.85rem 1rem;">
+                                        {% trans "Total" %}
+                                        <span id="probation-total-value" style="font-size: 1.5rem; color: #6c757d;">0</span>
+                                        <span style="color: #6c757d;">/ 50</span>
                                     </td>
                                 </tr>
                             </tfoot>
@@ -295,6 +304,23 @@
         recomputeProbationTotal();
         toggleExtensionFields();
     })();
+
+    // --- Reviewers multi-select (select2) ---
+    // Load the select2 library on this page (guarded so it only runs once),
+    // then turn the reviewers <select multiple> into a searchable control.
+    if (typeof $ !== "undefined" && !$.fn.select2) {
+        {% include 'select2.js' %}
+    }
+    if (typeof $ !== "undefined" && $.fn.select2) {
+        var $reviewers = $("#id_reviewers");
+        if ($reviewers.length) {
+            $reviewers.select2({
+                placeholder: $reviewers.data("placeholder") || "{% trans 'Select reviewers' %}",
+                width: "100%",
+                allowClear: true,
+            });
+        }
+    }
 </script>
 {% endblock %}
 

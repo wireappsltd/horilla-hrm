@@ -81,12 +81,10 @@
                                     <thead>
                                         <tr>
                                             <th>{% trans "Employee" %}</th>
-                                            <th>{% trans "Job Title" %}</th>
                                             <th>{% trans "Date of Join" %}</th>
                                             <th>{% trans "Due Date" %}</th>
                                             <th>{% trans "Review Date" %}</th>
                                             <th>{% trans "Total" %}</th>
-                                            <th>{% trans "Reviewers" %}</th>
                                             <th>{% trans "Last Edited By" %}</th>
                                             <th>{% trans "Status" %}</th>
                                             <th class="text-end">{% trans "Action" %}</th>
@@ -96,7 +94,6 @@
                                         {% for row in probation_rows %}
                                             <tr>
                                                 <td class="pr-emp">{{ row.employee }}</td>
-                                                <td>{{ row.job_title|default:"-" }}</td>
                                                 <td class="pr-nowrap">{{ row.date_of_join|date:"d/m/Y"|default:"-" }}</td>
                                                 <td class="pr-nowrap">
                                                     {{ row.probation_due_date|date:"d/m/Y"|default:"-" }}
@@ -110,19 +107,6 @@
                                                 <td class="pr-nowrap">{{ row.review.review_date|date:"d/m/Y"|default:"-" }}</td>
                                                 <td class="pr-nowrap">
                                                     {% if row.review %}{{ row.review.total_marks }} / 50{% else %}<span class="pr-muted">-</span>{% endif %}
-                                                </td>
-                                                <td>
-                                                    {% if row.review %}
-                                                        <div class="pr-chips">
-                                                            {% for reviewer in row.review.reviewers.all %}
-                                                                <span class="pr-chip">{{ reviewer }}</span>
-                                                            {% empty %}
-                                                                <span class="pr-muted">-</span>
-                                                            {% endfor %}
-                                                        </div>
-                                                    {% else %}
-                                                        <span class="pr-muted">-</span>
-                                                    {% endif %}
                                                 </td>
                                                 <td class="pr-nowrap">
                                                     {% if row.review.modified_by %}
@@ -145,18 +129,21 @@
                                                             {% trans "Open Review" %}
                                                         </a>
                                                     {% else %}
-                                                        <button type="button"
-                                                                class="oh-btn oh-btn--secondary oh-btn--small generate-review-btn"
-                                                                data-action="{% url 'generate-probation-review' employee_id=row.employee.id %}"
-                                                                data-employee="{{ row.employee }}">
-                                                            {% trans "Generate Review" %}
-                                                        </button>
+                                                        <form method="post"
+                                                              action="{% url 'generate-probation-review' employee_id=row.employee.id %}"
+                                                              class="d-inline">
+                                                            {% csrf_token %}
+                                                            <button type="submit"
+                                                                    class="oh-btn oh-btn--secondary oh-btn--small">
+                                                                {% trans "Generate Review" %}
+                                                            </button>
+                                                        </form>
                                                     {% endif %}
                                                 </td>
                                             </tr>
                                         {% empty %}
                                             <tr>
-                                                <td colspan="10" class="text-center pr-muted py-4">
+                                                <td colspan="8" class="text-center pr-muted py-4">
                                                     {% trans "No employees are currently due for a probationary review." %}
                                                 </td>
                                             </tr>
@@ -177,11 +164,9 @@
                                     <thead>
                                         <tr>
                                             <th>{% trans "Employee" %}</th>
-                                            <th>{% trans "Job Title" %}</th>
                                             <th>{% trans "Due Date" %}</th>
                                             <th>{% trans "Review Date" %}</th>
                                             <th>{% trans "Total" %}</th>
-                                            <th>{% trans "Reviewers" %}</th>
                                             <th>{% trans "Last Edited By" %}</th>
                                             <th>{% trans "Status" %}</th>
                                             <th class="text-end">{% trans "Action" %}</th>
@@ -191,19 +176,9 @@
                                         {% for review in probation_reviews %}
                                             <tr>
                                                 <td class="pr-emp">{{ review.employee_id|default:"-" }}</td>
-                                                <td>{{ review.job_title|default:"-" }}</td>
                                                 <td class="pr-nowrap">{{ review.review_due_date|date:"d/m/Y"|default:"-" }}</td>
                                                 <td class="pr-nowrap">{{ review.review_date|date:"d/m/Y"|default:"-" }}</td>
                                                 <td class="pr-nowrap">{{ review.total_marks }} / 50</td>
-                                                <td>
-                                                    <div class="pr-chips">
-                                                        {% for reviewer in review.reviewers.all %}
-                                                            <span class="pr-chip">{{ reviewer }}</span>
-                                                        {% empty %}
-                                                            <span class="pr-muted">-</span>
-                                                        {% endfor %}
-                                                    </div>
-                                                </td>
                                                 <td class="pr-nowrap">
                                                     {% if review.modified_by %}
                                                         {{ review.modified_by.employee_get|default:review.modified_by }}
@@ -223,7 +198,7 @@
                                             </tr>
                                         {% empty %}
                                             <tr>
-                                                <td colspan="9" class="text-center pr-muted py-4">
+                                                <td colspan="7" class="text-center pr-muted py-4">
                                                     {% trans "No completed probationary reviews yet." %}
                                                 </td>
                                             </tr>
@@ -242,83 +217,5 @@
     </div>
 </main>
 
-<!-- Generate Review modal: pick reviewers allowed to view/edit the form -->
-<div class="oh-modal" id="generateReviewModal" role="dialog" aria-labelledby="generateReviewModal" aria-hidden="true">
-    <div class="oh-modal__dialog" style="max-width: 560px">
-        <div class="oh-modal__dialog-header">
-            <h2 class="oh-modal__dialog-title">{% trans "Generate Probationary Review" %}</h2>
-            <button type="button" class="oh-modal__close--custom"
-                    onclick="$('#generateReviewModal').removeClass('oh-modal--show');">
-                <ion-icon name="close-outline" role="img" aria-label="close outline"></ion-icon>
-            </button>
-        </div>
-        <div class="oh-modal__dialog-body">
-            <form method="post" id="generateReviewForm" action="">
-                {% csrf_token %}
-                <p class="text-muted" id="generateReviewEmployeeLabel"></p>
-                <div class="oh-input-group mb-3">
-                    <label class="oh-label" for="reviewerSelect">
-                        {% trans "Reviewers (can view & edit this form)" %}
-                    </label>
-                    <select name="reviewers" id="reviewerSelect" multiple
-                            data-placeholder="{% trans 'Select reviewers' %}"
-                            class="oh-select oh-select-2 w-100">
-                        {% for employee in all_employees %}
-                            <option value="{{ employee.id }}">{{ employee }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div class="d-flex justify-content-end">
-                    <button type="button" class="oh-btn oh-btn--light me-2"
-                            onclick="$('#generateReviewModal').removeClass('oh-modal--show');">
-                        {% trans "Cancel" %}
-                    </button>
-                    <button type="submit" class="oh-btn oh-btn--secondary">
-                        {% trans "Generate" %}
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-
-<script>
-    // Load the select2 library on this page.
-    // Guarded so it only initialises the plugin once.
-    if (typeof $ !== "undefined" && !$.fn.select2) {
-        {% include 'select2.js' %}
-    }
-
-    // Initialise the reviewer dropdown as a single searchable select2 control.
-    // dropdownParent is the modal dialog so the dropdown renders/position
-    // correctly while the modal is open.
-    function initReviewerSelect() {
-        var $select = $("#reviewerSelect");
-        if (!$.fn.select2) {
-            return;
-        }
-        if ($select.data("select2")) {
-            $select.select2("destroy");
-        }
-        $select.select2({
-            placeholder: $select.data("placeholder"),
-            width: "100%",
-            dropdownParent: $("#generateReviewModal .oh-modal__dialog"),
-            allowClear: true,
-        });
-    }
-
-    $(document).on("click", ".generate-review-btn", function () {
-        var action = $(this).data("action");
-        var employee = $(this).data("employee");
-        $("#generateReviewForm").attr("action", action);
-        $("#generateReviewEmployeeLabel").text(
-            "{% trans 'Review for' %}: " + employee
-        );
-        initReviewerSelect();
-        $("#reviewerSelect").val(null).trigger("change");
-        $("#generateReviewModal").addClass("oh-modal--show");
-    });
-</script>
 {% endblock %}
 
