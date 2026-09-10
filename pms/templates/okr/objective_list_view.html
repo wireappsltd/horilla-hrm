@@ -1,3 +1,4 @@
+{% comment %} === PERFORMANCE MODULE DISABLED (HRMOD-541): template commented out; restore when reworking PMS ===
 {% extends 'index.html' %} {% load static i18n %} {% load i18n %} {% load widget_tweaks %} {% load mathfilters %} {% load basefilters %} {% block styles %}
 <link rel="stylesheet" href="{% static 'css/pms.css' %}" />
 {% endblock styles %} {% block content %}
@@ -310,3 +311,5 @@
 </script>
 
 {% endblock content %}
+
+{% endcomment %}

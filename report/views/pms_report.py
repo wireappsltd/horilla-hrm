@@ -6,46 +6,56 @@ if apps.is_installed("pms"):
 
     from base.models import Company
     from horilla_views.cbv_methods import login_required, permission_required
-    from pms.filters import EmployeeObjectiveFilter, FeedbackFilter
+
+    # Performance module disabled (HRMOD-541): 'pms.filters' is emptied and
+    # 'pms.views.objective_filter_pagination' is commented out, so these imports would
+    # raise ImportError. The PMS report/pivot routes are disabled in report/urls.py.
+    # 'pms.models' is left intact, so its import below is kept.
+    # from pms.filters import EmployeeObjectiveFilter, FeedbackFilter
     from pms.models import EmployeeKeyResult, EmployeeObjective, Feedback, Objective
-    from pms.views import objective_filter_pagination
+    # from pms.views import objective_filter_pagination
 
     @login_required
     @permission_required(perm="pms.view_objective")
     def pms_report(request):
+        # Performance module disabled (HRMOD-541): this view's body references
+        # commented-out pms symbols (FeedbackFilter, objective_filter_pagination,
+        # EmployeeObjectiveFilter). The 'pms-report' route is removed in report/urls.py,
+        # so this is unreachable. Original logic preserved below for restore.
+        return JsonResponse({"detail": "PMS report disabled."}, status=404)
 
-        company = "all"
-        selected_company = request.session.get("selected_company")
-        if selected_company != "all":
-            company = Company.objects.filter(id=selected_company).first()
-        employee = request.user.employee_get
-        objective_own = EmployeeObjective.objects.filter(
-            employee_id=employee, archive=False
-        )
-        objective_own = objective_own.distinct()
+        # company = "all"
+        # selected_company = request.session.get("selected_company")
+        # if selected_company != "all":
+        #     company = Company.objects.filter(id=selected_company).first()
+        # employee = request.user.employee_get
+        # objective_own = EmployeeObjective.objects.filter(
+        #     employee_id=employee, archive=False
+        # )
+        # objective_own = objective_own.distinct()
 
-        feedback = request.GET.get(
-            "search"
-        )  # if the search is none the filter will works
-        if feedback is None:
-            feedback = ""
-        self_feedback = Feedback.objects.filter(employee_id=employee).filter(
-            review_cycle__icontains=feedback
-        )
-        initial_data = {"archive": False}
-        feedback_filter_own = FeedbackFilter(
-            request.GET or initial_data, queryset=self_feedback
-        )
+        # feedback = request.GET.get(
+        #     "search"
+        # )  # if the search is none the filter will works
+        # if feedback is None:
+        #     feedback = ""
+        # self_feedback = Feedback.objects.filter(employee_id=employee).filter(
+        #     review_cycle__icontains=feedback
+        # )
+        # initial_data = {"archive": False}
+        # feedback_filter_own = FeedbackFilter(
+        #     request.GET or initial_data, queryset=self_feedback
+        # )
 
-        context = objective_filter_pagination(request, objective_own)
-        cm = {
-            "company": company,
-            "feedback_filter_form": feedback_filter_own.form,
-            "emp_obj_form": EmployeeObjectiveFilter(),
-        }
-        context.update(cm)
+        # context = objective_filter_pagination(request, objective_own)
+        # cm = {
+        #     "company": company,
+        #     "feedback_filter_form": feedback_filter_own.form,
+        #     "emp_obj_form": EmployeeObjectiveFilter(),
+        # }
+        # context.update(cm)
 
-        return render(request, "report/pms_report.html", context)
+        # return render(request, "report/pms_report.html", context)
 
     @login_required
     @permission_required(perm="pms.view_objective")

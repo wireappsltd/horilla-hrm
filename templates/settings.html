@@ -528,6 +528,7 @@
 							</li>
 							<hr>
 						{% endif %}
+						{% comment %} Performance module disabled (HRMOD-541): PMS 'Bonus Point Setting' link neutralized (route 'bonus-point-setting' is commented out)
 						{% if "pms"|app_installed %}
 							<li class="oh-inner-sidebar__item">
 								<div class="oh-accordion ms-2">
@@ -555,6 +556,7 @@
 							</li>
 							<hr>
 						{% endif %}
+						{% endcomment %}
 						{% if "helpdesk"|app_installed %}
 							<li class="oh-inner-sidebar__item">
 								<div class="oh-accordion ms-2">

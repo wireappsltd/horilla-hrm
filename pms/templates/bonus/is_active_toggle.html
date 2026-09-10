@@ -1,3 +1,4 @@
+{% comment %} === PERFORMANCE MODULE DISABLED (HRMOD-541): template commented out; restore when reworking PMS ===
 
 <div class="oh-switch p-3">
     {% if perms.pms.change_bonuspointsetting %}
@@ -11,3 +12,5 @@
         {% if instance.is_active %} checked {% endif %} disabled >
     {% endif %}
 </div>
+
+{% endcomment %}
