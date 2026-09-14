@@ -23,6 +23,25 @@
         border-color: #ff5100;
         box-shadow: 0 0 0 0.15rem rgba(255, 81, 0, 0.15);
     }
+
+    .pr-readonly-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        min-height: 38px;
+        align-items: center;
+    }
+    .pr-readonly-chip {
+        display: inline-flex;
+        align-items: center;
+        background: #eef1f6;
+        color: #46536b;
+        border-radius: 12px;
+        padding: 3px 12px;
+        font-size: .8rem;
+        font-weight: 500;
+        white-space: nowrap;
+    }
 </style>
 <main :class="sidebarOpen ? 'oh-main__sidebar-visible' : ''">
     <div class="oh-wrapper">
@@ -36,14 +55,14 @@
             <div class="oh-card">
                 <div class="oh-card__header d-flex justify-content-between align-items-start">
                     <h2 class="oh-card__title">{% trans "Probationary Review" %}</h2>
-                    <div class="d-flex flex-column align-items-end" style="gap: 0.5rem;">
+                    <div class="d-flex align-items-center" style="gap: 0.5rem;">
                         {% if review.review_completed %}
-                            <span class="oh-badge oh-badge--success">
+                            <span class="oh-badge oh-badge--success oh-badge--small">
                                 <ion-icon name="checkmark-circle" role="img"></ion-icon>
                                 {% trans "Completed" %}
                             </span>
                         {% else %}
-                            <span class="oh-badge oh-badge--secondary">
+                            <span class="oh-badge oh-badge--secondary oh-badge--small">
                                 {{ review.get_status_display }}
                             </span>
                         {% endif %}
@@ -78,7 +97,21 @@
                         </div>
                         <div class="col-12 col-md-6 col-lg-4 mb-3">
                             {{ form.reviewers.label_tag }}
-                            {{ form.reviewers }}
+
+                            {# Read-only chips: the default (locked) view. #}
+                            <div id="reviewers-readonly" class="pr-readonly-chips">
+                                {% for reviewer in review.reviewers.all %}
+                                    <span class="pr-readonly-chip">{{ reviewer }}</span>
+                                {% empty %}
+                                    <span class="text-muted">{% trans "No reviewers assigned." %}</span>
+                                {% endfor %}
+                            </div>
+
+                            {# Editable select: revealed only when "Edit reviewers" is clicked. #}
+                            <div id="reviewers-edit" style="display: none;">
+                                {{ form.reviewers }}
+                            </div>
+
                             <small class="text-muted d-block">
                                 {% trans "Employees allowed to view and edit this review." %}
                             </small>
@@ -332,68 +365,90 @@
         toggleExtensionFields();
     })();
 
-    // --- Reviewers multi-select (select2) ---
-    // Load the select2 library on this page (guarded so it only runs once),
-    // then turn the reviewers <select multiple> into a searchable control.
-    if (typeof $ !== "undefined" && !$.fn.select2) {
-        {% include 'select2.js' %}
-    }
-    if (typeof $ !== "undefined") {
-        $(function () {
-            if (!$.fn.select2) {
-                return;
-            }
-            var $reviewers = $("#id_reviewers");
-            if (!$reviewers.length) {
-                return;
-            }
+    // --- Reviewers multi-select ---
+    // NOTE: this runs with PLAIN vanilla JS (no jQuery dependency) so the
+    // "Edit reviewers" toggle always works even if jQuery/select2 load later
+    // (Horilla loads jQuery at the bottom of the base template). select2 is
+    // layered on as a progressive enhancement once it is available.
+    (function () {
+        var reviewersSelect = document.getElementById("id_reviewers");
+        if (!reviewersSelect) {
+            return;
+        }
 
-            // Guard against any prior initialisation (e.g. a global select2
-            // init) so we never end up with a duplicated control.
+        var readonlyBox = document.getElementById("reviewers-readonly");
+        var editBox = document.getElementById("reviewers-edit");
+        var editReviewersBtn = document.getElementById("edit-reviewers-btn");
+        var reviewForm = reviewersSelect.form;
+        var isEditing = false;
+
+        // Start LOCKED: read-only chips visible, native select disabled so its
+        // values cannot be changed until "Edit reviewers" is clicked.
+        reviewersSelect.disabled = true;
+
+        // Progressive enhancement: turn the native select into a searchable
+        // select2 control if/when jQuery + select2 are available. Poll briefly
+        // because jQuery may still be loading when this script first runs.
+        function tryInitSelect2(attempt) {
+            if (typeof window.jQuery === "undefined" || !window.jQuery.fn.select2) {
+                if (attempt < 20) {
+                    setTimeout(function () { tryInitSelect2(attempt + 1); }, 100);
+                }
+                return;
+            }
+            var $ = window.jQuery;
+            var $reviewers = $(reviewersSelect);
             if ($reviewers.hasClass("select2-hidden-accessible")) {
                 $reviewers.select2("destroy");
             }
-
-            // Build the searchable control.
             $reviewers.select2({
                 placeholder: $reviewers.data("placeholder") || "{% trans 'Select reviewers' %}",
                 width: "100%",
                 allowClear: true,
             });
+            // Reflect the current disabled state in the select2 UI.
+            $reviewers.prop("disabled", reviewersSelect.disabled).trigger("change.select2");
+        }
+        tryInitSelect2(0);
 
-            // Helper: lock (read-only) or unlock (editable) the control.
-            function setReviewersLocked(locked) {
-                $reviewers.prop("disabled", locked).trigger("change.select2");
-            }
+        // --- Unlock only when the "Edit reviewers" button is clicked ---
+        if (editReviewersBtn) {
+            editReviewersBtn.addEventListener("click", function () {
+                isEditing = true;
+                if (readonlyBox) {
+                    readonlyBox.style.display = "none";
+                }
+                if (editBox) {
+                    editBox.style.display = "";
+                }
+                editReviewersBtn.style.display = "none";
+                reviewersSelect.disabled = false;
 
-            // Start LOCKED and keep it locked even if any late global init
-            // (document ready / htmx settle) tries to re-enable it.
-            setReviewersLocked(true);
-            setTimeout(function () { setReviewersLocked(true); }, 0);
+                if (typeof window.jQuery !== "undefined" && window.jQuery.fn.select2) {
+                    var $reviewers = window.jQuery(reviewersSelect);
+                    $reviewers.trigger("change.select2");
+                    try {
+                        $reviewers.select2("open");
+                    } catch (e) {
+                        reviewersSelect.focus();
+                    }
+                } else {
+                    reviewersSelect.focus();
+                }
+            });
+        }
 
-            // --- Unlock only when the "Edit reviewers" button is clicked ---
-            var editReviewersBtn = document.getElementById("edit-reviewers-btn");
-            if (editReviewersBtn) {
-                editReviewersBtn.addEventListener("click", function () {
-                    setReviewersLocked(false);
-                    editReviewersBtn.style.display = "none";
-                    $reviewers.select2("open");
-                });
-            }
+        // A disabled <select> is not submitted with the form, which would wipe
+        // the saved reviewers. Re-enable it just before submit so its current
+        // values are always posted, even when never edited. The page reloads
+        // afterwards and starts locked (read-only) again.
+        if (reviewForm) {
+            reviewForm.addEventListener("submit", function () {
+                reviewersSelect.disabled = false;
+            });
+        }
+    })();
 
-            // A disabled <select> is not submitted with the form, which would
-            // wipe the saved reviewers. Re-enable it just before submit so its
-            // current values are always posted, even when never edited.
-            var reviewForm = $reviewers.closest("form");
-            if (reviewForm.length) {
-                reviewForm.on("submit", function () {
-                    // Enable natively (no select2 refresh) purely so the values
-                    // POST; the page reloads afterwards and starts locked again.
-                    $reviewers.prop("disabled", false);
-                });
-            }
-        });
-    }
 </script>
 {% endblock %}
 
