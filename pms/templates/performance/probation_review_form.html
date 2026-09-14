@@ -2,6 +2,28 @@
 {% block content %}
 {% load i18n %}
 <!-- End of Navigation -->
+<style>
+    /* Plain native selects for the simple Yes/No style outcome dropdowns.
+       These intentionally avoid select2 (see ProbationReviewForm.__init__) so
+       clicking them never jumps the page to the top. */
+    .oh-select-native {
+        display: block;
+        width: 100%;
+        padding: 0.55rem 0.75rem;
+        font-size: 0.95rem;
+        line-height: 1.4;
+        color: #495057;
+        background-color: #fff;
+        border: 1px solid #ced4da;
+        border-radius: 0.35rem;
+        appearance: auto;
+    }
+    .oh-select-native:focus {
+        outline: none;
+        border-color: #ff5100;
+        box-shadow: 0 0 0 0.15rem rgba(255, 81, 0, 0.15);
+    }
+</style>
 <main :class="sidebarOpen ? 'oh-main__sidebar-visible' : ''">
     <div class="oh-wrapper">
 

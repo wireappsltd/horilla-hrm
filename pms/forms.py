@@ -1409,6 +1409,18 @@ class ProbationReviewForm(BaseForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
+
+        plain_select_fields = [
+            "objectives_met",
+            "training_needs_addressed",
+            "appointment_confirmed",
+            "probation_extended",
+        ]
+        for field_name in plain_select_fields:
+            if field_name in self.fields:
+                self.fields[field_name].widget.attrs["class"] = "oh-select-native w-100"
+
         # Block earlier dates (anything before the 6-month mark) in the date
         # picker by setting the HTML ``min`` attribute on the review_date input.
         earliest = self._earliest_review_date()
