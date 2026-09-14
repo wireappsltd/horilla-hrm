@@ -1337,7 +1337,12 @@ class ProbationReviewForm(BaseForm):
         ),
         widget=forms.SelectMultiple(
             attrs={
-                "class": "oh-select oh-select-2 w-100",
+                # NOTE: intentionally NOT using the "oh-select"/"oh-select-2"
+                # classes here. Horilla's global htmxSelect2.js auto-initialises
+                # select2 on every ".oh-select" element; combined with this
+                # page's own select2 init that produced a duplicate control.
+                # This page initialises select2 explicitly on #id_reviewers.
+                "class": "w-100",
                 "data-placeholder": _("Select reviewers"),
             }
         ),
@@ -1373,6 +1378,56 @@ class ProbationReviewForm(BaseForm):
                 attrs={"class": "oh-input w-100", "type": "date"}
             ),
         }
+
+    @staticmethod
+    def _add_months(base_date, months):
+        """Return ``base_date`` advanced by ``months`` calendar months."""
+        month_index = base_date.month - 1 + months
+        year = base_date.year + month_index // 12
+        month = month_index % 12 + 1
+        # Clamp the day to the last valid day of the target month.
+        import calendar
+
+        day = min(base_date.day, calendar.monthrange(year, month)[1])
+        return datetime.date(year, month, day)
+
+    def _earliest_review_date(self):
+        """
+        Earliest date a probationary review may be dated: the 6-month mark.
+
+        Prefers the stored ``review_due_date`` (the 6-Month Review Due Date);
+        falls back to ``date_of_join`` + 6 months when it is not set.
+        """
+        instance = getattr(self, "instance", None)
+        if instance is None:
+            return None
+        if instance.review_due_date:
+            return instance.review_due_date
+        if instance.date_of_join:
+            return self._add_months(instance.date_of_join, 6)
+        return None
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Block earlier dates (anything before the 6-month mark) in the date
+        # picker by setting the HTML ``min`` attribute on the review_date input.
+        earliest = self._earliest_review_date()
+        if earliest and "review_date" in self.fields:
+            self.fields["review_date"].widget.attrs["min"] = earliest.isoformat()
+
+    def clean_review_date(self):
+        """Server-side guard: reject review dates before the 6-month mark."""
+        review_date = self.cleaned_data.get("review_date")
+        earliest = self._earliest_review_date()
+        if review_date and earliest and review_date < earliest:
+            raise ValidationError(
+                _(
+                    "The review date cannot be earlier than the 6-month mark "
+                    "(%(earliest)s)."
+                )
+                % {"earliest": earliest.strftime("%d/%m/%Y")}
+            )
+        return review_date
 
 
 class ProbationReviewCriterionForm(BaseForm):

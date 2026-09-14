@@ -3112,8 +3112,12 @@ def probation_review_list(request):
     # 2) In-progress reviews belong in the Eligible tab too, so HR can continue
     #    working on them (status "In Progress" -> Open Review). Only completed
     #    reviews move to the History tab.
+    # Only surface reviews whose employee is still active. Reviews belonging to
+    # deactivated/soft-deleted employees are dangling: the form view opens them
+    # via get_object_or_404, which uses the manager's .all() and filters out
+    # inactive-employee reviews, so an "Open Review" link here would 404.
     in_progress_reviews = ProbationReview.objects.filter(
-        status="in_progress"
+        status="in_progress", employee_id__is_active=True
     ).order_by("-id")
     for review in in_progress_reviews:
         employee = review.employee_id
@@ -3134,9 +3138,11 @@ def probation_review_list(request):
 
     context = {
         "probation_rows": probation_rows,
-        # History tab: only completed reviews for the current company.
+        # History tab: only completed reviews for the current company, and only
+        # for still-active employees (mirrors the form view's .all() scoping so
+        # every listed review is actually openable).
         "probation_reviews": ProbationReview.objects.filter(
-            status="completed"
+            status="completed", employee_id__is_active=True
         ).order_by("-id"),
     }
     return render(request, "performance/probation_review_list.html", context)

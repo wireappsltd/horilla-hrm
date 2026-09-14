@@ -12,9 +12,9 @@
             <!-- 1. HEADER (read-only, auto-captured)                          -->
             <!-- ============================================================= -->
             <div class="oh-card">
-                <div class="oh-card__header d-flex justify-content-between align-items-center">
+                <div class="oh-card__header d-flex justify-content-between align-items-start">
                     <h2 class="oh-card__title">{% trans "Probationary Review" %}</h2>
-                    <span>
+                    <div class="d-flex flex-column align-items-end" style="gap: 0.5rem;">
                         {% if review.review_completed %}
                             <span class="oh-badge oh-badge--success">
                                 <ion-icon name="checkmark-circle" role="img"></ion-icon>
@@ -25,7 +25,12 @@
                                 {{ review.get_status_display }}
                             </span>
                         {% endif %}
-                    </span>
+                        <button type="button" id="edit-reviewers-btn"
+                            class="oh-btn oh-btn--light-bkg oh-btn--small">
+                            <ion-icon name="create-outline" role="img" class="me-1"></ion-icon>
+                            {% trans "Edit reviewers" %}
+                        </button>
+                    </div>
                 </div>
                 <div class="oh-card__body">
                     <div class="row">
@@ -156,8 +161,8 @@
                                 <tr>
                                     <td class="text-end fw-bold" colspan="2" style="font-size: 1.15rem; padding: 0.85rem 1rem;">
                                         {% trans "Total" %}
-                                        <span id="probation-total-value" style="font-size: 1.5rem; color: #6c757d;">0</span>
-                                        <span style="color: #6c757d;">/ 50</span>
+                                        <span id="probation-total-value" style="font-size: 1.15rem; color: #6c757d;">0</span>
+                                        <span style="font-size: 1.15rem; color: #6c757d;">/ 50</span>
                                     </td>
                                 </tr>
                             </tfoot>
@@ -311,15 +316,61 @@
     if (typeof $ !== "undefined" && !$.fn.select2) {
         {% include 'select2.js' %}
     }
-    if (typeof $ !== "undefined" && $.fn.select2) {
-        var $reviewers = $("#id_reviewers");
-        if ($reviewers.length) {
+    if (typeof $ !== "undefined") {
+        $(function () {
+            if (!$.fn.select2) {
+                return;
+            }
+            var $reviewers = $("#id_reviewers");
+            if (!$reviewers.length) {
+                return;
+            }
+
+            // Guard against any prior initialisation (e.g. a global select2
+            // init) so we never end up with a duplicated control.
+            if ($reviewers.hasClass("select2-hidden-accessible")) {
+                $reviewers.select2("destroy");
+            }
+
+            // Build the searchable control.
             $reviewers.select2({
                 placeholder: $reviewers.data("placeholder") || "{% trans 'Select reviewers' %}",
                 width: "100%",
                 allowClear: true,
             });
-        }
+
+            // Helper: lock (read-only) or unlock (editable) the control.
+            function setReviewersLocked(locked) {
+                $reviewers.prop("disabled", locked).trigger("change.select2");
+            }
+
+            // Start LOCKED and keep it locked even if any late global init
+            // (document ready / htmx settle) tries to re-enable it.
+            setReviewersLocked(true);
+            setTimeout(function () { setReviewersLocked(true); }, 0);
+
+            // --- Unlock only when the "Edit reviewers" button is clicked ---
+            var editReviewersBtn = document.getElementById("edit-reviewers-btn");
+            if (editReviewersBtn) {
+                editReviewersBtn.addEventListener("click", function () {
+                    setReviewersLocked(false);
+                    editReviewersBtn.style.display = "none";
+                    $reviewers.select2("open");
+                });
+            }
+
+            // A disabled <select> is not submitted with the form, which would
+            // wipe the saved reviewers. Re-enable it just before submit so its
+            // current values are always posted, even when never edited.
+            var reviewForm = $reviewers.closest("form");
+            if (reviewForm.length) {
+                reviewForm.on("submit", function () {
+                    // Enable natively (no select2 refresh) purely so the values
+                    // POST; the page reloads afterwards and starts locked again.
+                    $reviewers.prop("disabled", false);
+                });
+            }
+        });
     }
 </script>
 {% endblock %}
