@@ -1,3 +1,4 @@
+{% comment %} === PERFORMANCE MODULE DISABLED (HRMOD-541): template commented out; restore when reworking PMS ===
 {% load i18n %}{% load widget_tweaks %} {% load mathfilters %} {% load basefilters %}
 <span name="" id="dynamicKeyResult" style="display: none" data-toggle="oh-modal-toggle"
     data-target="#dynamicCreateModal" hx-get="{% url 'key-result-creation' %}" hx-target="#dynamicCreateModalBody">
@@ -179,3 +180,5 @@
         }, 700);
     });
 </script>
+
+{% endcomment %}

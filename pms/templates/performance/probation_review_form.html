@@ -1,0 +1,454 @@
+{% extends 'index.html' %}
+{% block content %}
+{% load i18n %}
+<!-- End of Navigation -->
+<style>
+    /* Plain native selects for the simple Yes/No style outcome dropdowns.
+       These intentionally avoid select2 (see ProbationReviewForm.__init__) so
+       clicking them never jumps the page to the top. */
+    .oh-select-native {
+        display: block;
+        width: 100%;
+        padding: 0.55rem 0.75rem;
+        font-size: 0.95rem;
+        line-height: 1.4;
+        color: #495057;
+        background-color: #fff;
+        border: 1px solid #ced4da;
+        border-radius: 0.35rem;
+        appearance: auto;
+    }
+    .oh-select-native:focus {
+        outline: none;
+        border-color: #ff5100;
+        box-shadow: 0 0 0 0.15rem rgba(255, 81, 0, 0.15);
+    }
+
+    .pr-readonly-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        min-height: 38px;
+        align-items: center;
+    }
+    .pr-readonly-chip {
+        display: inline-flex;
+        align-items: center;
+        background: #eef1f6;
+        color: #46536b;
+        border-radius: 12px;
+        padding: 3px 12px;
+        font-size: .8rem;
+        font-weight: 500;
+        white-space: nowrap;
+    }
+</style>
+<main :class="sidebarOpen ? 'oh-main__sidebar-visible' : ''">
+    <div class="oh-wrapper">
+
+        <form method="post" action="{% url 'probation-review-form' review_id=review.id %}">
+            {% csrf_token %}
+
+            <!-- ============================================================= -->
+            <!-- 1. HEADER (read-only, auto-captured)                          -->
+            <!-- ============================================================= -->
+            <div class="oh-card">
+                <div class="oh-card__header d-flex justify-content-between align-items-start">
+                    <h2 class="oh-card__title">{% trans "Probationary Review" %}</h2>
+                    <div class="d-flex align-items-center" style="gap: 0.5rem;">
+                        {% if review.review_completed %}
+                            <span class="oh-badge oh-badge--success oh-badge--small">
+                                <ion-icon name="checkmark-circle" role="img"></ion-icon>
+                                {% trans "Completed" %}
+                            </span>
+                        {% else %}
+                            <span class="oh-badge oh-badge--secondary oh-badge--small">
+                                {{ review.get_status_display }}
+                            </span>
+                        {% endif %}
+                        <button type="button" id="edit-reviewers-btn"
+                            class="oh-btn oh-btn--light-bkg oh-btn--small">
+                            <ion-icon name="create-outline" role="img" class="me-1"></ion-icon>
+                            {% trans "Edit reviewers" %}
+                        </button>
+                    </div>
+                </div>
+                <div class="oh-card__body">
+                    <div class="row">
+                        <div class="col-12 col-md-6 col-lg-4 mb-3">
+                            <span class="oh-label d-block text-muted">{% trans "Employee" %}</span>
+                            <span class="fw-bold">{{ employee }}</span>
+                        </div>
+                        <div class="col-12 col-md-6 col-lg-4 mb-3">
+                            <span class="oh-label d-block text-muted">{% trans "Job Title" %}</span>
+                            <span class="fw-bold">{{ job_title|default:"-" }}</span>
+                        </div>
+                        <div class="col-12 col-md-6 col-lg-4 mb-3">
+                            <span class="oh-label d-block text-muted">{% trans "Immediate Supervisor" %}</span>
+                            <span class="fw-bold">{{ immediate_supervisor|default:"-" }}</span>
+                        </div>
+                        <div class="col-12 col-md-6 col-lg-4 mb-3">
+                            <span class="oh-label d-block text-muted">{% trans "Date of Join" %}</span>
+                            <span class="fw-bold">{{ date_of_join|date:"d/m/Y"|default:"-" }}</span>
+                        </div>
+                        <div class="col-12 col-md-6 col-lg-4 mb-3">
+                            <span class="oh-label d-block text-muted">{% trans "6-Month Review Due Date" %}</span>
+                            <span class="fw-bold">{{ review_due_date|date:"d/m/Y"|default:"-" }}</span>
+                        </div>
+                        <div class="col-12 col-md-6 col-lg-4 mb-3">
+                            {{ form.reviewers.label_tag }}
+
+                            {# Read-only chips: the default (locked) view. #}
+                            <div id="reviewers-readonly" class="pr-readonly-chips">
+                                {% for reviewer in review.reviewers.all %}
+                                    <span class="pr-readonly-chip">{{ reviewer }}</span>
+                                {% empty %}
+                                    <span class="text-muted">{% trans "No reviewers assigned." %}</span>
+                                {% endfor %}
+                            </div>
+
+                            {# Editable select: revealed only when "Edit reviewers" is clicked. #}
+                            <div id="reviewers-edit" style="display: none;">
+                                {{ form.reviewers }}
+                            </div>
+
+                            <small class="text-muted d-block">
+                                {% trans "Employees allowed to view and edit this review." %}
+                            </small>
+                            {{ form.reviewers.errors }}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ============================================================= -->
+            <!-- 2. SCORING TABLE (11 criterion rows, marks as radios 1-5)     -->
+            <!-- ============================================================= -->
+            <div class="oh-card mt-4">
+                <div class="oh-card__header">
+                    <h2 class="oh-card__title">{% trans "Assessment Criteria" %}</h2>
+                </div>
+                <div class="oh-card__body">
+
+                    {{ formset.management_form }}
+
+                    {% if formset.non_form_errors %}
+                        <div class="oh-alert oh-alert--danger">{{ formset.non_form_errors }}</div>
+                    {% endif %}
+
+                    <div class="table-responsive">
+                        <table class="table oh-table align-middle">
+                            <thead>
+                                <tr>
+                                    <th style="width: 34%;">{% trans "Criterion" %}</th>
+                                    <th>{% trans "Rating" %}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for form in formset %}
+                                    {# Hidden primary key (inline formset) #}
+                                    {% for hidden in form.hidden_fields %}{{ hidden }}{% endfor %}
+
+                                    {# Section header + rating labels, emitted when the section changes #}
+                                    {% ifchanged form.instance.section %}
+                                        <tr style="background-color: #adb5bd;">
+                                            <td style="background-color: #adb5bd; width: 34%;">
+                                                <strong>{{ form.instance.get_section_display }}</strong>
+                                            </td>
+                                            <td style="background-color: #adb5bd;">
+                                                <div class="d-flex" style="gap: 1rem;">
+                                                    <div style="flex:1; text-align:center;" class="fw-bold">{% trans "Poor (1)" %}</div>
+                                                    <div style="flex:1; text-align:center;" class="fw-bold">{% trans "Fair (2)" %}</div>
+                                                    <div style="flex:1; text-align:center;" class="fw-bold">{% trans "Good (3)" %}</div>
+                                                    <div style="flex:1; text-align:center;" class="fw-bold">{% trans "Very Good (4)" %}</div>
+                                                    <div style="flex:1; text-align:center;" class="fw-bold">{% trans "Excellent (5)" %}</div>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    {% endifchanged %}
+
+                                    <tr>
+                                        <td>
+                                            <div class="fw-bold">{{ form.instance.title }}</div>
+                                            <small class="text-muted">{{ form.instance.description }}</small>
+                                        </td>
+                                        <td>
+                                            <div class="d-flex" style="gap: 1rem;">
+                                                <div style="flex:1; text-align:center;">
+                                                    <input type="radio" class="probation-mark-radio"
+                                                        name="{{ form.marks.html_name }}"
+                                                        id="{{ form.marks.html_name }}_1" value="1"
+                                                        {% if form.marks.value|stringformat:"s" == "1" %}checked{% endif %}>
+                                                </div>
+                                                <div style="flex:1; text-align:center;">
+                                                    <input type="radio" class="probation-mark-radio"
+                                                        name="{{ form.marks.html_name }}"
+                                                        id="{{ form.marks.html_name }}_2" value="2"
+                                                        {% if form.marks.value|stringformat:"s" == "2" %}checked{% endif %}>
+                                                </div>
+                                                <div style="flex:1; text-align:center;">
+                                                    <input type="radio" class="probation-mark-radio"
+                                                        name="{{ form.marks.html_name }}"
+                                                        id="{{ form.marks.html_name }}_3" value="3"
+                                                        {% if form.marks.value|stringformat:"s" == "3" %}checked{% endif %}>
+                                                </div>
+                                                <div style="flex:1; text-align:center;">
+                                                    <input type="radio" class="probation-mark-radio"
+                                                        name="{{ form.marks.html_name }}"
+                                                        id="{{ form.marks.html_name }}_4" value="4"
+                                                        {% if form.marks.value|stringformat:"s" == "4" %}checked{% endif %}>
+                                                </div>
+                                                <div style="flex:1; text-align:center;">
+                                                    <input type="radio" class="probation-mark-radio"
+                                                        name="{{ form.marks.html_name }}"
+                                                        id="{{ form.marks.html_name }}_5" value="5"
+                                                        {% if form.marks.value|stringformat:"s" == "5" %}checked{% endif %}>
+                                                </div>
+                                            </div>
+                                            {% if form.marks.errors %}
+                                                <div class="text-danger mt-1">{{ form.marks.errors }}</div>
+                                            {% endif %}
+                                        </td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                            <tfoot>
+                                <tr>
+                                    <td class="text-end fw-bold" colspan="2" style="font-size: 1.15rem; padding: 0.85rem 1rem;">
+                                        {% trans "Total" %}
+                                        <span id="probation-total-value" style="font-size: 1.15rem; color: #6c757d;">0</span>
+                                        <span style="font-size: 1.15rem; color: #6c757d;">/ 50</span>
+                                    </td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ============================================================= -->
+            <!-- 3. OUTCOME / CONFIRMATION SECTION                             -->
+            <!-- ============================================================= -->
+            <div class="oh-card mt-4">
+                <div class="oh-card__header">
+                    <h2 class="oh-card__title">{% trans "Outcome & Confirmation" %}</h2>
+                </div>
+                <div class="oh-card__body">
+                    {% if form.non_field_errors %}
+                        <div class="oh-alert oh-alert--danger">{{ form.non_field_errors }}</div>
+                    {% endif %}
+
+                    <div class="row">
+                        <div class="col-12 col-md-6 mb-3">
+                            {{ form.objectives_met.label_tag }}
+                            {{ form.objectives_met }}
+                            {{ form.objectives_met.errors }}
+                        </div>
+                        <div class="col-12 col-md-6 mb-3">
+                            {{ form.training_needs_addressed.label_tag }}
+                            {{ form.training_needs_addressed }}
+                            {{ form.training_needs_addressed.errors }}
+                        </div>
+                        <div class="col-12 mb-3">
+                            {{ form.objectives_action.label_tag }}
+                            {{ form.objectives_action }}
+                            {{ form.objectives_action.errors }}
+                        </div>
+                        <div class="col-12 mb-3">
+                            {{ form.performance_summary.label_tag }}
+                            {{ form.performance_summary }}
+                            {{ form.performance_summary.errors }}
+                        </div>
+                        <div class="col-12 col-md-6 mb-3">
+                            {{ form.appointment_confirmed.label_tag }}
+                            {{ form.appointment_confirmed }}
+                            {{ form.appointment_confirmed.errors }}
+                        </div>
+                        <div class="col-12 col-md-6 mb-3">
+                            {{ form.confirmation_reasons.label_tag }}
+                            {{ form.confirmation_reasons }}
+                            {{ form.confirmation_reasons.errors }}
+                        </div>
+                        <div class="col-12 col-md-6 mb-3">
+                            {{ form.probation_extended.label_tag }}
+                            {{ form.probation_extended }}
+                            {{ form.probation_extended.errors }}
+                        </div>
+                    </div>
+
+                    <!-- Conditional group: shown/enabled only when "extend probation" is YES.
+                         Server validates regardless; this is a UX affordance only. -->
+                    <div id="probation-extension-conditional" class="row">
+                        <div class="col-12 mb-3">
+                            {{ form.extension_reasons.label_tag }}
+                            {{ form.extension_reasons }}
+                            {{ form.extension_reasons.errors }}
+                        </div>
+                        <div class="col-12 col-md-4 mb-3">
+                            {{ form.extension_length_months.label_tag }}
+                            {{ form.extension_length_months }}
+                            <small class="text-muted d-block">{% trans "Maximum 3 months." %}</small>
+                            {{ form.extension_length_months.errors }}
+                        </div>
+                        <div class="col-12 col-md-4 mb-3">
+                            {{ form.new_completion_date.label_tag }}
+                            {{ form.new_completion_date }}
+                            {{ form.new_completion_date.errors }}
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-12 col-md-4 mb-3">
+                            {{ form.review_date.label_tag }}
+                            {{ form.review_date }}
+                            {{ form.review_date.errors }}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ============================================================= -->
+            <!-- SUBMIT ACTIONS (no sign-off UI — deferred)                    -->
+            <!-- ============================================================= -->
+            <div class="d-flex justify-content-end mt-4 mb-5" style="gap: 0.75rem;">
+                <button type="submit" class="oh-btn oh-btn--secondary">
+                    {% trans "Save" %}
+                </button>
+                <button type="submit" name="action" value="complete" class="oh-btn oh-btn--success">
+                    {% trans "Complete" %}
+                </button>
+            </div>
+
+        </form>
+    </div>
+</main>
+
+<script>
+    (function () {
+        // --- Live "Total / 50" (indicative only; server total is authoritative) ---
+        function recomputeProbationTotal() {
+            var total = 0;
+            document.querySelectorAll("input.probation-mark-radio:checked").forEach(function (radio) {
+                total += parseInt(radio.value, 10) || 0;
+            });
+            var out = document.getElementById("probation-total-value");
+            if (out) {
+                out.textContent = total;
+            }
+        }
+
+        document.querySelectorAll("input.probation-mark-radio").forEach(function (radio) {
+            radio.addEventListener("change", recomputeProbationTotal);
+        });
+
+        // --- Conditional extension fields, toggled by "extend probation" ---
+        var extendSelect = document.getElementById("id_probation_extended");
+        var extensionGroup = document.getElementById("probation-extension-conditional");
+
+        function toggleExtensionFields() {
+            if (!extendSelect || !extensionGroup) {
+                return;
+            }
+            var isYes = extendSelect.value === "yes";
+            extensionGroup.style.display = isYes ? "" : "none";
+            extensionGroup.querySelectorAll("input, select, textarea").forEach(function (field) {
+                field.disabled = !isYes;
+            });
+        }
+
+        if (extendSelect) {
+            extendSelect.addEventListener("change", toggleExtensionFields);
+        }
+
+        // Initialise on load.
+        recomputeProbationTotal();
+        toggleExtensionFields();
+    })();
+
+    // --- Reviewers multi-select ---
+    // NOTE: this runs with PLAIN vanilla JS (no jQuery dependency) so the
+    // "Edit reviewers" toggle always works even if jQuery/select2 load later
+    // (Horilla loads jQuery at the bottom of the base template). select2 is
+    // layered on as a progressive enhancement once it is available.
+    (function () {
+        var reviewersSelect = document.getElementById("id_reviewers");
+        if (!reviewersSelect) {
+            return;
+        }
+
+        var readonlyBox = document.getElementById("reviewers-readonly");
+        var editBox = document.getElementById("reviewers-edit");
+        var editReviewersBtn = document.getElementById("edit-reviewers-btn");
+        var reviewForm = reviewersSelect.form;
+        var isEditing = false;
+
+        // Start LOCKED: read-only chips visible, native select disabled so its
+        // values cannot be changed until "Edit reviewers" is clicked.
+        reviewersSelect.disabled = true;
+
+        // Progressive enhancement: turn the native select into a searchable
+        // select2 control if/when jQuery + select2 are available. Poll briefly
+        // because jQuery may still be loading when this script first runs.
+        function tryInitSelect2(attempt) {
+            if (typeof window.jQuery === "undefined" || !window.jQuery.fn.select2) {
+                if (attempt < 20) {
+                    setTimeout(function () { tryInitSelect2(attempt + 1); }, 100);
+                }
+                return;
+            }
+            var $ = window.jQuery;
+            var $reviewers = $(reviewersSelect);
+            if ($reviewers.hasClass("select2-hidden-accessible")) {
+                $reviewers.select2("destroy");
+            }
+            $reviewers.select2({
+                placeholder: $reviewers.data("placeholder") || "{% trans 'Select reviewers' %}",
+                width: "100%",
+                allowClear: true,
+            });
+            // Reflect the current disabled state in the select2 UI.
+            $reviewers.prop("disabled", reviewersSelect.disabled).trigger("change.select2");
+        }
+        tryInitSelect2(0);
+
+        // --- Unlock only when the "Edit reviewers" button is clicked ---
+        if (editReviewersBtn) {
+            editReviewersBtn.addEventListener("click", function () {
+                isEditing = true;
+                if (readonlyBox) {
+                    readonlyBox.style.display = "none";
+                }
+                if (editBox) {
+                    editBox.style.display = "";
+                }
+                editReviewersBtn.style.display = "none";
+                reviewersSelect.disabled = false;
+
+                if (typeof window.jQuery !== "undefined" && window.jQuery.fn.select2) {
+                    var $reviewers = window.jQuery(reviewersSelect);
+                    $reviewers.trigger("change.select2");
+                    try {
+                        $reviewers.select2("open");
+                    } catch (e) {
+                        reviewersSelect.focus();
+                    }
+                } else {
+                    reviewersSelect.focus();
+                }
+            });
+        }
+
+        // A disabled <select> is not submitted with the form, which would wipe
+        // the saved reviewers. Re-enable it just before submit so its current
+        // values are always posted, even when never edited. The page reloads
+        // afterwards and starts locked (read-only) again.
+        if (reviewForm) {
+            reviewForm.addEventListener("submit", function () {
+                reviewersSelect.disabled = false;
+            });
+        }
+    })();
+
+</script>
+{% endblock %}
+

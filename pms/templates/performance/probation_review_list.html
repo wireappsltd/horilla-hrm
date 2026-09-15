@@ -1,0 +1,221 @@
+{% extends 'index.html' %}
+{% block content %}
+{% load i18n %}
+<style>
+    .pr-tab-desc { margin: 14px 0 18px; font-size: .85rem; color: #8a94a6; }
+    .pr-table { width: 100%; margin-bottom: 0; }
+    .pr-table thead th {
+        font-size: .72rem;
+        text-transform: uppercase;
+        letter-spacing: .04em;
+        color: #8a94a6;
+        font-weight: 600;
+        white-space: nowrap;
+        border-bottom: 1px solid #eaecef;
+        padding: 12px 16px;
+    }
+    .pr-table tbody td {
+        padding: 14px 16px;
+        vertical-align: middle;
+        border-bottom: 1px solid #f1f2f4;
+        font-size: .85rem;
+        color: #55617a;
+    }
+    .pr-table tbody tr:hover { background: #fafbfc; }
+    .pr-emp { font-weight: 600; color: #1f2937; white-space: nowrap; }
+    .pr-nowrap { white-space: nowrap; }
+    .pr-muted { color: #aab2c0; }
+    .pr-table .oh-btn { white-space: nowrap; }
+    /* reviewer chips */
+    .pr-chips { display: flex; flex-wrap: wrap; gap: 4px; max-width: 240px; }
+    .pr-chip {
+        display: inline-flex; align-items: center;
+        background: #eef1f6; color: #46536b;
+        border-radius: 12px; padding: 2px 10px;
+        font-size: .74rem; font-weight: 500; white-space: nowrap;
+    }
+    /* status pills */
+    .pr-status {
+        display: inline-flex; align-items: center;
+        border-radius: 12px; padding: 3px 12px;
+        font-size: .74rem; font-weight: 600; white-space: nowrap;
+    }
+    .pr-status--progress { background: #fff4e5; color: #b26a00; }
+    .pr-status--completed { background: #e7f6ec; color: #1e7e46; }
+    .pr-status--none { background: #f1f2f4; color: #8a94a6; }
+    .pr-computed {
+        display: inline-flex; background: #fff4e5; color: #b26a00;
+        border-radius: 10px; padding: 1px 8px; font-size: .68rem; margin-left: 6px;
+    }
+</style>
+<!-- End of Navigation -->
+<main :class="sidebarOpen ? 'oh-main__sidebar-visible' : ''">
+    <div class="oh-wrapper">
+        <div class="oh-card">
+            <div class="oh-card__header">
+                <h2 class="oh-card__title">{% trans "Probationary Reviews" %}</h2>
+            </div>
+            <div class="oh-card__body">
+
+                <!-- start of tabs -->
+                <div class="oh-tabs">
+                    <ul class="oh-tabs__tablist">
+                        <li class="oh-tabs__tab oh-tabs__tab--active" data-target="#tab_1">
+                            {% trans "Eligible" %}
+                        </li>
+                        <li class="oh-tabs__tab" data-target="#tab_2">
+                            {% trans "History" %}
+                        </li>
+                    </ul>
+
+                    <div class="oh-tabs__contents">
+
+                        <!-- Eligible tab -->
+                        <div class="oh-tabs__content oh-tabs__content--active" id="tab_1">
+                            <p class="pr-tab-desc">
+                                {% trans "Employees whose probationary review is due (reached 6 months of employment), plus reviews already in progress. Completed reviews move to the History tab." %}
+                            </p>
+
+                            <div class="table-responsive">
+                                <table class="table pr-table align-middle">
+                                    <thead>
+                                        <tr>
+                                            <th>{% trans "Employee" %}</th>
+                                            <th>{% trans "Date of Join" %}</th>
+                                            <th>{% trans "Due Date" %}</th>
+                                            <th>{% trans "Review Date" %}</th>
+                                            <th>{% trans "Total" %}</th>
+                                            <th>{% trans "Last Edited By" %}</th>
+                                            <th>{% trans "Status" %}</th>
+                                            <th class="text-end">{% trans "Action" %}</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for row in probation_rows %}
+                                            <tr>
+                                                <td class="pr-emp">{{ row.employee }}</td>
+                                                <td class="pr-nowrap">{{ row.date_of_join|date:"d/m/Y"|default:"-" }}</td>
+                                                <td class="pr-nowrap">
+                                                    {{ row.probation_due_date|date:"d/m/Y"|default:"-" }}
+                                                    {% if row.employee.probation_due_source == "computed" %}
+                                                        <span class="pr-computed"
+                                                            title="{% trans 'Probation End Date is not set; this due date is computed as Joining Date + 6 months.' %}">
+                                                            {% trans "computed" %}
+                                                        </span>
+                                                    {% endif %}
+                                                </td>
+                                                <td class="pr-nowrap">{{ row.review.review_date|date:"d/m/Y"|default:"-" }}</td>
+                                                <td class="pr-nowrap">
+                                                    {% if row.review %}{{ row.review.total_marks }} / 50{% else %}<span class="pr-muted">-</span>{% endif %}
+                                                </td>
+                                                <td class="pr-nowrap">
+                                                    {% if row.review.modified_by %}
+                                                        {{ row.review.modified_by.employee_get|default:row.review.modified_by }}
+                                                    {% else %}
+                                                        <span class="pr-muted">-</span>
+                                                    {% endif %}
+                                                </td>
+                                                <td>
+                                                    {% if row.review_status %}
+                                                        <span class="pr-status pr-status--progress">{{ row.review_status }}</span>
+                                                    {% else %}
+                                                        <span class="pr-status pr-status--none">{% trans "Not started" %}</span>
+                                                    {% endif %}
+                                                </td>
+                                                <td class="text-end">
+                                                    {% if row.review %}
+                                                        <a href="{% url 'probation-review-form' review_id=row.review.id %}"
+                                                           class="oh-btn oh-btn--secondary oh-btn--small">
+                                                            {% trans "Open Review" %}
+                                                        </a>
+                                                    {% else %}
+                                                        <form method="post"
+                                                              action="{% url 'generate-probation-review' employee_id=row.employee.id %}"
+                                                              class="d-inline">
+                                                            {% csrf_token %}
+                                                            <button type="submit"
+                                                                    class="oh-btn oh-btn--secondary oh-btn--small">
+                                                                {% trans "Generate Review" %}
+                                                            </button>
+                                                        </form>
+                                                    {% endif %}
+                                                </td>
+                                            </tr>
+                                        {% empty %}
+                                            <tr>
+                                                <td colspan="8" class="text-center pr-muted py-4">
+                                                    {% trans "No employees are currently due for a probationary review." %}
+                                                </td>
+                                            </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- History tab -->
+                        <div class="oh-tabs__content" id="tab_2">
+                            <p class="pr-tab-desc">
+                                {% trans "Completed probationary reviews. Open a review to view the final assessment." %}
+                            </p>
+
+                            <div class="table-responsive">
+                                <table class="table pr-table align-middle">
+                                    <thead>
+                                        <tr>
+                                            <th>{% trans "Employee" %}</th>
+                                            <th>{% trans "Due Date" %}</th>
+                                            <th>{% trans "Review Date" %}</th>
+                                            <th>{% trans "Total" %}</th>
+                                            <th>{% trans "Last Edited By" %}</th>
+                                            <th>{% trans "Status" %}</th>
+                                            <th class="text-end">{% trans "Action" %}</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for review in probation_reviews %}
+                                            <tr>
+                                                <td class="pr-emp">{{ review.employee_id|default:"-" }}</td>
+                                                <td class="pr-nowrap">{{ review.review_due_date|date:"d/m/Y"|default:"-" }}</td>
+                                                <td class="pr-nowrap">{{ review.review_date|date:"d/m/Y"|default:"-" }}</td>
+                                                <td class="pr-nowrap">{{ review.total_marks }} / 50</td>
+                                                <td class="pr-nowrap">
+                                                    {% if review.modified_by %}
+                                                        {{ review.modified_by.employee_get|default:review.modified_by }}
+                                                    {% else %}
+                                                        <span class="pr-muted">-</span>
+                                                    {% endif %}
+                                                </td>
+                                                <td>
+                                                    <span class="pr-status pr-status--completed">{{ review.get_status_display }}</span>
+                                                </td>
+                                                <td class="text-end">
+                                                    <a href="{% url 'probation-review-form' review_id=review.id %}"
+                                                        class="oh-btn oh-btn--secondary oh-btn--small">
+                                                        {% trans "Open" %}
+                                                    </a>
+                                                </td>
+                                            </tr>
+                                        {% empty %}
+                                            <tr>
+                                                <td colspan="7" class="text-center pr-muted py-4">
+                                                    {% trans "No completed probationary reviews yet." %}
+                                                </td>
+                                            </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+                <!-- end of tabs -->
+
+            </div>
+        </div>
+    </div>
+</main>
+
+{% endblock %}
+

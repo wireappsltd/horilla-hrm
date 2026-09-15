@@ -3,7 +3,7 @@ import operator
 from dateutil.relativedelta import relativedelta
 from django.apps import apps
 from django.core.exceptions import ValidationError
-from django.core.validators import MinValueValidator
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
@@ -1019,6 +1019,303 @@ class BonusPointSetting(models.Model):
 
     def __str__(self) -> str:
         return f"Bonus point {self.get_model_display()}"
+
+
+"""Probationary Review Form section"""
+
+
+# Reference data for the scored criteria of a probation review, matching the
+# organisation's Probation Review Form (4 Performance Metrics, 3 Competencies,
+# 3 Cultural Fit = 10 criteria; max total 10 x 5 = 50).
+# Used by application code to generate a blank review's criteria rows.
+# NOTE: This is definition-only reference data. It is intentionally NOT
+# inserted via a data migration yet.
+PROBATION_REVIEW_CRITERIA_DEFINITIONS = [
+    # Performance Metrics
+    {
+        "section": "performance_metrics",
+        "title": "Quality of Work",
+        "description": "Consistently delivers high-quality work, meeting or exceeding standards with minimal errors",
+    },
+    {
+        "section": "performance_metrics",
+        "title": "Quantity of Work",
+        "description": "Completes a sufficient volume of tasks within designated timeframes, meeting productivity expectations.",
+    },
+    {
+        "section": "performance_metrics",
+        "title": "Timeliness",
+        "description": "Delivers assignments and tasks promptly, adhering to set deadlines and schedules consistently.",
+    },
+    {
+        "section": "performance_metrics",
+        "title": "Accuracy",
+        "description": "Ensures work is free from errors and maintains precision in all assigned tasks",
+    },
+    # Competencies
+    {
+        "section": "competencies",
+        "title": "Technical Skills",
+        "description": "Proficient in required technical tools and methodologies.",
+    },
+    {
+        "section": "competencies",
+        "title": "Problem Solving",
+        "description": "effectively identifies and resolves issues.",
+    },
+    {
+        "section": "competencies",
+        "title": "Communication",
+        "description": "Clearly conveys information verbally and in writing.",
+    },
+    # Cultural Fit
+    {
+        "section": "cultural_fit",
+        "title": "Learning and Growth",
+        "description": "Eager to learn and develop skills.",
+    },
+    {
+        "section": "cultural_fit",
+        "title": "Adaptability",
+        "description": "Quickly adjusts to new situations.",
+    },
+    {
+        "section": "cultural_fit",
+        "title": "Team Collaboration",
+        "description": "Works harmoniously within a team.",
+    },
+]
+
+
+class ProbationReview(HorillaModel):
+    """
+    One record per employee probationary review.
+    """
+
+    YES_NO_CHOICES = (
+        ("yes", _("Yes")),
+        ("no", _("No")),
+    )
+    STATUS_CHOICES = (
+        ("in_progress", _("In Progress")),
+        ("completed", _("Completed")),
+    )
+
+    employee_id = models.ForeignKey(
+        Employee,
+        null=True,
+        blank=True,
+        related_name="probation_review",
+        on_delete=models.PROTECT,
+        verbose_name=_("Employee"),
+    )
+    # Captured at review time.
+    job_title = models.CharField(
+        max_length=150, null=True, blank=True, verbose_name=_("Job Title")
+    )
+    date_of_join = models.DateField(
+        null=True, blank=True, verbose_name=_("Date of Join")
+    )
+    immediate_supervisor = models.ForeignKey(
+        Employee,
+        null=True,
+        blank=True,
+        related_name="probation_review_supervised",
+        on_delete=models.PROTECT,
+        verbose_name=_("Immediate Supervisor"),
+    )
+    reviewers = models.ManyToManyField(
+        Employee,
+        blank=True,
+        related_name="probation_reviews_to_review",
+        verbose_name=_("Reviewers"),
+        help_text=_(
+            "Employees allowed to view and edit this probationary review. "
+            "HR/Admin (with change permission) can always edit."
+        ),
+    )
+    review_due_date = models.DateField(
+        null=True, blank=True, verbose_name=_("Review Due Date")
+    )
+    review_completed = models.BooleanField(
+        default=False, verbose_name=_("Review Completed")
+    )
+
+    # Outcome fields.
+    objectives_met = models.CharField(
+        max_length=3,
+        choices=YES_NO_CHOICES,
+        null=True,
+        blank=True,
+        verbose_name=_("Objectives Met"),
+    )
+    objectives_action = models.TextField(
+        null=True, blank=True, verbose_name=_("Objectives Action")
+    )
+    training_needs_addressed = models.CharField(
+        max_length=3,
+        choices=YES_NO_CHOICES,
+        null=True,
+        blank=True,
+        verbose_name=_("Training Needs Addressed"),
+    )
+    performance_summary = models.TextField(
+        null=True, blank=True, verbose_name=_("Performance Summary")
+    )
+    appointment_confirmed = models.CharField(
+        max_length=3,
+        choices=YES_NO_CHOICES,
+        null=True,
+        blank=True,
+        verbose_name=_("Appointment Confirmed"),
+    )
+    confirmation_reasons = models.TextField(
+        null=True, blank=True, verbose_name=_("Confirmation Reasons")
+    )
+    probation_extended = models.CharField(
+        max_length=3,
+        choices=YES_NO_CHOICES,
+        null=True,
+        blank=True,
+        verbose_name=_("Probation Extended"),
+    )
+    extension_reasons = models.TextField(
+        null=True, blank=True, verbose_name=_("Extension Reasons")
+    )
+    extension_length_months = models.IntegerField(
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(0), MaxValueValidator(3)],
+        verbose_name=_("Extension Length (Months)"),
+    )
+    new_completion_date = models.DateField(
+        null=True, blank=True, verbose_name=_("New Completion Date")
+    )
+    review_date = models.DateField(
+        null=True, blank=True, verbose_name=_("Review Date")
+    )
+
+    # Sign-offs (modelled as boolean + signing employee + timestamp).
+    manager_signed = models.BooleanField(
+        default=False, verbose_name=_("Manager Signed")
+    )
+    manager_signed_by = models.ForeignKey(
+        Employee,
+        null=True,
+        blank=True,
+        related_name="probation_review_manager_signed",
+        on_delete=models.SET_NULL,
+        verbose_name=_("Manager Signed By"),
+    )
+    manager_signed_at = models.DateTimeField(
+        null=True, blank=True, verbose_name=_("Manager Signed At")
+    )
+    cto_signed = models.BooleanField(default=False, verbose_name=_("CTO Signed"))
+    cto_signed_by = models.ForeignKey(
+        Employee,
+        null=True,
+        blank=True,
+        related_name="probation_review_cto_signed",
+        on_delete=models.SET_NULL,
+        verbose_name=_("CTO Signed By"),
+    )
+    cto_signed_at = models.DateTimeField(
+        null=True, blank=True, verbose_name=_("CTO Signed At")
+    )
+
+    total_marks = models.IntegerField(
+        default=0,
+        validators=[MinValueValidator(0), MaxValueValidator(50)],
+        verbose_name=_("Total Marks"),
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        null=False,
+        blank=False,
+        default="in_progress",
+        verbose_name=_("Status"),
+    )
+
+    history = HorillaAuditLog(bases=[HorillaAuditInfo])
+    objects = HorillaCompanyManager(
+        "employee_id__employee_work_info__company_id"
+    )
+
+    class Meta:
+        """
+        Meta class for additional options
+        """
+
+        ordering = ["-id"]
+        verbose_name = _("Probation Review")
+        verbose_name_plural = _("Probation Reviews")
+
+    def __str__(self):
+        return f"{self.employee_id} | {self.review_due_date}"
+
+    def tracking(self):
+        return get_diff(self)
+
+
+class ProbationReviewCriterion(HorillaModel):
+    """
+    A single scored criterion row belonging to a probation review.
+    """
+
+    SECTION_CHOICES = (
+        ("performance_metrics", _("Performance Metrics")),
+        ("competencies", _("Competencies")),
+        ("cultural_fit", _("Cultural Fit")),
+    )
+
+    probation_review_id = models.ForeignKey(
+        ProbationReview,
+        null=True,
+        blank=True,
+        related_name="criteria",
+        on_delete=models.CASCADE,
+        verbose_name=_("Probation Review"),
+    )
+    section = models.CharField(
+        max_length=30,
+        choices=SECTION_CHOICES,
+        null=True,
+        blank=True,
+        verbose_name=_("Section"),
+    )
+    title = models.CharField(
+        max_length=150, null=True, blank=True, verbose_name=_("Title")
+    )
+    description = models.TextField(
+        null=True, blank=True, verbose_name=_("Description")
+    )
+    marks = models.IntegerField(
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(1), MaxValueValidator(5)],
+        verbose_name=_("Marks"),
+    )
+
+    history = HorillaAuditLog(bases=[HorillaAuditInfo])
+    objects = HorillaCompanyManager(
+        "probation_review_id__employee_id__employee_work_info__company_id"
+    )
+
+    class Meta:
+        """
+        Meta class for additional options
+        """
+
+        ordering = ["id"]
+        verbose_name = _("Probation Review Criterion")
+        verbose_name_plural = _("Probation Review Criteria")
+
+    def __str__(self):
+        return f"{self.title} | {self.probation_review_id}"
+
+    def tracking(self):
+        return get_diff(self)
 
 
 def manipulate_existing_data():

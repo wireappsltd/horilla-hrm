@@ -1,3 +1,4 @@
+{% comment %} === PERFORMANCE MODULE DISABLED (HRMOD-541): template commented out; restore when reworking PMS ===
 {% extends 'index.html' %} {% block content %} {% load i18n %} {% load widget_tweaks %} {% load basefilters %}
 <main :class="sidebarOpen ? 'oh-main__sidebar-visible' : ''">
     <section class="oh-wrapper oh-main__topbar" x-data="{searchShow: false}">
@@ -61,3 +62,5 @@
 </script>
 
 {% endblock content %}
+
+{% endcomment %}

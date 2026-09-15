@@ -1,3 +1,4 @@
+{% comment %} === PERFORMANCE MODULE DISABLED (HRMOD-541): template commented out; restore when reworking PMS ===
 {% load i18n %}
 {% if messages %}
     <span hx-get="{% url 'question-template-hx-view' %}" hx-trigger="load" hx-target="#questionTemplateList"
@@ -15,3 +16,5 @@
         {% csrf_token %} {{form.as_p}}
     </form>
 </div>
+
+{% endcomment %}

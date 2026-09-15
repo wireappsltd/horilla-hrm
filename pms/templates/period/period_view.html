@@ -1,3 +1,4 @@
+{% comment %} === PERFORMANCE MODULE DISABLED (HRMOD-541): template commented out; restore when reworking PMS ===
 {% extends 'index.html' %} {% load i18n %} {% block content %} {% load basefilters %}
 {% if messages %}
 {% for message in messages %}
@@ -60,3 +61,5 @@
 
 
 {% endblock content %}
+
+{% endcomment %}

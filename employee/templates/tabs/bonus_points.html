@@ -10,11 +10,8 @@
                     title="Add points"
                     data-toggle="oh-modal-toggle"
                     data-target="#objectDetailsModal"
-                    {% if "pms"|app_installed %}
-                        hx-get="{% url 'create-employee-bonus-point'%}?employee_id={{employee.id}} "
-                    {% else %}
-                        hx-get="{% url 'add-bonus-points' employee.id %}"
-                    {% endif %}
+                    {# Performance module disabled (HRMOD-541): pms 'create-employee-bonus-point' neutralized; using employee 'add-bonus-points' #}
+                    hx-get="{% url 'add-bonus-points' employee.id %}"
                     hx-target="#objectDetailsModalTarget"
                 >
                     <ion-icon

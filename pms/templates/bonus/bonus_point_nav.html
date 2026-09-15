@@ -1,3 +1,4 @@
+{% comment %} === PERFORMANCE MODULE DISABLED (HRMOD-541): template commented out; restore when reworking PMS ===
 <div>
     {% include "generic/horilla_nav.html" %}
 </div>
@@ -6,3 +7,5 @@
     $('#applyFilter').closest('form').find('[name=field]').val('employee_id');
     $('#applyFilter').click();
 </script>
+
+{% endcomment %}

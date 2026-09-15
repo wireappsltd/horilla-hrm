@@ -220,6 +220,7 @@
 								</li>
 							{% endif %}
 
+							{% comment %} Performance module disabled (HRMOD-541): PMS Performance tab neutralized (route 'performance-tab' is commented out)
 							{% if "pms"|app_installed %}
 							<li data-cell-index="12" data-cell-title="{% trans 'Performance' %}" class="oh-general__tab">
 								<a
@@ -234,6 +235,7 @@
 								>
 							</li>
 							{% endif %}
+							{% endcomment %}
 
 							<li data-cell-index="11" data-cell-title="{% trans 'Documents' %}" class="oh-general__tab">
 								<a

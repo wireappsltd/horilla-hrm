@@ -1,3 +1,4 @@
+{% comment %} === PERFORMANCE MODULE DISABLED (HRMOD-541): template commented out; restore when reworking PMS ===
 {% load i18n %}
 {% if messages %}
     <span hx-get="/pms/filter-meeting" hx-target="#meeting_list" hx-trigger="load"
@@ -28,3 +29,5 @@
         </div>
     </form>
 </div>
+
+{% endcomment %}
