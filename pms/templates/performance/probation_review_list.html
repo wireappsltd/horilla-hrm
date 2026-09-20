@@ -12,10 +12,10 @@
         font-weight: 600;
         white-space: nowrap;
         border-bottom: 1px solid #eaecef;
-        padding: 12px 16px;
+        padding: 12px 12px;
     }
     .pr-table tbody td {
-        padding: 14px 16px;
+        padding: 14px 12px;
         vertical-align: middle;
         border-bottom: 1px solid #f1f2f4;
         font-size: .85rem;
@@ -26,6 +26,16 @@
     .pr-nowrap { white-space: nowrap; }
     .pr-muted { color: #aab2c0; }
     .pr-table .oh-btn { white-space: nowrap; }
+    .pr-table thead th:last-child,
+    .pr-table tbody td:last-child {
+        position: sticky;
+        right: 0;
+        z-index: 2;
+        background: #fff;
+        box-shadow: -8px 0 8px -8px rgba(0, 0, 0, .12);
+    }
+    .pr-table thead th:last-child { background: #fff; }
+    .pr-table tbody tr:hover td:last-child { background: #fafbfc; }
     /* reviewer chips */
     .pr-chips { display: flex; flex-wrap: wrap; gap: 4px; max-width: 240px; }
     .pr-chip {
@@ -43,10 +53,6 @@
     .pr-status--progress { background: #fff4e5; color: #b26a00; }
     .pr-status--completed { background: #e7f6ec; color: #1e7e46; }
     .pr-status--none { background: #f1f2f4; color: #8a94a6; }
-    .pr-computed {
-        display: inline-flex; background: #fff4e5; color: #b26a00;
-        border-radius: 10px; padding: 1px 8px; font-size: .68rem; margin-left: 6px;
-    }
 </style>
 <!-- End of Navigation -->
 <main :class="sidebarOpen ? 'oh-main__sidebar-visible' : ''">
@@ -97,12 +103,6 @@
                                                 <td class="pr-nowrap">{{ row.date_of_join|date:"d/m/Y"|default:"-" }}</td>
                                                 <td class="pr-nowrap">
                                                     {{ row.probation_due_date|date:"d/m/Y"|default:"-" }}
-                                                    {% if row.employee.probation_due_source == "computed" %}
-                                                        <span class="pr-computed"
-                                                            title="{% trans 'Probation End Date is not set; this due date is computed as Joining Date + 6 months.' %}">
-                                                            {% trans "computed" %}
-                                                        </span>
-                                                    {% endif %}
                                                 </td>
                                                 <td class="pr-nowrap">{{ row.review.review_date|date:"d/m/Y"|default:"-" }}</td>
                                                 <td class="pr-nowrap">
