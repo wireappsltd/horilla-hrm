@@ -194,6 +194,12 @@
                                                         class="oh-btn oh-btn--secondary oh-btn--small">
                                                         {% trans "Open" %}
                                                     </a>
+                                                    <a href="{% url 'probation-review-pdf' review_id=review.id %}"
+                                                        class="oh-btn oh-btn--light-bkg oh-btn--small"
+                                                        title="{% trans 'Export the completed review as PDF' %}">
+                                                        <ion-icon name="download-outline" role="img" class="me-1"></ion-icon>
+                                                        {% trans "Export PDF" %}
+                                                    </a>
                                                 </td>
                                             </tr>
                                         {% empty %}
