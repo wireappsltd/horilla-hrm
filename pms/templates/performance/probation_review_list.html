@@ -25,7 +25,11 @@
     .pr-emp { font-weight: 600; color: #1f2937; white-space: nowrap; }
     .pr-nowrap { white-space: nowrap; }
     .pr-muted { color: #aab2c0; }
-    .pr-table .oh-btn { white-space: nowrap; }
+    .pr-table td.pr-actions { white-space: nowrap; width: 1%; }
+    .pr-actions-wrap { display: inline-flex; align-items: center; justify-content: flex-end; gap: 8px; }
+    .pr-table .pr-actions-wrap .oh-btn,
+    .pr-table .pr-actions-wrap form { margin: 0; }
+    .pr-table .oh-btn { display: inline-flex; align-items: center; width: auto; white-space: nowrap; }
     /* reviewer chips */
     .pr-chips { display: flex; flex-wrap: wrap; gap: 4px; max-width: 240px; }
     .pr-chip {
@@ -122,7 +126,8 @@
                                                         <span class="pr-status pr-status--none">{% trans "Not started" %}</span>
                                                     {% endif %}
                                                 </td>
-                                                <td class="text-end">
+                                                <td class="text-end pr-actions">
+                                                    <div class="pr-actions-wrap">
                                                     {% if row.review %}
                                                         <a href="{% url 'probation-review-form' review_id=row.review.id %}"
                                                            class="oh-btn oh-btn--secondary oh-btn--small">
@@ -139,6 +144,7 @@
                                                             </button>
                                                         </form>
                                                     {% endif %}
+                                                    </div>
                                                 </td>
                                             </tr>
                                         {% empty %}
@@ -189,7 +195,8 @@
                                                 <td>
                                                     <span class="pr-status pr-status--completed">{{ review.get_status_display }}</span>
                                                 </td>
-                                                <td class="text-end">
+                                                <td class="text-end pr-actions">
+                                                    <div class="pr-actions-wrap">
                                                     <a href="{% url 'probation-review-form' review_id=review.id %}"
                                                         class="oh-btn oh-btn--secondary oh-btn--small">
                                                         {% trans "Open" %}
@@ -200,6 +207,7 @@
                                                         <ion-icon name="download-outline" role="img" class="me-1"></ion-icon>
                                                         {% trans "Export PDF" %}
                                                     </a>
+                                                    </div>
                                                 </td>
                                             </tr>
                                         {% empty %}
