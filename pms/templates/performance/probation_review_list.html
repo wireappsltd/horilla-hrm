@@ -2,8 +2,32 @@
 {% block content %}
 {% load i18n %}
 <style>
+    /* --- containment: stop the table widening the card / page --- */
+    .oh-wrapper,
+    .oh-card,
+    .oh-card__body,
+    .oh-tabs,
+    .oh-tabs__contents,
+    .oh-tabs__content {
+        min-width: 0;
+        max-width: 100%;
+    }
+    .pr-scroll {
+        width: 100%;
+        max-width: 100%;
+        overflow-x: auto;
+        overflow-y: visible;
+        -webkit-overflow-scrolling: touch;
+    }
+
     .pr-tab-desc { margin: 14px 0 18px; font-size: .85rem; color: #8a94a6; }
-    .pr-table { width: 100%; margin-bottom: 0; }
+    .pr-table {
+        width: 100%;
+        min-width: 960px;
+        margin-bottom: 0;
+        border-collapse: separate;
+        border-spacing: 0;
+    }
     .pr-table thead th {
         font-size: .72rem;
         text-transform: uppercase;
@@ -12,17 +36,24 @@
         font-weight: 600;
         white-space: nowrap;
         border-bottom: 1px solid #eaecef;
-        padding: 12px 12px;
+        padding: 12px 10px;
     }
     .pr-table tbody td {
-        padding: 14px 12px;
+        padding: 14px 10px;
         vertical-align: middle;
         border-bottom: 1px solid #f1f2f4;
         font-size: .85rem;
         color: #55617a;
     }
     .pr-table tbody tr:hover { background: #fafbfc; }
-    .pr-emp { font-weight: 600; color: #1f2937; white-space: nowrap; }
+    .pr-emp {
+        font-weight: 600;
+        color: #1f2937;
+        min-width: 180px;
+        max-width: 260px;
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
     .pr-nowrap { white-space: nowrap; }
     .pr-muted { color: #aab2c0; }
     .pr-table .oh-btn { white-space: nowrap; }
@@ -34,16 +65,7 @@
         background: #fff;
         box-shadow: -8px 0 8px -8px rgba(0, 0, 0, .12);
     }
-    .pr-table thead th:last-child { background: #fff; }
     .pr-table tbody tr:hover td:last-child { background: #fafbfc; }
-    /* reviewer chips */
-    .pr-chips { display: flex; flex-wrap: wrap; gap: 4px; max-width: 240px; }
-    .pr-chip {
-        display: inline-flex; align-items: center;
-        background: #eef1f6; color: #46536b;
-        border-radius: 12px; padding: 2px 10px;
-        font-size: .74rem; font-weight: 500; white-space: nowrap;
-    }
     /* status pills */
     .pr-status {
         display: inline-flex; align-items: center;
@@ -82,7 +104,7 @@
                                 {% trans "Employees whose probationary review is due (reached 6 months of employment), plus reviews already in progress. Completed reviews move to the History tab." %}
                             </p>
 
-                            <div class="table-responsive">
+                            <div class="pr-scroll">
                                 <table class="table pr-table align-middle">
                                     <thead>
                                         <tr>
@@ -159,7 +181,7 @@
                                 {% trans "Completed probationary reviews. Open a review to view the final assessment." %}
                             </p>
 
-                            <div class="table-responsive">
+                            <div class="pr-scroll">
                                 <table class="table pr-table align-middle">
                                     <thead>
                                         <tr>
@@ -224,4 +246,3 @@
 </main>
 
 {% endblock %}
-
