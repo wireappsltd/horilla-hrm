@@ -5,14 +5,17 @@ This module contains the view functions for handling HTTP requests and rendering
 responses in pms app.
 """
 
+import base64
 import datetime
 import json
 import logging
+import os
 from itertools import tee
 from urllib.parse import parse_qs, urlencode, urlparse
 
 from dateutil.relativedelta import relativedelta
 from django import forms
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.models import User
 from django.core.paginator import Paginator
@@ -30,6 +33,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
+from weasyprint import HTML
 
 from base.methods import (
     closest_numbers,
@@ -3260,6 +3264,76 @@ def probation_review_form(request, review_id):
     }
     return render(request, "performance/probation_review_form.html", context)
 
+
+@login_required
+def probation_review_pdf(request, review_id):
+    """
+    Export a *completed* probationary review as a filled PDF document.
+
+    Only reviews with ``status == "completed"`` can be exported; any attempt
+    to export an in-progress (or otherwise non-completed) review is rejected
+    so that draft/partial forms are never shared as final documents.
+
+    Access mirrors the form view: HR/Admin holding ``pms.change_probationreview``
+    or an assigned reviewer of the review. Anyone else is denied.
+
+    The PDF is rendered from ``performance/probation_review_pdf.html`` with
+    WeasyPrint and returned as an inline ``application/pdf`` attachment laid
+    out to match the standard wireapps Probation Review Form.
+    """
+    review = get_object_or_404(ProbationReview, id=review_id)
+
+    # Access control: HR/Admin or an assigned reviewer only.
+    if not can_edit_probation_review(request.user, review):
+        raise PermissionDenied(
+            _("You are not allowed to export this probationary review.")
+        )
+
+    # Only completed forms may be exported.
+    if review.status != "completed":
+        messages.error(
+            request,
+            _("Only completed probationary reviews can be exported to PDF."),
+        )
+        return redirect("probation-review-list")
+
+    # Embed the wireapps logo as a base64 data URI so it renders in the PDF
+    # without depending on a live static-file server.
+    logo_base64 = ""
+    logo_path = os.path.join(
+        settings.BASE_DIR, "static", "images", "ui", "wireapps-logo.png"
+    )
+    if not os.path.exists(logo_path):
+        logo_path = os.path.join(
+            settings.STATIC_ROOT, "images", "ui", "wireapps-logo.png"
+        )
+    if os.path.exists(logo_path):
+        with open(logo_path, "rb") as logo_file:
+            encoded = base64.b64encode(logo_file.read()).decode("utf-8")
+            logo_base64 = f"data:image/png;base64,{encoded}"
+
+    context = {
+        "review": review,
+        "criteria": review.criteria.all(),
+        "logo_base64": logo_base64,
+    }
+
+    html_string = render_to_string(
+        "performance/probation_review_pdf.html", context, request=request
+    )
+    pdf_bytes = HTML(
+        string=html_string, base_url=request.build_absolute_uri("/")
+    ).write_pdf()
+
+    employee = review.employee_id
+    safe_name = (
+        str(employee).replace(" ", "_").replace("/", "-") if employee else "employee"
+    )
+    filename = f"Probation_Review_{safe_name}.pdf"
+
+    response = HttpResponse(pdf_bytes, content_type="application/pdf")
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
 
 
 @login_required

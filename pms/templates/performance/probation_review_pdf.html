@@ -1,0 +1,314 @@
+{% load i18n %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>{% trans "Probation Review Form" %}</title>
+    <style>
+        @page {
+            size: A4;
+            margin: 1.4cm 1.4cm 1.6cm 1.4cm;
+            @bottom-right {
+                content: "{% trans 'Page' %} " counter(page) " / " counter(pages);
+                font-size: 8px;
+                color: #888;
+            }
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+            font-size: 10px;
+            color: #1a1a1a;
+            margin: 0;
+        }
+
+        .pr-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            margin-bottom: 6px;
+        }
+
+        .pr-logo {
+            height: 44px;
+        }
+
+        .pr-title {
+            text-align: center;
+            font-size: 15px;
+            font-weight: 700;
+            text-decoration: underline;
+            letter-spacing: .5px;
+            margin: 8px 0 14px;
+        }
+
+        .pr-section-label {
+            font-weight: 700;
+            text-decoration: underline;
+            font-size: 11px;
+            margin: 10px 0 6px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed;
+        }
+
+        td, th {
+            border: 1px solid #1a1a1a;
+            padding: 5px 7px;
+            vertical-align: top;
+            word-wrap: break-word;
+        }
+
+        .label-cell {
+            font-weight: 700;
+            width: 26%;
+        }
+
+        .center {
+            text-align: center;
+        }
+
+        .rating-head th {
+            font-weight: 700;
+            text-align: center;
+            font-size: 9px;
+        }
+
+        .section-name {
+            font-weight: 700;
+        }
+
+        .mark-x {
+            text-align: center;
+            font-weight: 700;
+            font-size: 12px;
+        }
+
+        .total-row td {
+            font-weight: 700;
+        }
+
+        .yesno {
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
+        .yesno .picked {
+            background: #1a1a1a;
+            color: #fff;
+            padding: 1px 5px;
+            border-radius: 2px;
+        }
+
+        .box-answer {
+            min-height: 46px;
+        }
+
+        .tall {
+            min-height: 90px;
+        }
+
+        .no-border-top {
+            border-top: none;
+        }
+
+        h4.block-q {
+            font-size: 10px;
+            font-weight: 700;
+            margin: 0 0 4px;
+        }
+
+        .avoid-break {
+            page-break-inside: avoid;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- ================= HEADER ================= -->
+    <div class="pr-header">
+        <div></div>
+        {% if logo_base64 %}
+            <img src="{{ logo_base64 }}" class="pr-logo" alt="wireapps">
+        {% endif %}
+    </div>
+
+    <div class="pr-title">{% trans "PROBATION REVIEW FORM" %}</div>
+
+    <!-- ================= PROBATION RECORD ================= -->
+    <div class="pr-section-label">{% trans "Probation Record" %}</div>
+    <table class="avoid-break">
+        <tr>
+            <td class="label-cell">{% trans "Employee name:" %}</td>
+            <td colspan="3">{{ review.employee_id|default:"-" }}</td>
+        </tr>
+        <tr>
+            <td class="label-cell">{% trans "Job Title:" %}</td>
+            <td colspan="3">{{ review.job_title|default:"-" }}</td>
+        </tr>
+        <tr>
+            <td class="label-cell">{% trans "Date of Join:" %}</td>
+            <td colspan="3">{{ review.date_of_join|date:"d/m/Y"|default:"-" }}</td>
+        </tr>
+        <tr>
+            <td class="label-cell">{% trans "Immediate Supervisor:" %}</td>
+            <td colspan="3">{{ review.immediate_supervisor|default:"-" }}</td>
+        </tr>
+        <tr>
+            <td class="label-cell"></td>
+            <td class="center" style="font-weight:700; width:37%;">{% trans "Date Due" %}</td>
+            <td class="center" style="font-weight:700;" colspan="2">{% trans "Please tick when completed" %}</td>
+        </tr>
+        <tr>
+            <td class="label-cell">{% trans "6-month review:" %}</td>
+            <td class="center">{{ review.review_due_date|date:"d/m/Y"|default:"-" }}</td>
+            <td class="center" colspan="2">{% if review.review_completed %}&#10003;{% else %}&nbsp;{% endif %}</td>
+        </tr>
+    </table>
+
+    <!-- ================= ASSESSMENT CRITERIA ================= -->
+    <table style="margin-top:12px;">
+        <thead>
+            <tr class="rating-head">
+                <th style="width:13%;">{% trans "Section" %}</th>
+                <th style="width:14%;">{% trans "Title" %}</th>
+                <th style="width:25%;">{% trans "Description" %}</th>
+                <th colspan="5" class="center">{% trans "Marks (1-5)" %}</th>
+                <th style="width:8%;">{% trans "Total" %}</th>
+            </tr>
+            <tr class="rating-head">
+                <th></th>
+                <th></th>
+                <th></th>
+                <th>{% trans "Poor" %}<br>(1)</th>
+                <th>{% trans "Fair" %}<br>(2)</th>
+                <th>{% trans "Good" %}<br>(3)</th>
+                <th>{% trans "Very Good" %}<br>(4)</th>
+                <th>{% trans "Excellent" %}<br>(5)</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for criterion in criteria %}
+                <tr>
+                    <td class="section-name">
+                        {% ifchanged criterion.get_section_display %}{{ criterion.get_section_display }}{% endifchanged %}
+                    </td>
+                    <td>{{ criterion.title|default:"-" }}</td>
+                    <td>{{ criterion.description|default:"" }}</td>
+                    <td class="mark-x">{% if criterion.marks == 1 %}X{% endif %}</td>
+                    <td class="mark-x">{% if criterion.marks == 2 %}X{% endif %}</td>
+                    <td class="mark-x">{% if criterion.marks == 3 %}X{% endif %}</td>
+                    <td class="mark-x">{% if criterion.marks == 4 %}X{% endif %}</td>
+                    <td class="mark-x">{% if criterion.marks == 5 %}X{% endif %}</td>
+                    <td class="center">{{ criterion.marks|default:"-" }}</td>
+                </tr>
+            {% endfor %}
+            <tr class="total-row">
+                <td colspan="8">{% trans "Total Marks (50)" %}</td>
+                <td class="center">{{ review.total_marks }}</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <!-- ================= OUTCOME & CONFIRMATION ================= -->
+    <table style="margin-top:14px;">
+        <tr class="avoid-break">
+            <td class="label-cell" style="width:24%;">{% trans "Have the objectives identified for this period of the probation been met?" %}</td>
+            <td class="yesno center" style="width:14%;">
+                <span class="{% if review.objectives_met == 'yes' %}picked{% endif %}">{% trans "YES" %}</span> /
+                <span class="{% if review.objectives_met == 'no' %}picked{% endif %}">{% trans "NO" %}</span>
+            </td>
+            <td style="width:42%;">
+                <strong>{% trans "If NO, what further action is required?" %}</strong><br>
+                {{ review.objectives_action|default:"" }}
+            </td>
+            <td style="width:20%;">
+                <strong>{% trans "Review Date" %}</strong><br>
+                {{ review.review_date|date:"jS F Y"|default:"-" }}
+            </td>
+        </tr>
+        <tr class="avoid-break">
+            <td class="label-cell">{% trans "Have the training / development needs identified for this period of the probation been addressed?" %}</td>
+            <td class="yesno center">
+                <span class="{% if review.training_needs_addressed == 'yes' %}picked{% endif %}">{% trans "YES" %}</span> /
+                <span class="{% if review.training_needs_addressed == 'no' %}picked{% endif %}">{% trans "NO" %}</span>
+            </td>
+            <td colspan="2"></td>
+        </tr>
+    </table>
+
+    <table style="margin-top:10px;">
+        <tr class="avoid-break">
+            <td>
+                <h4 class="block-q">{% trans "Summarise the employee's performance and progress over the period" %}</h4>
+                <div class="box-answer tall">{{ review.performance_summary|default:"" }}</div>
+            </td>
+        </tr>
+    </table>
+
+    <table style="margin-top:10px;">
+        <tr class="avoid-break">
+            <td class="label-cell" style="width:80%;">{% trans "Is the employee's appointment to be confirmed?" %}</td>
+            <td class="yesno center">
+                <span class="{% if review.appointment_confirmed == 'yes' %}picked{% endif %}">{% trans "YES" %}</span> /
+                <span class="{% if review.appointment_confirmed == 'no' %}picked{% endif %}">{% trans "NO" %}</span>
+            </td>
+        </tr>
+        <tr class="avoid-break">
+            <td colspan="2">
+                <h4 class="block-q">{% trans "If NO, please provide reasons below and summarise what action has been taken to address any difficulties which have arisen during the probationary period." %}</h4>
+                <div class="box-answer tall">{{ review.confirmation_reasons|default:"" }}</div>
+            </td>
+        </tr>
+    </table>
+
+    <table style="margin-top:10px;">
+        <tr class="avoid-break">
+            <td class="label-cell" style="width:80%;">{% trans "Should the employee's probationary period be extended?" %}</td>
+            <td class="yesno center">
+                <span class="{% if review.probation_extended == 'yes' %}picked{% endif %}">{% trans "YES" %}</span> /
+                <span class="{% if review.probation_extended == 'no' %}picked{% endif %}">{% trans "NO" %}</span>
+            </td>
+        </tr>
+        <tr class="avoid-break">
+            <td colspan="2">
+                <h4 class="block-q">{% trans "If YES, please provide reasons and, where appropriate, specify any areas of improvement required and how these will be monitored." %}</h4>
+                <div class="box-answer tall">{{ review.extension_reasons|default:"" }}</div>
+            </td>
+        </tr>
+    </table>
+
+    <table style="margin-top:10px;" class="avoid-break">
+        <tr>
+            <td class="label-cell">{% trans "Length of the extension (max 3 months):" %}</td>
+            <td>{% if review.extension_length_months %}{{ review.extension_length_months }} {% trans "month(s)" %}{% endif %}</td>
+        </tr>
+        <tr>
+            <td class="label-cell">{% trans "New Probation Period completion date:" %}</td>
+            <td>{{ review.new_completion_date|date:"d/m/Y"|default:"" }}</td>
+        </tr>
+        <tr>
+            <td class="label-cell">{% trans "Manager's signature:" %}</td>
+            <td>{% if review.manager_signed %}{{ review.manager_signed_by|default:"" }} {% if review.manager_signed_at %}({{ review.manager_signed_at|date:"d/m/Y" }}){% endif %}{% endif %}</td>
+        </tr>
+        <tr>
+            <td class="label-cell">{% trans "CTO's signature:" %}</td>
+            <td>{% if review.cto_signed %}{{ review.cto_signed_by|default:"" }} {% if review.cto_signed_at %}({{ review.cto_signed_at|date:"d/m/Y" }}){% endif %}{% endif %}</td>
+        </tr>
+        <tr>
+            <td class="label-cell">{% trans "Date:" %}</td>
+            <td>{{ review.review_date|date:"d/m/Y"|default:"" }}</td>
+        </tr>
+    </table>
+
+</body>
+</html>
+

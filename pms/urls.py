@@ -245,6 +245,11 @@ urlpatterns = [
         name="probation-review-form",
     ),
     path(
+        "probation-review-pdf/<int:review_id>",
+        views.probation_review_pdf,
+        name="probation-review-pdf",
+    ),
+    path(
         "dashboard-objective-status",
         views.dashboard_objective_status,
         name="dashboard-objective-status",
