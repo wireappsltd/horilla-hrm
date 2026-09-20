@@ -20,11 +20,10 @@
         -webkit-overflow-scrolling: touch;
     }
 
-    .pr-tab-desc { margin: 18px 0 22px; font-size: .85rem; color: #8a94a6; }
+    .pr-tab-desc { margin: 14px 0 18px; font-size: .85rem; color: #8a94a6; }
     .pr-table {
         width: 100%;
-        min-width: 1080px;
-        table-layout: fixed;
+        min-width: 960px;
         margin-bottom: 0;
         border-collapse: separate;
         border-spacing: 0;
@@ -37,10 +36,10 @@
         font-weight: 600;
         white-space: nowrap;
         border-bottom: 1px solid #eaecef;
-        padding: 14px 16px;
+        padding: 12px 10px;
     }
     .pr-table tbody td {
-        padding: 20px 16px;
+        padding: 14px 10px;
         vertical-align: middle;
         border-bottom: 1px solid #f1f2f4;
         font-size: .85rem;
@@ -50,11 +49,12 @@
     .pr-emp {
         font-weight: 600;
         color: #1f2937;
+        min-width: 180px;
+        max-width: 260px;
         white-space: normal;
         overflow-wrap: anywhere;
     }
     .pr-nowrap { white-space: nowrap; }
-    .pr-wrap { white-space: normal; overflow-wrap: anywhere; }
     .pr-muted { color: #aab2c0; }
     .pr-table .oh-btn { white-space: nowrap; }
     .pr-table thead th:last-child,
@@ -106,16 +106,6 @@
 
                             <div class="pr-scroll">
                                 <table class="table pr-table align-middle">
-                                    <colgroup>
-                                        <col style="width: 21%;">
-                                        <col style="width: 11%;">
-                                        <col style="width: 11%;">
-                                        <col style="width: 11%;">
-                                        <col style="width: 8%;">
-                                        <col style="width: 15%;">
-                                        <col style="width: 11%;">
-                                        <col style="width: 12%;">
-                                    </colgroup>
                                     <thead>
                                         <tr>
                                             <th>{% trans "Employee" %}</th>
@@ -140,7 +130,7 @@
                                                 <td class="pr-nowrap">
                                                     {% if row.review %}{{ row.review.total_marks }} / 50{% else %}<span class="pr-muted">-</span>{% endif %}
                                                 </td>
-                                                <td class="pr-wrap">
+                                                <td class="pr-nowrap">
                                                     {% if row.review.modified_by %}
                                                         {{ row.review.modified_by.employee_get|default:row.review.modified_by }}
                                                     {% else %}
@@ -161,15 +151,13 @@
                                                             {% trans "Open Review" %}
                                                         </a>
                                                     {% else %}
-                                                        <form method="post"
-                                                              action="{% url 'generate-probation-review' employee_id=row.employee.id %}"
-                                                              class="d-inline">
-                                                            {% csrf_token %}
-                                                            <button type="submit"
-                                                                    class="oh-btn oh-btn--secondary oh-btn--small">
-                                                                {% trans "Generate Review" %}
-                                                            </button>
-                                                        </form>
+                                                        <button type="button"
+                                                                class="oh-btn oh-btn--secondary oh-btn--small pr-generate-btn"
+                                                                data-employee-id="{{ row.employee.id }}"
+                                                                data-employee-name="{{ row.employee }}"
+                                                                data-action-url="{% url 'generate-probation-review' employee_id=row.employee.id %}">
+                                                            {% trans "Generate Review" %}
+                                                        </button>
                                                     {% endif %}
                                                 </td>
                                             </tr>
@@ -193,15 +181,6 @@
 
                             <div class="pr-scroll">
                                 <table class="table pr-table align-middle">
-                                    <colgroup>
-                                        <col style="width: 22%;">
-                                        <col style="width: 12%;">
-                                        <col style="width: 12%;">
-                                        <col style="width: 9%;">
-                                        <col style="width: 16%;">
-                                        <col style="width: 11%;">
-                                        <col style="width: 18%;">
-                                    </colgroup>
                                     <thead>
                                         <tr>
                                             <th>{% trans "Employee" %}</th>
@@ -220,7 +199,7 @@
                                                 <td class="pr-nowrap">{{ review.review_due_date|date:"d/m/Y"|default:"-" }}</td>
                                                 <td class="pr-nowrap">{{ review.review_date|date:"d/m/Y"|default:"-" }}</td>
                                                 <td class="pr-nowrap">{{ review.total_marks }} / 50</td>
-                                                <td class="pr-wrap">
+                                                <td class="pr-nowrap">
                                                     {% if review.modified_by %}
                                                         {{ review.modified_by.employee_get|default:review.modified_by }}
                                                     {% else %}
@@ -262,6 +241,130 @@
             </div>
         </div>
     </div>
+
+    <!-- ================================================================= -->
+    <!-- Generate Review popup: pick the reviewers before generating.      -->
+    <!-- One shared modal reused by every row's "Generate Review" button.  -->
+    <!-- ================================================================= -->
+    <div class="oh-modal" id="generateReviewModal" role="dialog" aria-modal="true">
+        <div class="oh-modal__dialog">
+            <div class="oh-modal__dialog-header">
+                <h2 class="oh-modal__dialog-title" id="generateReviewModalTitle">
+                    {% trans "Generate Probationary Review" %}
+                </h2>
+                <button type="button" class="oh-modal__close" aria-label="close"
+                        onclick="closeGenerateReviewModal();">
+                    <ion-icon name="close-outline"></ion-icon>
+                </button>
+            </div>
+            <div class="oh-modal__dialog-body">
+                <form method="post" id="generateReviewForm" action="">
+                    {% csrf_token %}
+                    <p class="text-muted" style="font-size: .85rem;">
+                        {% trans "Select the employees who are allowed to view and edit this review. You can also change reviewers later from the review form." %}
+                    </p>
+                    <div class="mb-3">
+                        <label class="oh-label d-block" for="generateReviewReviewers">
+                            {% trans "Reviewers" %}
+                        </label>
+                        <select name="reviewers" id="generateReviewReviewers"
+                                class="w-100" multiple
+                                data-placeholder="{% trans 'Select reviewers' %}">
+                            {% for emp in assignable_employees %}
+                                <option value="{{ emp.id }}">{{ emp }}</option>
+                            {% endfor %}
+                        </select>
+                        <small class="text-muted d-block mt-1">
+                            {% trans "Optional — leave empty to assign reviewers later." %}
+                        </small>
+                    </div>
+                    <div class="d-flex justify-content-end" style="gap: .5rem;">
+                        <button type="button" class="oh-btn oh-btn--light-bkg oh-btn--small"
+                                onclick="closeGenerateReviewModal();">
+                            {% trans "Cancel" %}
+                        </button>
+                        <button type="submit" class="oh-btn oh-btn--secondary oh-btn--small">
+                            {% trans "Generate Review" %}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
 </main>
+
+<script>
+    function closeGenerateReviewModal() {
+        var modal = document.getElementById("generateReviewModal");
+        if (modal) {
+            modal.classList.remove("oh-modal--show");
+        }
+    }
+
+    (function () {
+        var modal = document.getElementById("generateReviewModal");
+        var form = document.getElementById("generateReviewForm");
+        var titleEl = document.getElementById("generateReviewModalTitle");
+        var reviewersSelect = document.getElementById("generateReviewReviewers");
+        var defaultTitle = titleEl ? titleEl.textContent.trim() : "";
+
+        if (!modal || !form) {
+            return;
+        }
+
+        // Progressive enhancement: searchable select2 once jQuery is ready.
+        function tryInitSelect2(attempt) {
+            if (typeof window.jQuery === "undefined" || !window.jQuery.fn.select2) {
+                if (attempt < 20) {
+                    setTimeout(function () { tryInitSelect2(attempt + 1); }, 100);
+                }
+                return;
+            }
+            var $ = window.jQuery;
+            var $sel = $(reviewersSelect);
+            if ($sel.hasClass("select2-hidden-accessible")) {
+                return;
+            }
+            $sel.select2({
+                placeholder: $sel.data("placeholder") || "{% trans 'Select reviewers' %}",
+                width: "100%",
+                allowClear: true,
+                dropdownParent: $("#generateReviewModal .oh-modal__dialog-body"),
+            });
+        }
+        tryInitSelect2(0);
+
+        // Open the modal from any row's "Generate Review" button, wiring the
+        // form to that employee's generate URL and resetting the selection.
+        document.querySelectorAll(".pr-generate-btn").forEach(function (btn) {
+            btn.addEventListener("click", function () {
+                form.action = btn.getAttribute("data-action-url") || "";
+                var name = btn.getAttribute("data-employee-name") || "";
+                if (titleEl) {
+                    titleEl.textContent = name
+                        ? defaultTitle + " — " + name
+                        : defaultTitle;
+                }
+                // Clear any previous selection.
+                if (reviewersSelect) {
+                    for (var i = 0; i < reviewersSelect.options.length; i++) {
+                        reviewersSelect.options[i].selected = false;
+                    }
+                    if (typeof window.jQuery !== "undefined" && window.jQuery.fn.select2) {
+                        window.jQuery(reviewersSelect).trigger("change");
+                    }
+                }
+                modal.classList.add("oh-modal--show");
+            });
+        });
+
+        // Close when clicking the dark backdrop (outside the dialog).
+        modal.addEventListener("click", function (event) {
+            if (event.target === modal) {
+                closeGenerateReviewModal();
+            }
+        });
+    })();
+</script>
 
 {% endblock %}
