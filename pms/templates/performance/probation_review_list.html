@@ -151,15 +151,13 @@
                                                             {% trans "Open Review" %}
                                                         </a>
                                                     {% else %}
-                                                        <form method="post"
-                                                              action="{% url 'generate-probation-review' employee_id=row.employee.id %}"
-                                                              class="d-inline">
-                                                            {% csrf_token %}
-                                                            <button type="submit"
-                                                                    class="oh-btn oh-btn--secondary oh-btn--small">
-                                                                {% trans "Generate Review" %}
-                                                            </button>
-                                                        </form>
+                                                        <button type="button"
+                                                                class="oh-btn oh-btn--secondary oh-btn--small pr-generate-btn"
+                                                                data-employee-id="{{ row.employee.id }}"
+                                                                data-employee-name="{{ row.employee }}"
+                                                                data-action-url="{% url 'generate-probation-review' employee_id=row.employee.id %}">
+                                                            {% trans "Generate Review" %}
+                                                        </button>
                                                     {% endif %}
                                                 </td>
                                             </tr>
@@ -243,6 +241,130 @@
             </div>
         </div>
     </div>
+
+    <!-- ================================================================= -->
+    <!-- Generate Review popup: pick the reviewers before generating.      -->
+    <!-- One shared modal reused by every row's "Generate Review" button.  -->
+    <!-- ================================================================= -->
+    <div class="oh-modal" id="generateReviewModal" role="dialog" aria-modal="true">
+        <div class="oh-modal__dialog">
+            <div class="oh-modal__dialog-header">
+                <h2 class="oh-modal__dialog-title" id="generateReviewModalTitle">
+                    {% trans "Generate Probationary Review" %}
+                </h2>
+                <button type="button" class="oh-modal__close" aria-label="close"
+                        onclick="closeGenerateReviewModal();">
+                    <ion-icon name="close-outline"></ion-icon>
+                </button>
+            </div>
+            <div class="oh-modal__dialog-body">
+                <form method="post" id="generateReviewForm" action="">
+                    {% csrf_token %}
+                    <p class="text-muted" style="font-size: .85rem;">
+                        {% trans "Select the employees who are allowed to view and edit this review. You can also change reviewers later from the review form." %}
+                    </p>
+                    <div class="mb-3">
+                        <label class="oh-label d-block" for="generateReviewReviewers">
+                            {% trans "Reviewers" %}
+                        </label>
+                        <select name="reviewers" id="generateReviewReviewers"
+                                class="w-100" multiple
+                                data-placeholder="{% trans 'Select reviewers' %}">
+                            {% for emp in assignable_employees %}
+                                <option value="{{ emp.id }}">{{ emp }}</option>
+                            {% endfor %}
+                        </select>
+                        <small class="text-muted d-block mt-1">
+                            {% trans "Optional — leave empty to assign reviewers later." %}
+                        </small>
+                    </div>
+                    <div class="d-flex justify-content-end" style="gap: .5rem;">
+                        <button type="button" class="oh-btn oh-btn--light-bkg oh-btn--small"
+                                onclick="closeGenerateReviewModal();">
+                            {% trans "Cancel" %}
+                        </button>
+                        <button type="submit" class="oh-btn oh-btn--secondary oh-btn--small">
+                            {% trans "Generate Review" %}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
 </main>
+
+<script>
+    function closeGenerateReviewModal() {
+        var modal = document.getElementById("generateReviewModal");
+        if (modal) {
+            modal.classList.remove("oh-modal--show");
+        }
+    }
+
+    (function () {
+        var modal = document.getElementById("generateReviewModal");
+        var form = document.getElementById("generateReviewForm");
+        var titleEl = document.getElementById("generateReviewModalTitle");
+        var reviewersSelect = document.getElementById("generateReviewReviewers");
+        var defaultTitle = titleEl ? titleEl.textContent.trim() : "";
+
+        if (!modal || !form) {
+            return;
+        }
+
+        // Progressive enhancement: searchable select2 once jQuery is ready.
+        function tryInitSelect2(attempt) {
+            if (typeof window.jQuery === "undefined" || !window.jQuery.fn.select2) {
+                if (attempt < 20) {
+                    setTimeout(function () { tryInitSelect2(attempt + 1); }, 100);
+                }
+                return;
+            }
+            var $ = window.jQuery;
+            var $sel = $(reviewersSelect);
+            if ($sel.hasClass("select2-hidden-accessible")) {
+                return;
+            }
+            $sel.select2({
+                placeholder: $sel.data("placeholder") || "{% trans 'Select reviewers' %}",
+                width: "100%",
+                allowClear: true,
+                dropdownParent: $("#generateReviewModal .oh-modal__dialog-body"),
+            });
+        }
+        tryInitSelect2(0);
+
+        // Open the modal from any row's "Generate Review" button, wiring the
+        // form to that employee's generate URL and resetting the selection.
+        document.querySelectorAll(".pr-generate-btn").forEach(function (btn) {
+            btn.addEventListener("click", function () {
+                form.action = btn.getAttribute("data-action-url") || "";
+                var name = btn.getAttribute("data-employee-name") || "";
+                if (titleEl) {
+                    titleEl.textContent = name
+                        ? defaultTitle + " — " + name
+                        : defaultTitle;
+                }
+                // Clear any previous selection.
+                if (reviewersSelect) {
+                    for (var i = 0; i < reviewersSelect.options.length; i++) {
+                        reviewersSelect.options[i].selected = false;
+                    }
+                    if (typeof window.jQuery !== "undefined" && window.jQuery.fn.select2) {
+                        window.jQuery(reviewersSelect).trigger("change");
+                    }
+                }
+                modal.classList.add("oh-modal--show");
+            });
+        });
+
+        // Close when clicking the dark backdrop (outside the dialog).
+        modal.addEventListener("click", function (event) {
+            if (event.target === modal) {
+                closeGenerateReviewModal();
+            }
+        });
+    })();
+</script>
 
 {% endblock %}

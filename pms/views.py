@@ -3142,6 +3142,9 @@ def probation_review_list(request):
 
     context = {
         "probation_rows": probation_rows,
+        # Active employees selectable as reviewers in the "Generate Review"
+        # popup on the list page.
+        "assignable_employees": Employee.objects.filter(is_active=True),
         # History tab: only completed reviews for the current company, and only
         # for still-active employees (mirrors the form view's .all() scoping so
         # every listed review is actually openable).
@@ -3158,21 +3161,29 @@ def generate_probation_review_view(request, employee_id):
     """
     Generate (or open the existing) probationary review for an employee.
 
-    POST-only. Reviewers are no longer selected here; they are chosen and
-    edited on the probation review form itself (so HR/Admin can add or change
-    them at any time, not just once at generation).
-
     Calls generate_probation_review(), which is idempotent: if the employee
     already has an active (non-completed) review, that existing review is
-    returned instead of creating a duplicate. Either way, the user is
-    redirected to the probation review form for the returned review.
+
     """
     if request.method != "POST":
         return HttpResponseNotAllowed(["POST"])
 
     employee = get_object_or_404(Employee, id=employee_id)
-    review = generate_probation_review(employee, created_by=request.user)
+
+    # Reviewers selected in the popup (optional). Only keep valid, active
+    # employee ids so a tampered/stale submission can't assign bad reviewers.
+    reviewer_ids = request.POST.getlist("reviewers")
+    reviewers = None
+    if reviewer_ids:
+        reviewers = list(
+            Employee.objects.filter(is_active=True, id__in=reviewer_ids)
+        )
+
+    review = generate_probation_review(
+        employee, created_by=request.user, reviewers=reviewers
+    )
     return redirect("probation-review-form", review_id=review.id)
+
 
 
 @login_required
