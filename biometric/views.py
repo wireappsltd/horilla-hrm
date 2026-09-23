@@ -29,6 +29,7 @@ from attendance.models import AttendanceActivity
 from attendance.views.clock_in_out import clock_in, clock_out
 from base.methods import get_key_instances, get_pagination
 from employee.models import Employee, EmployeeWorkInformation
+from horilla.db_utils import db_safe_job
 from horilla.decorators import (
     hx_request_required,
     install_required,
@@ -2259,6 +2260,7 @@ def zk_biometric_attendance_logs(device_or_devices):
     return len(combined_attendances), "; ".join(errors) if errors else None
 
 
+@db_safe_job
 def zk_biometric_attendance_scheduler(device_id):
     """
     Scheduler function used for attendance logs
@@ -2323,6 +2325,7 @@ def anviz_biometric_attendance_logs(device):
     return len(attendance_records["list"])
 
 
+@db_safe_job
 def anviz_biometric_attendance_scheduler(device_id):
     """
     Schedules the attendance log retrieval for an Anviz biometric device.
@@ -2398,6 +2401,7 @@ def cosec_biometric_attendance_logs(device):
     return len(attendances)
 
 
+@db_safe_job
 def cosec_biometric_attendance_scheduler(device_id):
     """
     Retrieve and process attendance events from a COSEC biometric device.
@@ -2486,6 +2490,7 @@ def dahua_biometric_attendance_logs(device):
         return "error"
 
 
+@db_safe_job
 def dahua_biometric_attendance_scheduler(device_id):
     """
     Schedules the attendance log retrieval for a Dahua biometric device.
@@ -2565,6 +2570,7 @@ def etimeoffice_biometric_attendance_logs(device):
     return len(punch_data)
 
 
+@db_safe_job
 def etimeoffice_biometric_attendance_scheduler(device_id):
     """
     Schedules the attendance log retrieval for an eTimeOffice biometric device.
