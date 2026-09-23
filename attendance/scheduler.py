@@ -6,8 +6,10 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from django.conf import settings
 
 from base.backends import logger
+from horilla.db_utils import db_safe_job
 
 
+@db_safe_job
 def create_work_record():
     from attendance.models import WorkRecords
     from employee.models import Employee

@@ -11,12 +11,14 @@ from datetime import date, timedelta
 from apscheduler.schedulers.background import BackgroundScheduler
 from dateutil.relativedelta import relativedelta
 
+from horilla.db_utils import db_safe_job
 from payroll.methods.methods import calculate_employer_contribution, save_payslip
 from payroll.views.component_views import payroll_calculation
 
 from .models.models import Contract, Payslip
 
 
+@db_safe_job
 def expire_contract():
     """
     Finds all active contracts whose end date is earlier than the current date
@@ -93,6 +95,7 @@ def is_last_day_of_month(date):
     return next_day.month != date.month
 
 
+@db_safe_job
 def auto_payslip_generate():
     """
     Generating payslips for active contract employees
