@@ -33,7 +33,6 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
-from weasyprint import HTML
 
 from base.methods import (
     closest_numbers,
@@ -3332,9 +3331,22 @@ def probation_review_pdf(request, review_id):
     html_string = render_to_string(
         "performance/probation_review_pdf.html", context, request=request
     )
-    pdf_bytes = HTML(
-        string=html_string, base_url=request.build_absolute_uri("/")
-    ).write_pdf()
+    # Imported lazily: WeasyPrint needs native GTK/Pango libraries that are not
+    # present on every machine, and a module-level import would take the whole
+    # pms app down at startup rather than just this one export.
+    try:
+        from weasyprint import HTML
+
+        pdf_bytes = HTML(
+            string=html_string, base_url=request.build_absolute_uri("/")
+        ).write_pdf()
+    except Exception as error:
+        logger.error("Error generating probation review PDF: %s", error)
+        messages.error(
+            request,
+            _("PDF export is unavailable on this server. Please contact your administrator."),
+        )
+        return redirect("probation-review-list")
 
     employee = review.employee_id
     safe_name = (

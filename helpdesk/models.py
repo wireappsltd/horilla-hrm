@@ -278,6 +278,10 @@ class TicketType(HorillaModel):
 
 class Ticket(HorillaModel):
 
+    # Enforced on visible text (HTML stripped) by TicketForm, not by the DB
+    # column, because workflow forms save generated HTML descriptions directly.
+    DESCRIPTION_MAX_LENGTH = 600
+
     title = models.CharField(max_length=50)
     employee_id = models.ForeignKey(
         Employee, on_delete=models.PROTECT, related_name="ticket", verbose_name="Owner"
@@ -287,7 +291,7 @@ class Ticket(HorillaModel):
         on_delete=models.PROTECT,
         verbose_name="Ticket Type",
     )
-    description = models.TextField(max_length=255)
+    description = models.TextField()
     priority = models.CharField(choices=PRIORITY, max_length=100, default="low")
     created_date = models.DateField(auto_now_add=True)
     resolved_date = models.DateField(blank=True, null=True)
@@ -1108,6 +1112,8 @@ class ChangeRequest(HorillaModel):
     """
 
     SUMMARY_MAX_LENGTH = 1000
+    CATEGORISATION_REASON_MAX_LENGTH = 1000
+    SERVICES_IMPACTED_MAX_LENGTH = 1000
     IMPLEMENTATION_OVERVIEW_MAX_LENGTH = 1000
     COMMENTS_MAX_LENGTH = 500
     RELEASE_TEXT_MAX_LENGTH = 1000

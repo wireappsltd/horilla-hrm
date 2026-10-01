@@ -22,6 +22,7 @@ class YourForm(forms.Form):
         pass
 """
 
+import html
 from typing import Any
 
 from django import forms
@@ -29,6 +30,7 @@ from django.contrib.auth.models import User
 from django.db.models import Q
 from django.template.loader import render_to_string
 from django.utils import timezone
+from django.utils.html import strip_tags
 from django.utils.translation import gettext_lazy as _
 
 from base.forms import ModelForm
@@ -169,6 +171,18 @@ class TicketForm(ModelForm):
         if is_reportingmanager(request) or request.user.has_perm("base.add_tags"):
             self.fields["tags"].choices = list(self.fields["tags"].choices)
             self.fields["tags"].choices.append(("create_new_tag", "Create new tag"))
+
+    def clean_description(self):
+        # Description is Summernote HTML; count only the text the user sees,
+        # otherwise tags and entities eat into the limit.
+        description = self.cleaned_data.get("description") or ""
+        visible_text = html.unescape(strip_tags(description)).replace("\xa0", " ")
+        if len(visible_text.strip()) > Ticket.DESCRIPTION_MAX_LENGTH:
+            raise forms.ValidationError(
+                _("Description cannot exceed %(max_length)s characters.")
+                % {"max_length": Ticket.DESCRIPTION_MAX_LENGTH}
+            )
+        return description
 
 
 class PasswordResetRequestForm(forms.ModelForm):
@@ -1556,6 +1570,8 @@ class ChangeRequesterForm(forms.ModelForm):
     """
 
     SUMMARY_MAX_LENGTH = ChangeRequest.SUMMARY_MAX_LENGTH
+    CATEGORISATION_REASON_MAX_LENGTH = ChangeRequest.CATEGORISATION_REASON_MAX_LENGTH
+    SERVICES_IMPACTED_MAX_LENGTH = ChangeRequest.SERVICES_IMPACTED_MAX_LENGTH
 
     employee = forms.ModelChoiceField(
         queryset=Employee.objects.none(),
@@ -1702,6 +1718,30 @@ class ChangeRequesterForm(forms.ModelForm):
             }
         )
 
+        for field_name, max_length, message in (
+            (
+                "categorisation_reason",
+                self.CATEGORISATION_REASON_MAX_LENGTH,
+                _("Reason for Change Categorisation cannot exceed %(max_length)s characters."),
+            ),
+            (
+                "services_impacted",
+                self.SERVICES_IMPACTED_MAX_LENGTH,
+                _("Services / Systems Impacted cannot exceed %(max_length)s characters."),
+            ),
+        ):
+            error_message = message % {"max_length": max_length}
+            field = self.fields[field_name]
+            field.max_length = max_length
+            field.error_messages["max_length"] = error_message
+            field.widget.attrs.update(
+                {
+                    "data-maxlength": str(max_length),
+                    "data-maxlength-message": error_message,
+                    "maxlength": str(max_length),
+                }
+            )
+
         isc_user_qs = self.fields["forward_to"].queryset
         if self.instance and self.instance.pk:
             saved_forward = self.instance.forward_to.filter(
@@ -1762,12 +1802,22 @@ class ChangeRequesterForm(forms.ModelForm):
         value = (self.cleaned_data.get("categorisation_reason") or "").strip()
         if not value:
             raise forms.ValidationError(_("This field is required."))
+        if len(value) > self.CATEGORISATION_REASON_MAX_LENGTH:
+            raise forms.ValidationError(
+                _("Reason for Change Categorisation cannot exceed %(max_length)s characters.")
+                % {"max_length": self.CATEGORISATION_REASON_MAX_LENGTH}
+            )
         return value
 
     def clean_services_impacted(self):
         value = (self.cleaned_data.get("services_impacted") or "").strip()
         if not value:
             raise forms.ValidationError(_("This field is required."))
+        if len(value) > self.SERVICES_IMPACTED_MAX_LENGTH:
+            raise forms.ValidationError(
+                _("Services / Systems Impacted cannot exceed %(max_length)s characters.")
+                % {"max_length": self.SERVICES_IMPACTED_MAX_LENGTH}
+            )
         return value
 
     def clean_deadline(self):
