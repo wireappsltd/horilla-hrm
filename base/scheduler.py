@@ -5,6 +5,7 @@ from datetime import date, datetime, timedelta
 from apscheduler.schedulers.background import BackgroundScheduler
 from django.urls import reverse
 
+from horilla.db_utils import db_safe_job
 from notifications.signals import notify
 
 
@@ -105,6 +106,7 @@ def work_type_rotate_every(rotating_work_type):
     return
 
 
+@db_safe_job
 def rotate_work_type():
     """
     This method will identify the based on condition to the rotating shift assign
@@ -215,6 +217,7 @@ def shift_rotate_every(rotating_shift, today):
     return
 
 
+@db_safe_job
 def rotate_shift():
     """
     This method will identify the based on condition to the rotating shift assign
@@ -250,6 +253,7 @@ def rotate_shift():
     return
 
 
+@db_safe_job
 def switch_shift():
     """
     This method change employees shift information regards to the shift request
@@ -289,6 +293,7 @@ def switch_shift():
     return
 
 
+@db_safe_job
 def undo_shift():
     """
     This method undo previous employees shift information regards to the shift request
@@ -331,6 +336,7 @@ def undo_shift():
     return
 
 
+@db_safe_job
 def switch_work_type():
     """
     This method change employees work type information regards to the work type request
@@ -371,6 +377,7 @@ def switch_work_type():
     return
 
 
+@db_safe_job
 def undo_work_type():
     """
     This method undo previous employees work type information regards to the work type request
@@ -413,6 +420,7 @@ def undo_work_type():
     return
 
 
+@db_safe_job
 def recurring_holiday():
     from .models import Holidays
 
@@ -434,6 +442,7 @@ def recurring_holiday():
             recurring_holiday.end_date = new_end_date
         recurring_holiday.save()
 
+@db_safe_job
 def schedule_public_poya_fetch():
     import django
     django.setup()

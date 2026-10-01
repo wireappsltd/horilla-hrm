@@ -8,9 +8,12 @@ import sys
 
 from apscheduler.schedulers.background import BackgroundScheduler
 
+from horilla.db_utils import db_safe_job
+
 logger = logging.getLogger(__name__)
 
 
+@db_safe_job
 def refresh_outlook_auth_token():
     """
     scheduler method to refresh token

@@ -4,6 +4,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from django.core.management import call_command
 
 from horilla import settings
+from horilla.db_utils import db_safe_job
 
 from .gdrive import *
 
@@ -81,6 +82,7 @@ scheduler = BackgroundScheduler()
 #     start_backup_job()
 
 
+@db_safe_job
 def google_drive_backup():
     if GoogleDriveBackup.objects.exists():
         google_drive = GoogleDriveBackup.objects.first()

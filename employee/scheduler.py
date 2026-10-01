@@ -5,6 +5,11 @@ from datetime import timedelta
 from apscheduler.schedulers.background import BackgroundScheduler
 from django.conf import settings
 from django.core.mail import send_mail
+
+from horilla.db_utils import db_safe_job
+
+
+@db_safe_job
 def update_experience():
     from employee.models import EmployeeWorkInformation
 
@@ -18,6 +23,7 @@ def update_experience():
     return
 
 
+@db_safe_job
 def block_unblock_disciplinary():
     """
     This scheduled task to trigger the Disciplinary action and take the suspens
@@ -277,6 +283,7 @@ def send_leave_request_reminders():
             # )
 
 
+@db_safe_job
 def deactivate_resigned_employees():
     """
     Deactivate employee profiles whose resignation has become effective.
@@ -317,6 +324,10 @@ def start():
         replace_existing=True,
         misfire_grace_time=3600,
     )
+    # If any of these are re-enabled, decorate the target function with
+    # @db_safe_job first or its scheduler thread will hold a DB connection open
+    # for the life of the process.
+    #
     # scheduler.add_job(send_probation_end_notifications, "interval", days=1)
     # scheduler.add_job(send_contract_end_notification, "interval", seconds=30)
     # scheduler.add_job(send_birthday_in_this_month_notification, "interval", seconds=5)

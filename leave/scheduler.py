@@ -6,7 +6,10 @@ from datetime import datetime, timedelta
 from apscheduler.schedulers.background import BackgroundScheduler
 from dateutil.relativedelta import relativedelta
 
+from horilla.db_utils import db_safe_job
 
+
+@db_safe_job
 def leave_reset():
     from leave.models import LeaveType
 
@@ -64,6 +67,7 @@ def leave_reset():
             leave_type.save()
 
 
+@db_safe_job
 def leave_approval_reminder():
     """
     For every leave request that is still in the "requested" state, remind the

@@ -12,6 +12,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from django.contrib.auth.models import Group
 from django.urls import reverse
 
+from horilla.db_utils import db_safe_job
 from notifications.signals import notify
 
 logger = logging.getLogger(__name__)
@@ -43,6 +44,7 @@ def _resolve_notification_bot():
     return bot
 
 
+@db_safe_job
 def notify_expiring_assets():
     """
     Finds all Expiring Assets and send a notification on the notify_before date.
@@ -77,6 +79,7 @@ def notify_expiring_assets():
                 )
 
 
+@db_safe_job
 def notify_expiring_documents():
     """
     Finds all Expiring Documents and send a notification on the notify_before date.
@@ -124,6 +127,7 @@ def notify_expiring_documents():
                 document.save()
 
 
+@db_safe_job
 def notify_upcoming_checkups():
     """
     Sends a notification once when a yearly check-up enters the 30-day
@@ -313,6 +317,7 @@ def notify_upcoming_checkups():
         )
 
 
+@db_safe_job
 def notify_overdue_checkups():
     """
     Sends a first overdue notification once when a yearly check-up has
@@ -503,6 +508,7 @@ def notify_overdue_checkups():
         )
 
 
+@db_safe_job
 def notify_overdue_checkups_recurring():
     """
     Sends a recurring 3-month follow-up notification for any asset assignment

@@ -11,11 +11,14 @@ import sys
 
 from apscheduler.schedulers.background import BackgroundScheduler
 
+from horilla.db_utils import db_safe_job
+
 logger = logging.getLogger("horilla_retention")
 
 _started = False
 
 
+@db_safe_job
 def _run_daily_safe():
     """Wrapper so any exception from engine.run_daily is logged and never
     kills the scheduler thread."""

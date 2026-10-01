@@ -6,9 +6,12 @@ from datetime import datetime, timedelta
 from apscheduler.schedulers.background import BackgroundScheduler
 from dateutil.relativedelta import relativedelta
 
+from horilla.db_utils import db_safe_job
+
 today = datetime.now()
 
 
+@db_safe_job
 def recruitment_close():
     """
     Closes recruitment campaigns that have reached their end date.
@@ -28,6 +31,7 @@ def recruitment_close():
                 rec.save()
 
 
+@db_safe_job
 def candidate_convert():
     """
     Converts candidates to a "converted" state if they already exist as users.
