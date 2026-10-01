@@ -97,6 +97,14 @@ ACCESS_DOMAIN_CHOICES = [
     ("ftp_access", "FTP Access"),
     ("o365_access", "O365 Access"),
     ("email", "Email"),
+    ("claude", "Claude"),
+    ("figma", "Figma"),
+    ("openai", "OpenAI"),
+    ("plane", "Plane"),
+    ("meridian", "Meridian"),
+    ("github", "GitHub"),
+    ("aws", "AWS"),
+    ("azure", "Azure"),
 ]
 
 # Two-stage approval lifecycle for Access Requests:
