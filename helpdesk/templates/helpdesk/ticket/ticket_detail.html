@@ -415,8 +415,9 @@
                                 onclick="openIsoRejectModal('{% url 'access-request-iso-review' access_request.id %}');">
                                 <ion-icon name="close-outline" class="me-1"></ion-icon>{% trans "Reject" %}
                             </button>
-                        {% elif access_request.status == 'ISO_APPROVED' and access_is_iso_officer and request.user.employee_get != ticket.employee_id %}
+                        {% elif access_request.status == 'ISO_APPROVED' and access_is_iso_officer %}
                             {# Stage 2 — ISO Officer Approve / Reject (only after Divisional Head approval). #}
+                            {# An ISO Officer may action their own request here, as it was already independently approved at Stage 1. #}
                             <button type="button" class="oh-btn oh-btn--success iso-action-btn iso-action-btn--equal"
                                 title="{% trans 'Approve' %}"
                                 onclick="openIsoApproveModal('{% url 'access-request-isc-review' access_request.id %}');">
