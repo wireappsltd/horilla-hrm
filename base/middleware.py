@@ -261,6 +261,7 @@ class InactivityTimeoutMiddleware:
     # timestamp (e.g. the notification badge poller fires every 15 seconds).
     EXEMPT_REFRESH_PREFIXES = (
         "/inbox/notifications/api/",
+        "/api/pmo/v1/",  # Meridian PMO integration API
     )
 
     def __init__(self, get_response):
@@ -268,6 +269,10 @@ class InactivityTimeoutMiddleware:
         self.timeout = getattr(settings, "SESSION_IDLE_TIMEOUT", 600)
 
     def __call__(self, request):
+        # Meridian PMO API uses API-key auth;
+        if request.path.startswith("/api/pmo/"):
+            return self.get_response(request)
+
         if (
             self.timeout
             and self.timeout > 0

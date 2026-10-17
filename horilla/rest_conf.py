@@ -9,7 +9,10 @@ from horilla.settings import INSTALLED_APPS
 
 # Injecting installed apps to settings
 
-REST_APPS = ["rest_framework", "rest_framework_simplejwt", "drf_yasg", "horilla_api"]
+REST_APPS = ["rest_framework", "rest_framework_simplejwt", "drf_yasg",
+    "horilla_api",
+    "pmo_api",
+]
 
 INSTALLED_APPS.extend(REST_APPS)
 

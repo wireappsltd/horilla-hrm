@@ -193,6 +193,7 @@ class Employee(models.Model):
     emergency_contact_name = models.CharField(max_length=255, null=True, blank=True)
     emergency_contact_relation = models.CharField(max_length=255, null=True, blank=True ,  verbose_name="Relationship to Emergency Contact")
     is_active = models.BooleanField(default=True)
+    updated_at = models.DateTimeField(auto_now=True, null=True, blank=True)
     additional_info = models.JSONField(null=True, blank=True)
     is_from_onboarding = models.BooleanField(
         default=False, null=True, blank=True, editable=False
