@@ -176,11 +176,11 @@ class PMOLeaveListView(PMOBaseAPIView, generics.ListAPIView):
       updated_since=<ISO8601>   updated_at >= value
       start_date=YYYY-MM-DD, end_date=YYYY-MM-DD
           overlap filter: leave.start <= end_date AND leave.end >= start_date
-      limit, offset
+
     """
 
     serializer_class = PMOLeaveSerializer
-    pagination_class = PMOLimitOffsetPagination
+    pagination_class = None
 
     def get_queryset(self):
         qs = (
