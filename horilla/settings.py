@@ -228,6 +228,7 @@ CSRF_TRUSTED_ORIGINS = env("CSRF_TRUSTED_ORIGINS")
 # Set `PMO_API_KEY` in the environment to a long random string and configure
 # the same value as a secret in the Vercel project.
 PMO_API_KEY = env("PMO_API_KEY")
+PMO_COMPANY_NAME = env("PMO_COMPANY_NAME", default="WireApps")
 
 # Allow browser requests from the Vercel-hosted PMO frontend. Additional
 # origins (e.g. preview deployments) can be appended via the

@@ -765,6 +765,7 @@ class LeaveRequest(HorillaModel):
     requested_date = models.DateField(
         default=timezone.now, verbose_name=_("Created Date")
     )
+    updated_at = models.DateTimeField(auto_now=True, null=True, blank=True)
     approved_available_days = models.FloatField(default=0)
     approved_carryforward_days = models.FloatField(default=0)
     reject_reason = models.TextField(
