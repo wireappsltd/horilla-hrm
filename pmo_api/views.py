@@ -1,5 +1,7 @@
+import re
 from datetime import datetime, time
 
+from django.conf import settings
 from django.db.models import DateField, Prefetch, Q
 from django.db.models.functions import Coalesce, ExtractDay, ExtractMonth
 from django.utils import timezone
@@ -59,12 +61,19 @@ class PMOLimitOffsetPagination(LimitOffsetPagination):
         }
 
 
+def _company_name_q(prefix):
+    """Q matching the server-configured company (never client/session driven)."""
+    return Q(**{f"{prefix}__company__icontains": settings.PMO_COMPANY_NAME})
+
+
 def employee_base_queryset():
     """
     Shared queryset: includes inactive employees and avoids N+1 queries for
     department, job title, offboarding and resignation lookups.
     """
-    return Employee.objects.select_related(
+    return Employee.objects.filter(
+        _company_name_q("employee_work_info__company_id")
+    ).select_related(
         "employee_work_info__department_id",
         "employee_work_info__job_position_id",
         "offboardingemployee",
@@ -175,7 +184,10 @@ class PMOLeaveListView(PMOBaseAPIView, generics.ListAPIView):
 
     def get_queryset(self):
         qs = (
-            LeaveRequest.objects.select_related("leave_type_id")
+            LeaveRequest.objects.filter(
+                _company_name_q("employee_id__employee_work_info__company_id")
+            )
+            .select_related("leave_type_id")
             .annotate(
                 pmo_end_date=Coalesce("end_date", "start_date", output_field=DateField()),
             )
@@ -223,7 +235,11 @@ class PMOLeaveTypeListView(PMOBaseAPIView, generics.ListAPIView):
     pagination_class = PMOLimitOffsetPagination
 
     def get_queryset(self):
-        return LeaveType.objects.filter(is_active=True).order_by("id")
+        # Global leave types (no company) are permitted, like holidays.
+        return LeaveType.objects.filter(
+            Q(company_id__isnull=True) | _company_name_q("company_id"),
+            is_active=True,
+        ).order_by("id")
 
 
 class PMOHolidayListView(PMOBaseAPIView, generics.ListAPIView):
@@ -232,7 +248,7 @@ class PMOHolidayListView(PMOBaseAPIView, generics.ListAPIView):
 
     ``applies_to`` is the company name, or "all" for global holidays. Only
     active holidays that are global (no company) or belong to a company whose
-    name contains "WireApps" are returned.
+    name contains ``settings.PMO_COMPANY_NAME`` are returned.
 
     ``year`` returns holidays starting in that year, plus recurring holidays
     that started in that year or earlier. Recurring holidays have their
@@ -251,7 +267,7 @@ class PMOHolidayListView(PMOBaseAPIView, generics.ListAPIView):
 
     def get_queryset(self):
         qs = Holidays.objects.select_related("company_id").filter(
-            Q(company_id__isnull=True) | Q(company_id__company__icontains="WireApps"),
+            Q(company_id__isnull=True) | _company_name_q("company_id"),
             is_active=True,
         )
         year = self.request.query_params.get("year")
