@@ -1040,29 +1040,18 @@ def create_payslip(request, new_post_data=None):
 @permission_required("payroll.add_payslip")
 def validate_start_date(request):
     """
-    This method to validate the contract start date and the pay period start date
+    This method to validate the pay period start and end dates
     """
     end_datetime = None
     start_datetime = None
     start_date = request.GET.get("start_date")
     end_date = request.GET.get("end_date")
-    employee_id = request.GET.getlist("employee_id")
     if start_date:
         start_datetime = datetime.strptime(start_date, "%Y-%m-%d").date()
     if end_date:
         end_datetime = datetime.strptime(end_date, "%Y-%m-%d").date()
     error_message = ""
     response = {"valid": True, "message": error_message}
-    for emp_id in employee_id:
-        contract = Contract.objects.filter(
-            employee_id__id=emp_id, contract_status="active"
-        ).first()
-
-        if start_datetime is not None and start_datetime < contract.contract_start_date:
-            error_message = f"<ul class='errorlist'><li>The {contract.employee_id}'s \
-                contract start date is smaller than pay period start date</li></ul>"
-            response["message"] = error_message
-            response["valid"] = False
 
     if (
         start_datetime is not None
