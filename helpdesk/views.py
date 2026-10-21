@@ -4089,10 +4089,8 @@ def isc_review_access_request(request, ar_id):
 
     access_request = AccessRequest.objects.get(id=ar_id)
 
-    if _is_access_request_owner(request.user, access_request):
-        messages.info(request, _("You cannot approve or reject your own request."))
-        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
-
+    # No self-approval guard here: an ISO Officer may action their own request
+    # at Stage 2 because the Divisional Head has already independently approved it.
     if access_request.status != "ISO_APPROVED":
         messages.info(
             request,
