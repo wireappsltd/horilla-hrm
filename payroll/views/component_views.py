@@ -816,12 +816,17 @@ def generate_payslip(request):
 
             group_name = form.cleaned_data["group_name"]
             for employee in employees:
+                # Employees who join mid-period are paid from their contract
+                # start date, but the payslip keeps the entered period.
                 contract = Contract.objects.filter(
                     employee_id=employee, contract_status="active"
                 ).first()
-                if start_date < contract.contract_start_date:
-                    start_date = contract.contract_start_date
-                payslip = payroll_calculation(employee, start_date, end_date)
+                calculation_start_date = start_date
+                if contract and start_date < contract.contract_start_date:
+                    calculation_start_date = contract.contract_start_date
+                payslip = payroll_calculation(
+                    employee, calculation_start_date, end_date
+                )
                 payslips.append(payslip)
                 json_data.append(payslip["json_data"])
 
@@ -829,8 +834,8 @@ def generate_payslip(request):
                 data = {}
                 data["employee"] = employee
                 data["group_name"] = group_name
-                data["start_date"] = payslip["start_date"]
-                data["end_date"] = payslip["end_date"]
+                data["start_date"] = start_date
+                data["end_date"] = end_date
                 data["status"] = "draft"
                 data["contract_wage"] = payslip["contract_wage"]
                 data["basic_pay"] = payslip["basic_pay"]
@@ -902,7 +907,7 @@ def check_contract_start_date(request):
         return HttpResponse("")
 
     title_message = _(
-        "When this payslip is run, the payslip start date will be updated to match the employee contract start date."
+        "The employee joined after the payslip start date. Salary will be calculated from the employee contract start date."
     )
     text_content = _("Employee Contract Start Date")
 
@@ -944,22 +949,6 @@ def create_payslip(request, new_post_data=None):
     form = forms.PayslipForm()
 
     if request.method == "POST":
-        employee_id = request.POST.get("employee_id")
-        start_date = (
-            datetime.strptime(request.POST.get("start_date"), "%Y-%m-%d").date()
-            if isinstance(request.POST.get("start_date"), str)
-            else request.POST.get("start_date")
-        )
-
-        if employee_id and start_date:
-            contract = Contract.objects.filter(
-                employee_id=employee_id, contract_status="active"
-            ).first()
-
-            if contract and start_date < contract.contract_start_date:
-                new_post_data = request.POST.copy()
-                new_post_data["start_date"] = contract.contract_start_date
-                request.POST = new_post_data
         form = forms.PayslipForm(request.POST)
         if form.is_valid():
             employee = form.cleaned_data["employee_id"]
@@ -973,12 +962,22 @@ def create_payslip(request, new_post_data=None):
                 employee = form.cleaned_data["employee_id"]
                 start_date = form.cleaned_data["start_date"]
                 end_date = form.cleaned_data["end_date"]
-                payslip_data = payroll_calculation(employee, start_date, end_date)
+                # Employees who join mid-period are paid from their contract
+                # start date, but the payslip keeps the entered period.
+                contract = Contract.objects.filter(
+                    employee_id=employee, contract_status="active"
+                ).first()
+                calculation_start_date = start_date
+                if contract and start_date < contract.contract_start_date:
+                    calculation_start_date = contract.contract_start_date
+                payslip_data = payroll_calculation(
+                    employee, calculation_start_date, end_date
+                )
                 payslip_data["payslip"] = payslip
                 data = {}
                 data["employee"] = employee
-                data["start_date"] = payslip_data["start_date"]
-                data["end_date"] = payslip_data["end_date"]
+                data["start_date"] = start_date
+                data["end_date"] = end_date
                 data["status"] = (
                     "draft"
                     if request.GET.get("status") is None
