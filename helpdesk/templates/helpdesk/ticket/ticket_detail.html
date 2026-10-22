@@ -415,7 +415,7 @@
                                 onclick="openIsoRejectModal('{% url 'access-request-iso-review' access_request.id %}');">
                                 <ion-icon name="close-outline" class="me-1"></ion-icon>{% trans "Reject" %}
                             </button>
-                        {% elif access_request.status == 'ISO_APPROVED' and access_is_iso_officer and request.user.employee_get != ticket.employee_id %}
+                        {% elif access_request.status == 'ISO_APPROVED' and access_is_iso_officer %}
                             {# Stage 2 — ISO Officer Approve / Reject (only after Divisional Head approval). #}
                             <button type="button" class="oh-btn oh-btn--success iso-action-btn iso-action-btn--equal"
                                 title="{% trans 'Approve' %}"
@@ -440,7 +440,7 @@
                     {% if exception_request %}
                     {# ── Exception request workflow action buttons (two-stage approval) ── #}
                     <div class="d-flex align-items-center gap-2 ms-4 iso-action-group">
-                        {% if exception_request.status == 'PENDING' and is_iso_officer and request.user.employee_get != ticket.employee_id %}
+                        {% if exception_request.status == 'PENDING' and is_iso_officer %}
                             {# Stage 1 — ISO Officer Approve / Reject. #}
                             <button type="button" class="oh-btn oh-btn--success iso-action-btn iso-action-btn--equal"
                                 title="{% trans 'Approve' %}"
@@ -477,7 +477,7 @@
                     {% if admin_access_request %}
                     {# ── Admin access request workflow action buttons (two-stage approval) ── #}
                     <div class="d-flex align-items-center gap-2 ms-4 iso-action-group">
-                        {% if admin_access_request.status == 'PENDING' and is_iso_officer and request.user.employee_get != ticket.employee_id %}
+                        {% if admin_access_request.status == 'PENDING' and is_iso_officer %}
                             {# Stage 1 — ISO Officer Approve / Reject. #}
                             <button type="button" class="oh-btn oh-btn--success iso-action-btn iso-action-btn--equal"
                                 title="{% trans 'Approve' %}"
