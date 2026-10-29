@@ -371,8 +371,8 @@
                     {% if password_reset_request %}
                     {# ── ISO workflow action buttons (contextual by status AND role) ── #}
                     <div class="d-flex align-items-center gap-2 ms-4 iso-action-group">
-                        {% if password_reset_request.iso_status == 'PENDING' and is_iso_officer and request.user.employee_get != ticket.employee_id %}
-                            {# Approve / Reject — ISO User Group only, status Pending. #}
+                        {% if password_reset_request.iso_status == 'PENDING' and is_iso_officer %}
+                            {# Approve / Reject — ISO User Group only, status Pending. An ISO Officer may action their own request. #}
                             <button type="button" class="oh-btn oh-btn--success iso-action-btn iso-action-btn--equal"
                                 title="{% trans 'Approve' %}"
                                 onclick="openIsoApproveModal('{% url 'iso-review-password-reset' password_reset_request.id %}');">
@@ -441,8 +441,8 @@
                     {% if exception_request %}
                     {# ── Exception request workflow action buttons (two-stage approval) ── #}
                     <div class="d-flex align-items-center gap-2 ms-4 iso-action-group">
-                        {% if exception_request.status == 'PENDING' and is_iso_officer and request.user.employee_get != ticket.employee_id %}
-                            {# Stage 1 — ISO Officer Approve / Reject. #}
+                        {% if exception_request.status == 'PENDING' and is_iso_officer %}
+                            {# Stage 1 — ISO Officer Approve / Reject. An ISO Officer may action their own request. #}
                             <button type="button" class="oh-btn oh-btn--success iso-action-btn iso-action-btn--equal"
                                 title="{% trans 'Approve' %}"
                                 onclick="openIsoApproveModal('{% url 'exception-request-iso-review' exception_request.id %}');">
@@ -478,8 +478,8 @@
                     {% if admin_access_request %}
                     {# ── Admin access request workflow action buttons (two-stage approval) ── #}
                     <div class="d-flex align-items-center gap-2 ms-4 iso-action-group">
-                        {% if admin_access_request.status == 'PENDING' and is_iso_officer and request.user.employee_get != ticket.employee_id %}
-                            {# Stage 1 — ISO Officer Approve / Reject. #}
+                        {% if admin_access_request.status == 'PENDING' and is_iso_officer %}
+                            {# Stage 1 — ISO Officer Approve / Reject. An ISO Officer may action their own request. #}
                             <button type="button" class="oh-btn oh-btn--success iso-action-btn iso-action-btn--equal"
                                 title="{% trans 'Approve' %}"
                                 onclick="openIsoApproveModal('{% url 'admin-access-request-iso-review' admin_access_request.id %}');">
