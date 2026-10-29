@@ -92,7 +92,7 @@
                                         {% endif %}
 
                                         {# ── Stage 1: ISO Officer approve / reject (PENDING) ── #}
-                                        {% if er.status == 'PENDING' and is_iso_officer and current_employee != er.ticket.employee_id %}
+                                        {% if er.status == 'PENDING' and is_iso_officer %}
                                             <button type="button" class="oh-btn oh-btn--light-bkg p-3 w-50" title="{% trans 'Approve (ISO Officer)' %}"
                                                 onclick="event.stopPropagation(); openApproveModal('{% url 'exception-request-iso-review' er.id %}', '{{ er.ticket.ticket_type.prefix }}{{ er.ticket.id|stringformat:"03d" }}');"
                                                 style="color: green;">

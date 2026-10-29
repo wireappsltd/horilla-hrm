@@ -3208,12 +3208,7 @@ def iso_review_password_reset(request, pr_id):
 
     pr_request = PasswordResetRequest.objects.get(id=pr_id)
 
-    if _is_password_reset_request_owner(request.user, pr_request):
-        messages.info(
-            request,
-            _("You cannot approve or reject your own password reset request."),
-        )
-        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+    # ISO officers may approve/reject their own requests (edge case).
 
     if pr_request.iso_status != "PENDING":
         messages.info(request, _("This request has already been reviewed."))
@@ -4089,9 +4084,7 @@ def isc_review_access_request(request, ar_id):
 
     access_request = AccessRequest.objects.get(id=ar_id)
 
-    if _is_access_request_owner(request.user, access_request):
-        messages.info(request, _("You cannot approve or reject your own request."))
-        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+    # ISO officers may approve/reject their own requests (edge case).
 
     if access_request.status != "ISO_APPROVED":
         messages.info(
@@ -4563,9 +4556,7 @@ def iso_review_exception_request(request, er_id):
         messages.error(request, _("Exception request not found."))
         return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
 
-    if _is_exception_request_owner(request.user, exception_request):
-        messages.info(request, _("You cannot approve or reject your own request."))
-        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+    # ISO officers may approve/reject their own requests (edge case).
 
     if exception_request.status != "PENDING":
         messages.info(request, _("This request is not awaiting ISO Officer review."))
@@ -5162,9 +5153,7 @@ def iso_review_admin_access_request(request, aar_id):
         messages.error(request, _("Admin access request not found."))
         return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
 
-    if _is_admin_access_request_owner(request.user, admin_access_request):
-        messages.info(request, _("You cannot approve or reject your own request."))
-        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
+    # ISO officers may approve/reject their own requests (edge case).
 
     if admin_access_request.status != "PENDING":
         messages.info(request, _("This request is not awaiting ISO Officer review."))

@@ -107,7 +107,7 @@
                                         {% endif %}
 
                                         {# ── Stage 2: ISO Officer approve / reject (ISO_APPROVED, only after IS Council approval) ── #}
-                                        {% if ar.status == 'ISO_APPROVED' and is_iso_officer and current_employee != ar.ticket.employee_id %}
+                                        {% if ar.status == 'ISO_APPROVED' and is_iso_officer %}
                                             <button type="button" class="oh-btn oh-btn--light-bkg p-3 w-50" title="{% trans 'Approve (ISO Officer)' %}"
                                                 onclick="event.stopPropagation(); openApproveModal('{% url 'access-request-isc-review' ar.id %}', '{{ ar.ticket.ticket_type.prefix }}{{ ar.ticket.id|stringformat:"03d" }}');"
                                                 style="color: green;">
