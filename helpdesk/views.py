@@ -3208,13 +3208,7 @@ def iso_review_password_reset(request, pr_id):
 
     pr_request = PasswordResetRequest.objects.get(id=pr_id)
 
-    if _is_password_reset_request_owner(request.user, pr_request):
-        messages.info(
-            request,
-            _("You cannot approve or reject your own password reset request."),
-        )
-        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
-
+    # No self-approval guard here: an ISO Officer may action their own request.
     if pr_request.iso_status != "PENDING":
         messages.info(request, _("This request has already been reviewed."))
         return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
@@ -4561,10 +4555,8 @@ def iso_review_exception_request(request, er_id):
         messages.error(request, _("Exception request not found."))
         return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
 
-    if _is_exception_request_owner(request.user, exception_request):
-        messages.info(request, _("You cannot approve or reject your own request."))
-        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
-
+    # No self-approval guard here: an ISO Officer may action their own request
+    # at Stage 1, as it still requires independent IS Council approval at Stage 2.
     if exception_request.status != "PENDING":
         messages.info(request, _("This request is not awaiting ISO Officer review."))
         return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
@@ -5160,10 +5152,8 @@ def iso_review_admin_access_request(request, aar_id):
         messages.error(request, _("Admin access request not found."))
         return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
 
-    if _is_admin_access_request_owner(request.user, admin_access_request):
-        messages.info(request, _("You cannot approve or reject your own request."))
-        return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
-
+    # No self-approval guard here: an ISO Officer may action their own request
+    # at Stage 1, as it still requires independent IS Council approval at Stage 2.
     if admin_access_request.status != "PENDING":
         messages.info(request, _("This request is not awaiting ISO Officer review."))
         return HttpResponseRedirect(request.META.get("HTTP_REFERER", "/"))
