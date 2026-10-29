@@ -1,10 +1,28 @@
 from datetime import timezone as dt_timezone
 
-from django.core.exceptions import ObjectDoesNotExist
+from django.conf import settings
 from django.utils import timezone
 from rest_framework import serializers
 
 from employee.models import Employee
+
+from .leaving import effective_is_active, resolve_leaving_date
+
+_HEALTH_KEYWORDS = ("sick", "medical", "maternity", "paternity", "health")
+
+
+def public_leave_type_name(name):
+    """
+    GDPR (B4): health-related leave types are exposed under a generic name
+    (``settings.PMO_MASKED_LEAVE_NAME``, default "Leave"). Disable with
+    ``PMO_MASK_HEALTH_LEAVE=False``.
+    """
+    if not getattr(settings, "PMO_MASK_HEALTH_LEAVE", True):
+        return name
+    lowered = (name or "").lower()
+    if any(word in lowered for word in _HEALTH_KEYWORDS):
+        return getattr(settings, "PMO_MASKED_LEAVE_NAME", "Leave")
+    return name
 
 
 def _work_info(employee):
@@ -30,7 +48,7 @@ class PMOEmployeeSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(read_only=True)
     department = serializers.SerializerMethodField()
     job_title = serializers.SerializerMethodField()
-    is_active = serializers.BooleanField(read_only=True)
+    is_active = serializers.SerializerMethodField()
     date_joined = serializers.SerializerMethodField()
     leaving_date = serializers.SerializerMethodField()
     updated_at = serializers.SerializerMethodField()
@@ -76,37 +94,19 @@ class PMOEmployeeSerializer(serializers.ModelSerializer):
             return wi.date_joining.isoformat()
         return None
 
+    def get_is_active(self, obj):
+        """False only on/after the leaving date (see ``pmo_api.leaving``)."""
+        return effective_is_active(obj, self._leaving(obj))
+
+    def _leaving(self, obj):
+        if not hasattr(obj, "_pmo_leaving"):
+            obj._pmo_leaving = resolve_leaving_date(obj)
+        return obj._pmo_leaving
+
     def get_leaving_date(self, obj):
-        """
-        Leaving date is not on Employee. Sources, in priority order:
-        1. OffboardingEmployee.last_working_date, then notice_period_ends
-        2. Latest approved ResignationLetter.planned_to_leave_on
-
-        The view supplies ``obj.offboardingemployee`` (select_related) and
-        ``obj.pmo_approved_letters`` (Prefetch to_attr); direct queries are
-        used as a fallback.
-        """
-        try:
-            off = obj.offboardingemployee
-        except ObjectDoesNotExist:
-            off = None
-        if off:
-            date = off.last_working_date or off.notice_period_ends
-            if date:
-                return date.isoformat()
-
-        letters = getattr(obj, "pmo_approved_letters", None)
-        if letters is None:
-            from offboarding.models import ResignationLetter
-
-            letters = list(
-                ResignationLetter.objects.filter(
-                    employee_id=obj, status="approved"
-                ).order_by("-planned_to_leave_on")[:1]
-            )
-        if letters and letters[0].planned_to_leave_on:
-            return letters[0].planned_to_leave_on.isoformat()
-        return None
+        """Always set for inactive employees; see ``pmo_api.leaving``."""
+        date = self._leaving(obj)
+        return date.isoformat() if date else None
 
     def get_updated_at(self, obj):
         value = obj.updated_at
@@ -130,7 +130,7 @@ class PMOLeaveSerializer(serializers.Serializer):
     leave_type_id = serializers.IntegerField(
         source="leave_type_id_id", read_only=True
     )
-    leave_type = serializers.CharField(source="leave_type_id.name", read_only=True)
+    leave_type = serializers.SerializerMethodField()
     start_date = serializers.DateField(format="%Y-%m-%d", read_only=True)
     end_date = serializers.SerializerMethodField()
     start_breakdown = serializers.SerializerMethodField()
@@ -140,6 +140,9 @@ class PMOLeaveSerializer(serializers.Serializer):
     updated_at = serializers.SerializerMethodField()
 
     _BREAKDOWNS = {"full_day", "first_half", "second_half"}
+
+    def get_leave_type(self, obj):
+        return public_leave_type_name(obj.leave_type_id.name)
 
     def get_end_date(self, obj):
         # end_date is nullable in Horilla; a single-day request ends on start.
@@ -165,8 +168,12 @@ class PMOLeaveSerializer(serializers.Serializer):
 
 class PMOLeaveTypeSerializer(serializers.Serializer):
     id = serializers.IntegerField(read_only=True)
-    name = serializers.CharField(read_only=True)
+    name = serializers.SerializerMethodField()
     is_paid = serializers.SerializerMethodField()
+    is_active = serializers.BooleanField(read_only=True)
+
+    def get_name(self, obj):
+        return public_leave_type_name(obj.name)
 
     def get_is_paid(self, obj):
         return obj.payment == "paid"

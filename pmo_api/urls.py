@@ -16,5 +16,6 @@ urlpatterns = [
         "leave-types/", views.PMOLeaveTypeListView.as_view(), name="leave-type-list"
     ),
     path("holidays/", views.PMOHolidayListView.as_view(), name="holiday-list"),
+    path("deleted/", views.PMODeletedListView.as_view(), name="deleted-list"),
 ]
 

@@ -2,7 +2,7 @@ import re
 from datetime import datetime, time
 
 from django.conf import settings
-from django.db.models import DateField, Prefetch, Q
+from django.db.models import DateField, OuterRef, Q, Subquery
 from django.db.models.functions import Coalesce, ExtractDay, ExtractMonth
 from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_datetime
@@ -17,7 +17,9 @@ from employee.models import Employee
 from leave.models import LeaveRequest, LeaveType
 from offboarding.models import ResignationLetter
 
-from .authentication import APIKeyAuthentication, HasValidAPIKey
+from .authentication import APIKeyAuthentication, HasValidAPIKey, PMORateThrottle
+from .errors import pmo_exception_handler
+from .models import PMODeletedRecord, PMOEmployeeDeactivation
 from .serializers import (
     PMOEmployeeSerializer,
     PMOHolidaySerializer,
@@ -27,10 +29,17 @@ from .serializers import (
 
 
 class PMOBaseAPIView(APIView):
-    """Base class for all Meridian endpoints: API-key auth, JSON 401 on failure."""
+    """
+    Base class for all Meridian endpoints: API-key auth, rate limiting, and
+    JSON-only errors (401/403/404/405/429/5xx).
+    """
 
     authentication_classes = [APIKeyAuthentication]
     permission_classes = [HasValidAPIKey]
+    throttle_classes = [PMORateThrottle]
+
+    def get_exception_handler(self):
+        return pmo_exception_handler
 
 
 class PMOLimitOffsetPagination(LimitOffsetPagination):
@@ -61,6 +70,17 @@ class PMOLimitOffsetPagination(LimitOffsetPagination):
         }
 
 
+class PMOOptInPagination(PMOLimitOffsetPagination):
+    """Paginates only when ``limit`` or ``offset`` is supplied (keeps the
+    legacy plain-list response for existing clients)."""
+
+    def paginate_queryset(self, queryset, request, view=None):
+        params = request.query_params
+        if "limit" not in params and "offset" not in params:
+            return None
+        return super().paginate_queryset(queryset, request, view)
+
+
 def _company_name_q(prefix):
     """Q matching the server-configured company (never client/session driven)."""
     return Q(**{f"{prefix}__company__icontains": settings.PMO_COMPANY_NAME})
@@ -68,22 +88,34 @@ def _company_name_q(prefix):
 
 def employee_base_queryset():
     """
-    Shared queryset: includes inactive employees and avoids N+1 queries for
-    department, job title, offboarding and resignation lookups.
+    Shared queryset: includes inactive employees. Annotates, in SQL (no N+1):
+    ``pmo_planned_leaving`` (offboarding last working date / notice end, else
+    latest approved resignation date) and ``pmo_deactivated_on``.
     """
-    return Employee.objects.filter(
-        _company_name_q("employee_work_info__company_id")
-    ).select_related(
-        "employee_work_info__department_id",
-        "employee_work_info__job_position_id",
-        "offboardingemployee",
-    ).prefetch_related(
-        Prefetch(
-            "resignationletter_set",
-            queryset=ResignationLetter.objects.filter(status="approved").order_by(
-                "-planned_to_leave_on"
+    latest_resignation = (
+        ResignationLetter.objects.filter(
+            employee_id=OuterRef("pk"), status="approved"
+        )
+        .order_by("-planned_to_leave_on")
+        .values("planned_to_leave_on")[:1]
+    )
+    deactivated_on = PMOEmployeeDeactivation.objects.filter(
+        employee_id=OuterRef("pk")
+    ).values("deactivated_on")[:1]
+    return (
+        Employee.objects.filter(_company_name_q("employee_work_info__company_id"))
+        .select_related(
+            "employee_work_info__department_id",
+            "employee_work_info__job_position_id",
+        )
+        .annotate(
+            pmo_planned_leaving=Coalesce(
+                "offboardingemployee__last_working_date",
+                "offboardingemployee__notice_period_ends",
+                Subquery(latest_resignation, output_field=DateField()),
+                output_field=DateField(),
             ),
-            to_attr="pmo_approved_letters",
+            pmo_deactivated_on=Subquery(deactivated_on, output_field=DateField()),
         )
     )
 
@@ -113,6 +145,7 @@ class PMOEmployeeListView(PMOBaseAPIView, generics.ListAPIView):
     Query params:
       include_inactive=true  include inactive employees (default: active only)
       updated_since=<ISO8601> only employees with updated_at >= value
+      search=<text>          case-insensitive match on name or email
       limit, offset          pagination (max limit 100)
     """
 
@@ -128,11 +161,27 @@ class PMOEmployeeListView(PMOBaseAPIView, generics.ListAPIView):
             "1",
             "yes",
         ):
-            qs = qs.filter(is_active=True)
+            # Same rule as ``leaving.effective_is_active``.
+            today = timezone.localdate()
+            qs = qs.filter(
+                Q(pmo_planned_leaving__gt=today)
+                | Q(pmo_planned_leaving__isnull=True, is_active=True)
+            )
 
         updated_since = params.get("updated_since")
         if updated_since:
             qs = qs.filter(updated_at__gte=_parse_timestamp(updated_since))
+
+        search = (params.get("search") or "").strip()
+        if search:
+            cond = Q()
+            for term in search.split():
+                cond &= (
+                    Q(employee_first_name__icontains=term)
+                    | Q(employee_last_name__icontains=term)
+                    | Q(email__icontains=term)
+                )
+            qs = qs.filter(cond)
 
         return qs.order_by("id")
 
@@ -180,7 +229,7 @@ class PMOLeaveListView(PMOBaseAPIView, generics.ListAPIView):
     """
 
     serializer_class = PMOLeaveSerializer
-    pagination_class = None
+    pagination_class = PMOOptInPagination
 
     def get_queryset(self):
         qs = (
@@ -229,17 +278,27 @@ class PMOLeaveListView(PMOBaseAPIView, generics.ListAPIView):
 
 
 class PMOLeaveTypeListView(PMOBaseAPIView, generics.ListAPIView):
-    """GET /api/pmo/v1/leave-types/"""
+    """
+    GET /api/pmo/v1/leave-types/
+
+    Active types only by default; ``include_inactive=true`` includes the rest
+    (each row carries ``is_active``).
+    """
 
     serializer_class = PMOLeaveTypeSerializer
     pagination_class = PMOLimitOffsetPagination
 
     def get_queryset(self):
         # Global leave types (no company) are permitted, like holidays.
-        return LeaveType.objects.filter(
-            Q(company_id__isnull=True) | _company_name_q("company_id"),
-            is_active=True,
-        ).order_by("id")
+        qs = LeaveType.objects.filter(
+            Q(company_id__isnull=True) | _company_name_q("company_id")
+        )
+        include_inactive = self.request.query_params.get(
+            "include_inactive", ""
+        ).strip().lower() in ("true", "1", "yes")
+        if not include_inactive:
+            qs = qs.filter(is_active=True)
+        return qs.order_by("id")
 
 
 class PMOHolidayListView(PMOBaseAPIView, generics.ListAPIView):
@@ -284,5 +343,41 @@ class PMOHolidayListView(PMOBaseAPIView, generics.ListAPIView):
                 ExtractMonth("start_date"), ExtractDay("start_date"), "id"
             )
         return qs.order_by("start_date", "id")
+
+
+class PMODeletedListView(PMOBaseAPIView):
+    """
+    GET /api/pmo/v1/deleted/?resource=employee|leave&deleted_since=<ISO8601>
+
+    Tombstones for hard-deleted records, so incremental sync can remove them.
+    Response: ``{count, limit, offset, results: [{resource, id, deleted_at}]}``.
+    """
+
+    def get(self, request):
+        params = request.query_params
+        qs = PMODeletedRecord.objects.all()
+
+        resource = params.get("resource")
+        if resource:
+            if resource not in ("employee", "leave"):
+                raise ValidationError({"resource": "Must be 'employee' or 'leave'."})
+            qs = qs.filter(resource=resource)
+
+        deleted_since = params.get("deleted_since")
+        if deleted_since:
+            qs = qs.filter(deleted_at__gte=_parse_timestamp(deleted_since))
+
+        qs = qs.order_by("id")
+        paginator = PMOLimitOffsetPagination()
+        page = paginator.paginate_queryset(qs, request, view=self)
+        data = [
+            {
+                "resource": row.resource,
+                "id": row.record_id,
+                "deleted_at": timezone.localtime(row.deleted_at).isoformat(),
+            }
+            for row in page
+        ]
+        return paginator.get_paginated_response(data)
 
 

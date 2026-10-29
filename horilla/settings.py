@@ -229,6 +229,12 @@ CSRF_TRUSTED_ORIGINS = env("CSRF_TRUSTED_ORIGINS")
 # the same value as a secret in the Vercel project.
 PMO_API_KEY = env("PMO_API_KEY")
 PMO_COMPANY_NAME = env("PMO_COMPANY_NAME", default="WireApps")
+# Rate limit per client IP, DRF format: "<n>/sec|min|hour|day".
+PMO_THROTTLE_RATE = env("PMO_THROTTLE_RATE", default="120/min")
+# GDPR: expose health-related leave types (sick, medical, maternity, ...)
+# under a generic name.
+PMO_MASK_HEALTH_LEAVE = env.bool("PMO_MASK_HEALTH_LEAVE", default=True)
+PMO_MASKED_LEAVE_NAME = env("PMO_MASKED_LEAVE_NAME", default="Leave")
 
 # Allow browser requests from the Vercel-hosted PMO frontend. Additional
 # origins (e.g. preview deployments) can be appended via the
