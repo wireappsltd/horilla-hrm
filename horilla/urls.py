@@ -28,6 +28,13 @@ def health_check(request):
     return JsonResponse({"status": "ok"}, status=200)
 
 
+# JSON errors under /api/pmo/ (other paths keep Django's default pages).
+handler400 = "pmo_api.errors.json_bad_request"
+handler403 = "pmo_api.errors.json_permission_denied"
+handler404 = "pmo_api.errors.json_not_found"
+handler500 = "pmo_api.errors.json_server_error"
+
+
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("accounts/", include("django.contrib.auth.urls")),

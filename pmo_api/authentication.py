@@ -11,6 +11,7 @@ from django.conf import settings
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework.permissions import BasePermission
+from rest_framework.throttling import SimpleRateThrottle
 
 
 class PMOApiUser:
@@ -51,4 +52,24 @@ class APIKeyAuthentication(BaseAuthentication):
 class HasValidAPIKey(BasePermission):
     def has_permission(self, request, view):
         return isinstance(request.user, PMOApiUser)
+
+
+class PMORateThrottle(SimpleRateThrottle):
+    """
+    Rate limit per client IP: ``PMO_THROTTLE_RATE`` (env, default ``120/min``).
+    Exceeding it yields HTTP 429, a JSON body and a ``Retry-After`` header
+    (see ``errors.pmo_exception_handler``). Counters live in Django's cache;
+    use a shared cache (Redis/Memcached) when running several workers.
+    """
+
+    scope = "pmo"
+
+    def get_rate(self):
+        return getattr(settings, "PMO_THROTTLE_RATE", "120/min")
+
+    def get_cache_key(self, request, view):
+        return self.cache_format % {
+            "scope": self.scope,
+            "ident": self.get_ident(request),
+        }
 
