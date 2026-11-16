@@ -118,9 +118,7 @@ class APIKeyAuthentication(BaseAuthentication):
 
         expected_keys = _get_expected_api_keys()
         if not expected_keys:
-            raise AuthenticationFailed(
-                "PMO API key is not configured on the server."
-            )
+            raise AuthenticationFailed("PMO API key is not configured on the server.")
 
         if not _is_valid_api_key(provided, expected_keys):
             raise AuthenticationFailed("Invalid PMO API key.")
@@ -137,9 +135,7 @@ class HasValidPMOAPIKey(BasePermission):
     message = "A valid PMO API key is required."
 
     def has_permission(self, request, view):
-        return _is_valid_api_key(
-            _extract_api_key(request), _get_expected_api_keys()
-        )
+        return _is_valid_api_key(_extract_api_key(request), _get_expected_api_keys())
 
 
 class PMOAPIView(APIView):
@@ -355,8 +351,7 @@ class PMOEmployeeListAPIView(PMOAPIView):
     def get(self, request):
         if request.query_params.get("updated_since") not in (None, ""):
             return _bad_request(
-                "'updated_since' is not supported on employees; "
-                "perform a full sync."
+                "'updated_since' is not supported on employees; perform a full sync."
             )
 
         search = (request.query_params.get("search") or "").strip()
@@ -372,9 +367,7 @@ class PMOEmployeeListAPIView(PMOAPIView):
                 | Q(employee_last_name__icontains=search)
                 | Q(employee_user_id__email__icontains=search)
                 | Q(employee_work_info__department_id__department__icontains=search)
-                | Q(
-                    employee_work_info__job_position_id__job_position__icontains=search
-                )
+                | Q(employee_work_info__job_position_id__job_position__icontains=search)
             ).distinct()
 
         qs = qs.order_by("employee_first_name", "employee_last_name", "id")

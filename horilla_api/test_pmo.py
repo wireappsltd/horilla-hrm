@@ -108,7 +108,11 @@ class PMOEmployeeTests(PMOTestCase):
             ]
         )
         OffboardingEmployee.objects.bulk_create(
-            [OffboardingEmployee(employee_id=cls.leaver, last_working_date=date(2026, 10, 31))]
+            [
+                OffboardingEmployee(
+                    employee_id=cls.leaver, last_working_date=date(2026, 10, 31)
+                )
+            ]
         )
 
     def test_active_employee_detail(self):
@@ -174,7 +178,9 @@ class PMOLeaveTests(PMOTestCase):
         cls.unpaid = LeaveType(name="PMO Unpaid", payment="unpaid")
         cls.unpaid.save()
 
-        def mk(emp, start, end, status="approved", sb="full_day", eb="full_day", lt=None):
+        def mk(
+            emp, start, end, status="approved", sb="full_day", eb="full_day", lt=None
+        ):
             _clear_request_local()
             leave = LeaveRequest(
                 employee_id=emp,
@@ -189,11 +195,19 @@ class PMOLeaveTests(PMOTestCase):
             leave.save()
             return leave
 
-        cls.half_day = mk(cls.emp, date(2026, 10, 20), date(2026, 10, 22), eb="first_half")
+        cls.half_day = mk(
+            cls.emp, date(2026, 10, 20), date(2026, 10, 22), eb="first_half"
+        )
         cls.of_leaver = mk(cls.leaver, date(2026, 10, 1), date(2026, 10, 5))
-        cls.ends_on_start = mk(cls.emp, date(2026, 9, 28), date(2026, 10, 1), status="rejected")
+        cls.ends_on_start = mk(
+            cls.emp, date(2026, 9, 28), date(2026, 10, 1), status="rejected"
+        )
         cls.starts_on_end = mk(
-            cls.emp, date(2026, 10, 31), date(2026, 11, 2), status="requested", lt=cls.unpaid
+            cls.emp,
+            date(2026, 10, 31),
+            date(2026, 11, 2),
+            status="requested",
+            lt=cls.unpaid,
         )
         cls.spanning = mk(cls.emp, date(2026, 9, 1), date(2026, 11, 30))
         cls.outside = mk(cls.emp, date(2026, 11, 5), date(2026, 11, 6))
@@ -238,22 +252,33 @@ class PMOLeaveTests(PMOTestCase):
             self.ids({**self.WINDOW, "status": "requested,rejected"}),
             {self.ends_on_start.id, self.starts_on_end.id},
         )
-        self.assertEqual(self.get(LEAVES, {**self.WINDOW, "status": "bogus"}).status_code, 400)
+        self.assertEqual(
+            self.get(LEAVES, {**self.WINDOW, "status": "bogus"}).status_code, 400
+        )
 
     def test_employee_filter(self):
         self.assertEqual(
-            self.ids({**self.WINDOW, "employee_id": self.leaver.id}), {self.of_leaver.id}
+            self.ids({**self.WINDOW, "employee_id": self.leaver.id}),
+            {self.of_leaver.id},
         )
-        self.assertEqual(self.get(LEAVES, {**self.WINDOW, "employee_id": "x"}).status_code, 400)
+        self.assertEqual(
+            self.get(LEAVES, {**self.WINDOW, "employee_id": "x"}).status_code, 400
+        )
 
     def test_date_validation(self):
-        self.assertEqual(self.get(LEAVES, {"start_date": "2026-10-01"}).status_code, 400)
         self.assertEqual(
-            self.get(LEAVES, {"start_date": "2026-10-31", "end_date": "2026-10-01"}).status_code,
+            self.get(LEAVES, {"start_date": "2026-10-01"}).status_code, 400
+        )
+        self.assertEqual(
+            self.get(
+                LEAVES, {"start_date": "2026-10-31", "end_date": "2026-10-01"}
+            ).status_code,
             400,
         )
         self.assertEqual(
-            self.get(LEAVES, {"start_date": "2026-13-01", "end_date": "2026-10-31"}).status_code,
+            self.get(
+                LEAVES, {"start_date": "2026-13-01", "end_date": "2026-10-31"}
+            ).status_code,
             400,
         )
 
@@ -262,7 +287,9 @@ class PMOLeaveTests(PMOTestCase):
         _clear_request_local()
         self.to_cancel.status = "cancelled"
         self.to_cancel.save()
-        response = self.get(LEAVES, {**self.WINDOW, "updated_since": cutoff.isoformat()})
+        response = self.get(
+            LEAVES, {**self.WINDOW, "updated_since": cutoff.isoformat()}
+        )
         rows = response.json()["results"]
         self.assertEqual([r["id"] for r in rows], [self.to_cancel.id])
         self.assertEqual(rows[0]["status"], "cancelled")
@@ -286,16 +313,22 @@ class PMOHolidayTests(PMOTestCase):
         _clear_request_local()
 
         def mk(name, start, end, recurring=False):
-            holiday = Holidays(name=name, start_date=start, end_date=end, recurring=recurring)
+            holiday = Holidays(
+                name=name, start_date=start, end_date=end, recurring=recurring
+            )
             holiday.save()
             return holiday
 
-        cls.xmas = mk("PMO Christmas", date(2020, 12, 25), date(2020, 12, 25), recurring=True)
+        cls.xmas = mk(
+            "PMO Christmas", date(2020, 12, 25), date(2020, 12, 25), recurring=True
+        )
         cls.leap = mk("PMO Leap", date(2024, 2, 29), date(2024, 2, 29), recurring=True)
         cls.this_year = mk("PMO Vesak", date(2026, 5, 1), date(2026, 5, 2))
         cls.other_year = mk("PMO 2025", date(2025, 5, 1), date(2025, 5, 1))
         cls.spans_new_year = mk("PMO NYE", date(2025, 12, 31), date(2026, 1, 1))
-        cls.future_recurring = mk("PMO Future", date(2027, 1, 14), date(2027, 1, 14), True)
+        cls.future_recurring = mk(
+            "PMO Future", date(2027, 1, 14), date(2027, 1, 14), True
+        )
 
     def test_holidays_for_year(self):
         response = self.get(HOLIDAYS, {"year": 2026})
@@ -308,7 +341,9 @@ class PMOHolidayTests(PMOTestCase):
         self.assertIn(self.spans_new_year.id, rows)
         self.assertNotIn(self.other_year.id, rows)
         self.assertNotIn(self.future_recurring.id, rows)
-        self.assertTrue(all("company_id" in r and "company" in r for r in rows.values()))
+        self.assertTrue(
+            all("company_id" in r and "company" in r for r in rows.values())
+        )
 
     def test_year_validation(self):
         self.assertEqual(self.get(HOLIDAYS).status_code, 400)

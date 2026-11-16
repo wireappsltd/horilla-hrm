@@ -125,10 +125,7 @@ class PMOLeaveListAPIView(PMOAPIView):
 
         qs = _leave_queryset().filter(
             Q(start_date__lte=end)
-            & (
-                Q(end_date__gte=start)
-                | Q(end_date__isnull=True, start_date__gte=start)
-            )
+            & (Q(end_date__gte=start) | Q(end_date__isnull=True, start_date__gte=start))
         )
 
         employee_id = params.get("employee_id")
@@ -150,7 +147,9 @@ class PMOLeaveListAPIView(PMOAPIView):
                 )
             qs = qs.filter(status__in=statuses)
 
-        updated_since, err = _parse_datetime(params.get("updated_since"), "updated_since")
+        updated_since, err = _parse_datetime(
+            params.get("updated_since"), "updated_since"
+        )
         if err:
             return _bad_request(err)
         if updated_since is not None:
@@ -220,7 +219,9 @@ class PMOHolidayListAPIView(PMOAPIView):
         raw_year = request.query_params.get("year")
         if raw_year in (None, ""):
             return _bad_request("'year' is required.")
-        year, err = _parse_bounded_int(raw_year, default=None, minimum=1900, maximum=9999)
+        year, err = _parse_bounded_int(
+            raw_year, default=None, minimum=1900, maximum=9999
+        )
         if err or year > 2999:
             return _bad_request("Invalid 'year': must be a four-digit year.")
 
