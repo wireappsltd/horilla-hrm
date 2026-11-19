@@ -23,9 +23,10 @@ urlpatterns = [
         leave_views.PMOLeaveTypeListAPIView.as_view(),
         name="api-pmo-leave-type-list",
     ),
-    path(
-        "holidays/",
-        leave_views.PMOHolidayListAPIView.as_view(),
-        name="api-pmo-holiday-list",
-    ),
+    # Holidays endpoint disabled for now (HRMOD-598) - not needed by Meridian yet.
+    # path(
+    #     "holidays/",
+    #     leave_views.PMOHolidayListAPIView.as_view(),
+    #     name="api-pmo-holiday-list",
+    # ),
 ]

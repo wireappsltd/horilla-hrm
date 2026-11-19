@@ -6,7 +6,7 @@ Run with:  python manage.py test horilla_api.test_pmo -v 2
 
 import os
 from datetime import date, datetime, timedelta
-from unittest import mock
+from unittest import mock, skip
 
 from django.test import TestCase, override_settings
 from django.utils import timezone
@@ -307,6 +307,7 @@ class PMOLeaveTests(PMOTestCase):
         self.assertEqual(rows[self.paid.id]["name"], "PMO Annual")
 
 
+@skip("PMO holidays endpoint is disabled for now (see api_urls/pmo/urls.py)")
 class PMOHolidayTests(PMOTestCase):
     @classmethod
     def setUpTestData(cls):
