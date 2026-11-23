@@ -1199,9 +1199,6 @@ def leave_request_approve(request, id, emp_id=None):
     available_leave = AvailableLeave.objects.get(
         leave_type_id=leave_type_id, employee_id=employee_id
     )
-    total_available_leave = (
-        available_leave.available_days + available_leave.carryforward_days
-    )
     send_notification = False
     # Captured before any mutation so the audit entry can report the real
     # before/after status rather than the already-updated in-memory value.
@@ -1221,8 +1218,10 @@ def leave_request_approve(request, id, emp_id=None):
             leave_request.start_date is not None
             and leave_request.start_date.year == date.today().year
         )
-        can_approve = (not is_current_year) or (
-            total_available_leave >= leave_request.requested_days
+        # Same balance the request form validated against (balance_leaves()),
+        # not the stored available/carryforward counters, which can drift.
+        can_approve = (not is_current_year) or available_leave.can_approve(
+            leave_request
         )
         if can_approve:
             if is_current_year:

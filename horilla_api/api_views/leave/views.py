@@ -900,10 +900,7 @@ class LeaveRequestBulkApproveDeleteAPIview(APIView):
             available_leave = AvailableLeave.objects.get(
                 leave_type_id=leave_type_id, employee_id=employee_id
             )
-            total_available_leave = (
-                available_leave.available_days + available_leave.carryforward_days
-            )
-            if total_available_leave >= leave_request.requested_days:
+            if available_leave.can_approve(leave_request):
                 self.leave_approve_calculation(leave_request, available_leave)
                 leave_request.status = "approved"
                 leave_request.save()
