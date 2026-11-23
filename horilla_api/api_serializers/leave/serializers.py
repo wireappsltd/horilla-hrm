@@ -494,10 +494,7 @@ class LeaveRequestApproveSerializer(serializers.ModelSerializer):
         available_leave = AvailableLeave.objects.get(
             leave_type_id=leave_type_id, employee_id=employee_id
         )
-        total_available_leave = (
-            available_leave.available_days + available_leave.carryforward_days
-        )
-        if not total_available_leave >= leave_request.requested_days:
+        if not available_leave.can_approve(leave_request):
             raise serializers.ValidationError(
                 f"{employee_id} dont have enough leave days to approve the request.."
             )

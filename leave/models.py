@@ -596,6 +596,44 @@ class AvailableLeave(HorillaModel):
         balance_leave_days = max_days - self.leave_taken() - self.pending_leaves()
         return balance_leave_days if balance_leave_days else 0
 
+    def approvable_balance(self, leave_request):
+        """
+        Balance that ``leave_request`` may draw on when it is approved.
+
+        Mirrors the figure used when the request was submitted
+        (``balance_leaves()``) instead of the stored ``available_days`` +
+        ``carryforward_days`` counters, which can drift from the leave history
+        (carryforward expiry, mixed deduction order, cancellations) and block
+        an approval even though the leave card still shows a balance.
+
+        ``balance_leaves()`` already subtracts every pending request, including
+        this one, so the days it counted for this request (the stored value,
+        same filters as ``pending_leaves()``) are added back before comparing.
+        """
+        balance = self.balance_leaves()
+        if leave_request.pk:
+            counted_as_pending = (
+                LeaveRequest.objects.filter(
+                    pk=leave_request.pk,
+                    leave_type_id=self.leave_type_id,
+                    employee_id=self.employee_id,
+                    status="requested",
+                    start_date__year=self.current_year(),
+                )
+                .values_list("requested_days", flat=True)
+                .first()
+            )
+            balance += counted_as_pending or 0
+        return balance
+
+    def can_approve(self, leave_request):
+        """Return True if ``leave_request`` fits within ``approvable_balance()``."""
+        if not getattr(self.leave_type_id, "limit_leave", True):
+            return True
+        return (leave_request.requested_days or 0) <= self.approvable_balance(
+            leave_request
+        )
+
     def total_leaves(self):
         if getattr(self.leave_type_id, "is_compensatory_leave", False):
             personal_total = (self.available_days or 0) + self.leave_taken()
